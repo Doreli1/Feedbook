@@ -26,7 +26,7 @@ Plan §5, Stage 1 gate).
 | Backend | Supabase (Postgres, Auth, Storage, Realtime), Edge Functions in TypeScript/Deno |
 | Critical business logic | PL/pgSQL functions (JIT stock deduction, bill split) — never reimplement these in app code |
 | Payments | Tranzila, Hosted Fields — card data never touches our servers |
-| Hosting | Vercel (Web — MCP connector already available, no project created yet), EAS (Mobile, not yet configured), Supabase Cloud — region **Frankfurt (EU)**, not negotiable |
+| Hosting | Vercel (Web — project `feedbook-web` created, root `app/apps/web`, no production deployment yet), EAS (Mobile, not yet configured), Supabase Cloud — region **Frankfurt (EU)**, not negotiable |
 | Full rationale | `../3.Feedbook_Tech_Stack_Document_v4.docx` |
 
 ## Actual directory layout
@@ -99,8 +99,12 @@ endpoint shapes; they're already fully specified.
 - **Supabase** — connected, authenticated. Project `Feedbook-EU` (region eu-central-1 /
   Frankfurt, ref `xekiayczikqeypwupvbi`) exists and holds the full schema. An older
   Singapore project (`yqwfsimqqpsognbkbjzk`) is paused, pending manual deletion.
-- **Vercel** — connected (team: `doreli125-7289's projects`, Hobby plan), zero projects
-  created yet. Upgrade to Pro before production (Hobby is non-commercial).
+- **Vercel** — connected (team: `doreli125-7289's projects`, Hobby plan). Project
+  `feedbook-web` exists, linked to this repo with root directory `app/apps/web`. Note:
+  this project is invisible to the Vercel MCP tools here (`get_project`/`list_projects`
+  return empty/404 for it even though the dashboard shows it — a real, unresolved
+  inconsistency, not a transient one). Manage it via the Vercel dashboard directly
+  until that's understood. Upgrade to Pro before production (Hobby is non-commercial).
 - Ask before creating or deleting a project in either; both are consequential/costly
   actions even though doable directly via MCP tools.
 
