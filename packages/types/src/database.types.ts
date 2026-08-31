@@ -7,6 +7,31 @@ export type Json =
   | Json[]
 
 export type Database = {
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       audit_log: {
@@ -44,12 +69,14 @@ export type Database = {
           {
             foreignKeyName: "audit_log_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "audit_log_staff_id_fkey"
             columns: ["staff_id"]
+            isOneToOne: false
             referencedRelation: "staff"
             referencedColumns: ["id"]
           },
@@ -99,12 +126,14 @@ export type Database = {
           {
             foreignKeyName: "dish_ingredients_dish_id_fkey"
             columns: ["dish_id"]
+            isOneToOne: false
             referencedRelation: "dishes"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "dish_ingredients_ingredient_id_fkey"
             columns: ["ingredient_id"]
+            isOneToOne: false
             referencedRelation: "ingredients"
             referencedColumns: ["id"]
           },
@@ -130,6 +159,7 @@ export type Database = {
           {
             foreignKeyName: "dish_likes_dish_id_fkey"
             columns: ["dish_id"]
+            isOneToOne: false
             referencedRelation: "dishes"
             referencedColumns: ["id"]
           },
@@ -188,12 +218,14 @@ export type Database = {
           {
             foreignKeyName: "dishes_category_id_fkey"
             columns: ["category_id"]
+            isOneToOne: false
             referencedRelation: "menu_categories"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "dishes_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
@@ -258,6 +290,7 @@ export type Database = {
           {
             foreignKeyName: "ingredients_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
@@ -286,6 +319,7 @@ export type Database = {
           {
             foreignKeyName: "menu_categories_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
@@ -335,18 +369,21 @@ export type Database = {
           {
             foreignKeyName: "non_conformances_closed_by_fkey"
             columns: ["closed_by"]
+            isOneToOne: false
             referencedRelation: "staff"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "non_conformances_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "non_conformances_session_id_fkey"
             columns: ["session_id"]
+            isOneToOne: false
             referencedRelation: "table_sessions"
             referencedColumns: ["id"]
           },
@@ -387,6 +424,7 @@ export type Database = {
           {
             foreignKeyName: "notifications_staff_id_fkey"
             columns: ["staff_id"]
+            isOneToOne: false
             referencedRelation: "staff"
             referencedColumns: ["id"]
           },
@@ -424,12 +462,14 @@ export type Database = {
           {
             foreignKeyName: "order_items_dish_id_fkey"
             columns: ["dish_id"]
+            isOneToOne: false
             referencedRelation: "dishes"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "order_items_order_id_fkey"
             columns: ["order_id"]
+            isOneToOne: false
             referencedRelation: "orders"
             referencedColumns: ["id"]
           },
@@ -464,12 +504,14 @@ export type Database = {
           {
             foreignKeyName: "orders_participant_id_fkey"
             columns: ["participant_id"]
+            isOneToOne: false
             referencedRelation: "session_participants"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "orders_session_id_fkey"
             columns: ["session_id"]
+            isOneToOne: false
             referencedRelation: "table_sessions"
             referencedColumns: ["id"]
           },
@@ -507,12 +549,14 @@ export type Database = {
           {
             foreignKeyName: "payment_participant_shares_participant_id_fkey"
             columns: ["participant_id"]
+            isOneToOne: false
             referencedRelation: "session_participants"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "payment_participant_shares_payment_id_fkey"
             columns: ["payment_id"]
+            isOneToOne: false
             referencedRelation: "payments"
             referencedColumns: ["id"]
           },
@@ -556,6 +600,7 @@ export type Database = {
           {
             foreignKeyName: "payments_session_id_fkey"
             columns: ["session_id"]
+            isOneToOne: false
             referencedRelation: "table_sessions"
             referencedColumns: ["id"]
           },
@@ -596,18 +641,21 @@ export type Database = {
           {
             foreignKeyName: "purchase_orders_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
             referencedRelation: "staff"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "purchase_orders_ingredient_id_fkey"
             columns: ["ingredient_id"]
+            isOneToOne: false
             referencedRelation: "ingredients"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "purchase_orders_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
@@ -678,12 +726,14 @@ export type Database = {
           {
             foreignKeyName: "review_dish_ratings_dish_id_fkey"
             columns: ["dish_id"]
+            isOneToOne: false
             referencedRelation: "dishes"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "review_dish_ratings_review_id_fkey"
             columns: ["review_id"]
+            isOneToOne: false
             referencedRelation: "reviews"
             referencedColumns: ["id"]
           },
@@ -715,6 +765,7 @@ export type Database = {
           {
             foreignKeyName: "review_helpful_votes_review_id_fkey"
             columns: ["review_id"]
+            isOneToOne: false
             referencedRelation: "reviews"
             referencedColumns: ["id"]
           },
@@ -767,12 +818,14 @@ export type Database = {
           {
             foreignKeyName: "reviews_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "reviews_session_id_fkey"
             columns: ["session_id"]
+            isOneToOne: false
             referencedRelation: "table_sessions"
             referencedColumns: ["id"]
           },
@@ -810,6 +863,7 @@ export type Database = {
           {
             foreignKeyName: "session_participants_session_id_fkey"
             columns: ["session_id"]
+            isOneToOne: false
             referencedRelation: "table_sessions"
             referencedColumns: ["id"]
           },
@@ -841,6 +895,7 @@ export type Database = {
           {
             foreignKeyName: "staff_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
@@ -878,12 +933,14 @@ export type Database = {
           {
             foreignKeyName: "table_sessions_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "table_sessions_table_id_fkey"
             columns: ["table_id"]
+            isOneToOne: false
             referencedRelation: "tables"
             referencedColumns: ["id"]
           },
@@ -924,6 +981,7 @@ export type Database = {
           {
             foreignKeyName: "tables_restaurant_id_fkey"
             columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
@@ -970,6 +1028,7 @@ export type Database = {
           {
             foreignKeyName: "user_profiles_genius_tier_id_fkey"
             columns: ["genius_tier_id"]
+            isOneToOne: false
             referencedRelation: "genius_tiers"
             referencedColumns: ["id"]
           },
@@ -1010,12 +1069,14 @@ export type Database = {
           {
             foreignKeyName: "waiter_calls_session_id_fkey"
             columns: ["session_id"]
+            isOneToOne: false
             referencedRelation: "table_sessions"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "waiter_calls_table_id_fkey"
             columns: ["table_id"]
+            isOneToOne: false
             referencedRelation: "tables"
             referencedColumns: ["id"]
           },
@@ -1166,7 +1227,11 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
 } as const
+
