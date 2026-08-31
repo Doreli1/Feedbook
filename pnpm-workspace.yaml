@@ -4,3 +4,10 @@ packages:
 allowBuilds:
   esbuild: true
 shamefullyHoist: true
+overrides:
+  # rollup's native win32 binary (used internally by vite@7's build step) gets
+  # blocked by Windows Smart App Control on this machine, same root cause as
+  # the vite 8 / Rolldown issue that led us to pin vite@7 in the first place.
+  # @rollup/wasm-node is Rollup's own official pure-WASM build, published for
+  # exactly this kind of locked-down environment — no native binary at all.
+  rollup: "npm:@rollup/wasm-node@4.63.1"
