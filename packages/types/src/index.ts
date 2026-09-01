@@ -5,7 +5,7 @@ import type { Tables, TablesInsert, TablesUpdate } from './database.types';
 // Convenience per-table aliases so consumers can write `Restaurant`
 // instead of `Tables<'restaurants'>` everywhere.
 export type Restaurant = Tables<'restaurants'>;
-export type GeniusTier = Tables<'genius_tiers'>;
+export type FeedstarsTier = Tables<'feedstars_tiers'>;
 export type UserProfile = Tables<'user_profiles'>;
 export type Staff = Tables<'staff'>;
 export type Consent = Tables<'consents'>;

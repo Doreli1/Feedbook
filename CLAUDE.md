@@ -26,7 +26,7 @@ Plan §5, Stage 1 gate).
 | Backend | Supabase (Postgres, Auth, Storage, Realtime), Edge Functions in TypeScript/Deno |
 | Critical business logic | PL/pgSQL functions (JIT stock deduction, bill split) — never reimplement these in app code |
 | Payments | Tranzila, Hosted Fields — card data never touches our servers |
-| Hosting | Vercel (Web — project `feedbook-web` created, root `app/apps/web`, no production deployment yet), EAS (Mobile, not yet configured), Supabase Cloud — region **Frankfurt (EU)**, not negotiable |
+| Hosting | Vercel (Web — project `feedbook-web`, root `apps/web`, deployed at https://feedbook-web.vercel.app), EAS (Mobile, not yet configured), Supabase Cloud — region **Frankfurt (EU)**, not negotiable |
 | Full rationale | `../3.Feedbook_Tech_Stack_Document_v4.docx` |
 
 ## Actual directory layout
@@ -100,8 +100,10 @@ endpoint shapes; they're already fully specified.
   Frankfurt, ref `xekiayczikqeypwupvbi`) exists and holds the full schema. An older
   Singapore project (`yqwfsimqqpsognbkbjzk`) is paused, pending manual deletion.
 - **Vercel** — connected (team: `doreli125-7289's projects`, Hobby plan). Project
-  `feedbook-web` exists, linked to this repo with root directory `app/apps/web`. Note:
-  this project is invisible to the Vercel MCP tools here (`get_project`/`list_projects`
+  `feedbook-web` exists, linked to this repo with root directory `apps/web` (not
+  `app/apps/web` — the repo root IS the local `app/` folder, since `git init` ran
+  there, not in `Feedbook/`), deployed at https://feedbook-web.vercel.app. Note: this
+  project is invisible to the Vercel MCP tools here (`get_project`/`list_projects`
   return empty/404 for it even though the dashboard shows it — a real, unresolved
   inconsistency, not a transient one). Manage it via the Vercel dashboard directly
   until that's understood. Upgrade to Pro before production (Hobby is non-commercial).
@@ -115,6 +117,6 @@ endpoint shapes; they're already fully specified.
 | מאושרת כשרות / לא מאושרת כשרות | `restaurants.kosher_status` = `'certified'` / `'not_certified'` |
 | שולחן וירטואלי | `table_sessions` row |
 | חלוקה כללית / חלוקה אישית | `payments.split_type` = `'even'` / `'by_item'` |
-| תוכנית Genius | `genius_tiers`, `user_profiles.genius_tier_id` — **name pending legal review**, see PRD §13.3 |
+| תוכנית Feedstars | `feedstars_tiers`, `user_profiles.feedstars_tier_id` — renamed from "Genius" 2026-09-01 (trademark collision with Booking.com's Genius program), see PRD §13.3 |
 | אי-התאמה | `non_conformances` |
 | הרשמת מסעדה עצמאית | `restaurants.onboarding_status` (`draft`/`pending_review`/`approved`/`rejected`) — approval is a manual step during the pilot, not an endpoint. AFD §3.7, Backend Schema §1.2/§2.4/§10.2/§11.3, API Spec §4.2–4.3 |

@@ -231,7 +231,7 @@ export type Database = {
           },
         ]
       }
-      genius_tiers: {
+      feedstars_tiers: {
         Row: {
           benefits_description: string
           id: number
@@ -318,6 +318,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "menu_categories_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      merchant_agreement_acceptances: {
+        Row: {
+          accepted_at: string
+          agreement_version: string
+          id: string
+          restaurant_id: string
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string
+          agreement_version: string
+          id?: string
+          restaurant_id: string
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string
+          agreement_version?: string
+          id?: string
+          restaurant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_agreement_acceptances_restaurant_id_fkey"
             columns: ["restaurant_id"]
             isOneToOne: false
             referencedRelation: "restaurants"
@@ -665,6 +697,7 @@ export type Database = {
         Row: {
           address: string | null
           created_at: string
+          created_by: string | null
           hours: Json | null
           id: string
           kosher_certificate_uploaded_at: string | null
@@ -672,12 +705,17 @@ export type Database = {
           kosher_status: string
           logo_url: string | null
           name: string
+          onboarding_status: string
           phone: string | null
+          rejection_reason: string | null
+          reviewed_at: string | null
+          submitted_at: string | null
           updated_at: string
         }
         Insert: {
           address?: string | null
           created_at?: string
+          created_by?: string | null
           hours?: Json | null
           id?: string
           kosher_certificate_uploaded_at?: string | null
@@ -685,12 +723,17 @@ export type Database = {
           kosher_status?: string
           logo_url?: string | null
           name: string
+          onboarding_status?: string
           phone?: string | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          submitted_at?: string | null
           updated_at?: string
         }
         Update: {
           address?: string | null
           created_at?: string
+          created_by?: string | null
           hours?: Json | null
           id?: string
           kosher_certificate_uploaded_at?: string | null
@@ -698,7 +741,11 @@ export type Database = {
           kosher_status?: string
           logo_url?: string | null
           name?: string
+          onboarding_status?: string
           phone?: string | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          submitted_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -992,8 +1039,8 @@ export type Database = {
           birthdate: string | null
           created_at: string
           display_name: string
-          genius_activity_score: number
-          genius_tier_id: number | null
+          feedstars_activity_score: number
+          feedstars_tier_id: number | null
           language_preference: string
           nickname: string | null
           profile_photo_url: string | null
@@ -1004,8 +1051,8 @@ export type Database = {
           birthdate?: string | null
           created_at?: string
           display_name: string
-          genius_activity_score?: number
-          genius_tier_id?: number | null
+          feedstars_activity_score?: number
+          feedstars_tier_id?: number | null
           language_preference?: string
           nickname?: string | null
           profile_photo_url?: string | null
@@ -1016,8 +1063,8 @@ export type Database = {
           birthdate?: string | null
           created_at?: string
           display_name?: string
-          genius_activity_score?: number
-          genius_tier_id?: number | null
+          feedstars_activity_score?: number
+          feedstars_tier_id?: number | null
           language_preference?: string
           nickname?: string | null
           profile_photo_url?: string | null
@@ -1026,10 +1073,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "user_profiles_genius_tier_id_fkey"
-            columns: ["genius_tier_id"]
+            foreignKeyName: "user_profiles_feedstars_tier_id_fkey"
+            columns: ["feedstars_tier_id"]
             isOneToOne: false
-            referencedRelation: "genius_tiers"
+            referencedRelation: "feedstars_tiers"
             referencedColumns: ["id"]
           },
         ]
@@ -1098,6 +1145,17 @@ export type Database = {
           below_threshold: boolean
           ingredient_id: string
         }[]
+      }
+      register_restaurant: {
+        Args: {
+          p_address: string
+          p_hours: Json
+          p_kosher_status: string
+          p_name: string
+          p_phone: string
+          p_user_id: string
+        }
+        Returns: string
       }
     }
     Enums: {
