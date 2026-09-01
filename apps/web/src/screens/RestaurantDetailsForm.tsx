@@ -93,7 +93,17 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
   return (
     <div dir="rtl" className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
-        <WizardStepper currentStep={2} />
+        <WizardStepper
+          currentStep={2}
+          onStepClick={(step) => {
+            // Step 1 (הצטרפות) is the sign-in screen itself — once authenticated
+            // there's no separate "step 1 state" to return to, so going back to
+            // it means signing out. Steps 3-7 don't exist yet, so only step 1
+            // is ever clickable from here (WizardStepper only enables steps
+            // before the current one).
+            if (step === 1) void supabase.auth.signOut();
+          }}
+        />
         <h1 className="mb-1 text-xl font-bold text-blue-900">פרטי המסעדה</h1>
         <p className="mb-6 text-sm text-gray-500">
           תודה שהצטרפת! נשמח להכיר את המסעדה שלך — הפרטים נשמרים אוטומטית תוך כדי מילוי.
