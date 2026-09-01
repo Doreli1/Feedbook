@@ -5,6 +5,8 @@ import { supabase } from './supabase';
 export type AuthStatus =
   | 'loading'
   | 'signed-out'
+  | 'password-recovery-challenge'
+  | 'password-recovery'
   | 'needs-enrollment'
   | 'needs-challenge'
   | 'authenticated';
@@ -40,13 +42,35 @@ export function useAuth() {
     }
   }, []);
 
+  // A password-recovery session starts at aal1. Supabase refuses
+  // updateUser({ password }) for an MFA-enrolled account without an aal2
+  // session ("AAL2 session is required to update email or password when
+  // MFA is enabled") — caught by actually following a real reset-email
+  // link through to submission, not by reading the docs. So a recovery
+  // session with enrolled factors must clear an MFA challenge first.
+  const evaluateRecovery = useCallback(async () => {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal && aal.currentLevel !== 'aal2' && aal.nextLevel === 'aal2') {
+      setStatus('password-recovery-challenge');
+    } else {
+      setStatus('password-recovery');
+    }
+  }, []);
+
   useEffect(() => {
     void evaluate();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setSession(newSession);
+        // Deferred: calling other supabase.auth methods synchronously inside
+        // this callback can deadlock on the client's internal auth lock.
+        setTimeout(() => void evaluateRecovery(), 0);
+        return;
+      }
       void evaluate();
     });
     return () => sub.subscription.unsubscribe();
-  }, [evaluate]);
+  }, [evaluate, evaluateRecovery]);
 
-  return { status, session, refresh: evaluate };
+  return { status, session, refresh: evaluate, refreshRecovery: evaluateRecovery };
 }
