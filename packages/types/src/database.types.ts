@@ -920,6 +920,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_active: boolean
           restaurant_id: string
           role: string
           user_id: string
@@ -927,6 +928,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          is_active?: boolean
           restaurant_id: string
           role: string
           user_id: string
@@ -934,6 +936,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          is_active?: boolean
           restaurant_id?: string
           role?: string
           user_id?: string
@@ -1138,6 +1141,7 @@ export type Database = {
         Args: { p_payment_id: string }
         Returns: undefined
       }
+      current_manager_restaurant_ids: { Args: never; Returns: string[] }
       current_staff_restaurant_ids: { Args: never; Returns: string[] }
       deduct_inventory_for_order: {
         Args: { p_order_id: string }
