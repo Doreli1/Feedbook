@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
+import { FeedbookBrand } from '../components/FeedbookBrand';
 
 export function MfaChallenge({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState('');
@@ -43,6 +44,7 @@ export function MfaChallenge({ onDone }: { onDone: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-sm rounded-lg bg-white p-8 shadow-md">
+        <FeedbookBrand className="mb-3" />
         <h1 className="mb-1 text-lg font-bold text-blue-900">Enter your authentication code</h1>
         <p className="mb-4 text-sm text-gray-500">
           Open your authenticator app and enter the current 6-digit code.

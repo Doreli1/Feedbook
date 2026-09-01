@@ -3,3 +3,10 @@
 body {
   margin: 0;
 }
+
+/* Brand wordmark — rounded, heavy-weight geometric sans, same category of
+   feel as the Booking.com wordmark (bold, friendly, rounded terminals).
+   Not the same typeface — just a similarly-styled Google Font. */
+.font-brand {
+  font-family: 'Baloo 2', sans-serif;
+}

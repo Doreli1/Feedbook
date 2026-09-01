@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Restaurant } from '@feedbook/types';
 import { WizardStepper } from '../components/WizardStepper';
+import { FeedbookBrand } from '../components/FeedbookBrand';
 
 type SaveState = 'idle' | 'incomplete' | 'saving' | 'saved' | 'error';
 
@@ -93,6 +94,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
   return (
     <div dir="rtl" className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
+        <FeedbookBrand className="mb-3" />
         {/* This is step 1 of the numbered wizard — nothing precedes it, so
             there's no onStepClick target yet. Going back to sign-in is only
             via the יציאה button below. */}

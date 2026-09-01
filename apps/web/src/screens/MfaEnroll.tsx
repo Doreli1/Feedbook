@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
+import { FeedbookBrand } from '../components/FeedbookBrand';
 
 export function MfaEnroll({ onDone }: { onDone: () => void }) {
   const [qr, setQr] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export function MfaEnroll({ onDone }: { onDone: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-sm rounded-lg bg-white p-8 shadow-md">
+        <FeedbookBrand className="mb-3" />
         <h1 className="mb-1 text-lg font-bold text-blue-900">Set up two-factor authentication</h1>
         <p className="mb-4 text-sm text-gray-500">
           Required for every staff account. Scan this code with an authenticator app (Google

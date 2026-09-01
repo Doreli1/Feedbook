@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
+import { FeedbookBrand } from '../components/FeedbookBrand';
 
 // Shown after the user clicks a "forgot password" link from their email —
 // useAuth() routes here on Supabase's PASSWORD_RECOVERY auth event.
@@ -30,6 +31,7 @@ export function SetNewPassword({ onDone }: { onDone: () => void }) {
   return (
     <div dir="rtl" className="flex min-h-screen items-center justify-center bg-gray-100">
       <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-lg bg-white p-8 shadow-md">
+        <FeedbookBrand className="mb-3" />
         <h1 className="mb-1 text-xl font-bold text-blue-900">בחירת סיסמה חדשה</h1>
         <p className="mb-6 text-sm text-gray-500">בחר/י סיסמה חדשה לחשבון שלך.</p>
 

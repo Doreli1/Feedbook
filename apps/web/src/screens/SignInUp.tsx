@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
+import { FeedbookBrand } from '../components/FeedbookBrand';
 
 type Mode = 'sign-in' | 'sign-up' | 'forgot-password';
 
@@ -59,8 +60,8 @@ export function SignInUp() {
         onSubmit={mode === 'forgot-password' ? handleSendResetLink : handleSubmit}
         className="w-full max-w-sm rounded-lg bg-white p-8 shadow-md"
       >
-        <h1 className="mb-1 text-xl font-bold text-blue-900">Feedbook</h1>
-        <p className="mb-6 text-sm text-gray-500">ניהול מסעדה · Web Admin</p>
+        <FeedbookBrand className="mb-4" />
+        <h1 className="mb-6 text-xl font-bold text-blue-900">ניהול מסעדה</h1>
 
         {mode !== 'forgot-password' && (
           <div className="mb-4 flex gap-2 text-sm">
