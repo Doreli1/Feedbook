@@ -65,11 +65,20 @@ export function MfaChallenge({ onDone }: { onDone: () => void }) {
           <button
             type="submit"
             disabled={code.trim().length !== 6 || busy}
-            className="w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
+            className="mb-3 w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
           >
             {busy ? 'Verifying…' : 'Verify'}
           </button>
         </form>
+
+        {/* Escape route (Nielsen heuristic #3) — wrong account or lost
+            authenticator app, either way the user needs a way back. */}
+        <button
+          onClick={() => void supabase.auth.signOut()}
+          className="w-full rounded border border-gray-300 py-2 text-sm text-gray-500 hover:bg-gray-50"
+        >
+          Sign out and start over
+        </button>
       </div>
     </div>
   );

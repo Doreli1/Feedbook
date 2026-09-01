@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 
 export function MfaEnroll({ onDone }: { onDone: () => void }) {
@@ -8,19 +8,45 @@ export function MfaEnroll({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Guards against a second concurrent enrollment attempt — React 19
+  // StrictMode double-invokes effects in development specifically to catch
+  // exactly this: two overlapping startEnrollment() calls otherwise race on
+  // creating/cleaning up the same TOTP factor.
+  const enrollmentStarted = useRef(false);
 
   useEffect(() => {
-    void (async () => {
-      const { data, error: enrollError } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
-      if (enrollError) {
-        setError(enrollError.message);
-        return;
-      }
-      setQr(data.totp.qr_code);
-      setSecret(data.totp.secret);
-      setFactorId(data.id);
-    })();
+    if (enrollmentStarted.current) return;
+    enrollmentStarted.current = true;
+    void startEnrollment();
   }, []);
+
+  async function startEnrollment() {
+    setError(null);
+
+    // Supabase creates a factor the moment enroll() is called, before it's
+    // verified. If a previous attempt was abandoned mid-way (refresh, back
+    // button, closed tab), that unverified factor is left behind and a plain
+    // enroll() collides with it ("A factor with the friendly name ... already
+    // exists"). Check for and clear any stale unverified factor first, so the
+    // common case (nothing stale) doesn't pay for a request we know will fail.
+    const { data: factors } = await supabase.auth.mfa.listFactors();
+    const stale = (factors?.all ?? []).filter(
+      (f) => f.factor_type === 'totp' && f.status === 'unverified',
+    );
+    for (const f of stale) {
+      await supabase.auth.mfa.unenroll({ factorId: f.id });
+    }
+
+    const { data, error: enrollError } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
+    if (enrollError) {
+      setError(enrollError.message);
+      return;
+    }
+
+    setQr(data.totp.qr_code);
+    setSecret(data.totp.secret);
+    setFactorId(data.id);
+  }
 
   async function handleVerify(e: FormEvent) {
     e.preventDefault();
@@ -80,11 +106,21 @@ export function MfaEnroll({ onDone }: { onDone: () => void }) {
           <button
             type="submit"
             disabled={code.trim().length !== 6 || busy || !factorId}
-            className="w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
+            className="mb-3 w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
           >
             {busy ? 'Verifying…' : 'Verify and continue'}
           </button>
         </form>
+
+        {/* Escape route (Nielsen heuristic #3) — without this, a user stuck on
+            an errored enrollment (wrong account, wants different credentials)
+            has no way back to sign-in. */}
+        <button
+          onClick={() => void supabase.auth.signOut()}
+          className="w-full rounded border border-gray-300 py-2 text-sm text-gray-500 hover:bg-gray-50"
+        >
+          Sign out and start over
+        </button>
       </div>
     </div>
   );
