@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Restaurant } from '@feedbook/types';
+import { WizardStepper } from '../components/WizardStepper';
 
 type SaveState = 'idle' | 'incomplete' | 'saving' | 'saved' | 'error';
 
@@ -92,7 +93,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
   return (
     <div dir="rtl" className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
-        <p className="mb-1 text-xs font-semibold text-blue-700">שלב 2 מתוך 7 · הרשמת מסעדה</p>
+        <WizardStepper currentStep={2} />
         <h1 className="mb-1 text-xl font-bold text-blue-900">פרטי המסעדה</h1>
         <p className="mb-6 text-sm text-gray-500">
           תודה שהצטרפת! נשמח להכיר את המסעדה שלך — הפרטים נשמרים אוטומטית תוך כדי מילוי.
@@ -147,7 +148,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
 
         <button
           onClick={() => void supabase.auth.signOut()}
-          className="w-full rounded border border-gray-300 py-2 text-sm text-gray-500 hover:bg-gray-50"
+          className="w-full rounded border border-red-300 py-2 text-sm text-red-600 hover:bg-red-50"
         >
           יציאה
         </button>
