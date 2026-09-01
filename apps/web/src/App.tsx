@@ -1,5 +1,6 @@
 import { useAuth } from './lib/useAuth';
 import { useOwnRestaurant } from './lib/useOwnRestaurant';
+import { useI18n } from './lib/i18n';
 import { SignInUp } from './screens/SignInUp';
 import { SetNewPassword } from './screens/SetNewPassword';
 import { MfaEnroll } from './screens/MfaEnroll';
@@ -8,9 +9,10 @@ import { RestaurantDetailsForm } from './screens/RestaurantDetailsForm';
 import { Dashboard } from './screens/Dashboard';
 
 function LoadingScreen() {
+  const { t } = useI18n();
   return (
     <main className="flex min-h-screen items-center justify-center">
-      <p className="text-sm text-gray-400">Loading…</p>
+      <p className="text-sm text-gray-400">{t('loading')}</p>
     </main>
   );
 }

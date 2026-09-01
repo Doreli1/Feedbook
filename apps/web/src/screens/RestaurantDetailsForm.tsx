@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import type { Restaurant } from '@feedbook/types';
 import { WizardStepper } from '../components/WizardStepper';
 import { FeedbookBrand } from '../components/FeedbookBrand';
+import { LanguageToggle } from '../components/LanguageToggle';
+import { useI18n } from '../lib/i18n';
 
 type SaveState = 'idle' | 'incomplete' | 'saving' | 'saved' | 'error';
 
@@ -16,6 +18,7 @@ interface Props {
 // AFD §3.7.1 screen 2: "פרטי מסעדה בסיסיים" — name, address, phone, hours,
 // auto-saved as a draft at every step (DoD: no data loss on refresh/disconnect).
 export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props) {
+  const { t } = useI18n();
   const [name, setName] = useState(restaurant?.name ?? '');
   const [address, setAddress] = useState(restaurant?.address ?? '');
   const [phone, setPhone] = useState(restaurant?.phone ?? '');
@@ -69,7 +72,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        setErrorMessage(body?.error?.message ?? 'שמירה נכשלה, ננסה שוב אוטומטית');
+        setErrorMessage(body?.error?.message ?? 'Save failed, will retry automatically');
         setSaveState('error');
         return;
       }
@@ -92,19 +95,20 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
   }
 
   return (
-    <div dir="rtl" className="flex min-h-screen items-center justify-center bg-gray-100">
+    <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
-        <FeedbookBrand className="mb-3" />
+        <div dir="ltr" className="mb-3 flex items-start justify-between">
+          <FeedbookBrand />
+          <LanguageToggle />
+        </div>
         {/* This is step 1 of the numbered wizard — nothing precedes it, so
             there's no onStepClick target yet. Going back to sign-in is only
-            via the יציאה button below. */}
+            via the sign-out button below. */}
         <WizardStepper currentStep={1} />
-        <h1 className="mb-1 text-xl font-bold text-blue-900">פרטי המסעדה</h1>
-        <p className="mb-6 text-sm text-gray-500">
-          תודה שהצטרפת! נשמח להכיר את המסעדה שלך — הפרטים נשמרים אוטומטית תוך כדי מילוי.
-        </p>
+        <h1 className="mb-1 text-xl font-bold text-blue-900">{t('restaurantDetailsTitle')}</h1>
+        <p className="mb-6 text-sm text-gray-500">{t('restaurantDetailsSubtitle')}</p>
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">שם המסעדה</label>
+        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('restaurantName')}</label>
         <input
           type="text"
           value={name}
@@ -112,7 +116,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
           className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">כתובת</label>
+        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('address')}</label>
         <input
           type="text"
           value={address}
@@ -120,7 +124,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
           className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">טלפון</label>
+        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('phone')}</label>
         <input
           type="tel"
           value={phone}
@@ -128,34 +132,31 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
           className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">שעות פעילות</label>
+        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('hours')}</label>
         <input
           type="text"
           value={hours}
           onChange={(e) => setHours(e.target.value)}
-          placeholder="לדוגמה: א'-ה' 09:00-22:00, ו' 09:00-15:00"
+          placeholder={t('hoursPlaceholder')}
           className="mb-4 w-full rounded border border-gray-300 px-3 py-2 text-sm"
         />
 
         <div className="mb-4 min-h-5 text-xs">
-          {saveState === 'incomplete' && (
-            <span className="text-gray-400">יש למלא שם, כתובת וטלפון כדי לשמור</span>
-          )}
-          {saveState === 'saving' && <span className="text-gray-400">שומר…</span>}
-          {saveState === 'saved' && <span className="text-green-600">נשמר כטיוטה ✓</span>}
+          {saveState === 'incomplete' && <span className="text-gray-400">{t('fillRequiredFields')}</span>}
+          {saveState === 'saving' && <span className="text-gray-400">{t('saving')}</span>}
+          {saveState === 'saved' && <span className="text-green-600">{t('savedAsDraft')}</span>}
           {saveState === 'error' && <span className="text-red-600">{errorMessage}</span>}
         </div>
 
         <p className="mb-4 rounded border-l-4 border-blue-300 bg-blue-50 px-3 py-2 text-xs text-gray-600">
-          שלבי ההמשך של ההרשמה (כשרות, תפריט ראשוני, סקירה והגשה) בבנייה — הפרטים שכבר מילאת שמורים
-          ולא ילכו לאיבוד.
+          {t('wizardInProgressNote')}
         </p>
 
         <button
           onClick={() => void supabase.auth.signOut()}
           className="w-full rounded border border-red-300 py-2 text-sm text-red-600 hover:bg-red-50"
         >
-          יציאה
+          {t('signOut')}
         </button>
       </div>
     </div>

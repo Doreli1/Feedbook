@@ -1,8 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { FeedbookBrand } from '../components/FeedbookBrand';
+import { LanguageToggle } from '../components/LanguageToggle';
+import { useI18n } from '../lib/i18n';
 
 export function MfaChallenge({ onDone }: { onDone: () => void }) {
+  const { t } = useI18n();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,11 +47,12 @@ export function MfaChallenge({ onDone }: { onDone: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-sm rounded-lg bg-white p-8 shadow-md">
-        <FeedbookBrand className="mb-3" />
-        <h1 className="mb-1 text-lg font-bold text-blue-900">Enter your authentication code</h1>
-        <p className="mb-4 text-sm text-gray-500">
-          Open your authenticator app and enter the current 6-digit code.
-        </p>
+        <div dir="ltr" className="mb-3 flex items-start justify-between">
+          <FeedbookBrand />
+          <LanguageToggle />
+        </div>
+        <h1 className="mb-1 text-lg font-bold text-blue-900">{t('mfaChallengeTitle')}</h1>
+        <p className="mb-4 text-sm text-gray-500">{t('mfaChallengeSubtitle')}</p>
 
         {error && (
           <div className="mb-3 rounded border-l-4 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -69,7 +73,7 @@ export function MfaChallenge({ onDone }: { onDone: () => void }) {
             disabled={code.trim().length !== 6 || busy}
             className="mb-3 w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
           >
-            {busy ? 'Verifying…' : 'Verify'}
+            {busy ? t('verifying') : t('verify')}
           </button>
         </form>
 
@@ -79,7 +83,7 @@ export function MfaChallenge({ onDone }: { onDone: () => void }) {
           onClick={() => void supabase.auth.signOut()}
           className="w-full rounded border border-gray-300 py-2 text-sm text-gray-500 hover:bg-gray-50"
         >
-          Sign out and start over
+          {t('signOutAndStartOver')}
         </button>
       </div>
     </div>

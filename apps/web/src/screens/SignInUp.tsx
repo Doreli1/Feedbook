@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { FeedbookBrand } from '../components/FeedbookBrand';
+import { LanguageToggle } from '../components/LanguageToggle';
+import { useI18n } from '../lib/i18n';
 
 type Mode = 'sign-in' | 'sign-up' | 'forgot-password';
 
 export function SignInUp() {
+  const { t } = useI18n();
   const [mode, setMode] = useState<Mode>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,7 +33,7 @@ export function SignInUp() {
       if (signUpError) {
         setError(signUpError.message);
       } else {
-        setInfo('החשבון נוצר. אם נדרש אימות מייל, בדוק/י את תיבת הדואר לפני ההתחברות.');
+        setInfo(t('accountCreatedInfo'));
       }
     }
     setBusy(false);
@@ -51,17 +54,20 @@ export function SignInUp() {
       setError(resetError.message);
       return;
     }
-    setInfo('אם קיים חשבון עם כתובת המייל הזו, נשלח אליו קישור לאיפוס הסיסמה.');
+    setInfo(t('resetLinkSentInfo'));
   }
 
   return (
-    <div dir="rtl" className="flex min-h-screen items-center justify-center bg-gray-100">
+    <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <form
         onSubmit={mode === 'forgot-password' ? handleSendResetLink : handleSubmit}
         className="w-full max-w-sm rounded-lg bg-white p-8 shadow-md"
       >
-        <FeedbookBrand className="mb-4" />
-        <h1 className="mb-6 text-xl font-bold text-blue-900">ניהול מסעדה</h1>
+        <div dir="ltr" className="mb-4 flex items-start justify-between">
+          <FeedbookBrand />
+          <LanguageToggle />
+        </div>
+        <h1 className="mb-6 text-xl font-bold text-blue-900">{t('restaurantManagement')}</h1>
 
         {mode !== 'forgot-password' && (
           <div className="mb-4 flex gap-2 text-sm">
@@ -74,7 +80,7 @@ export function SignInUp() {
               }}
               className={`rounded px-3 py-1 ${mode === 'sign-in' ? 'bg-blue-100 font-semibold text-blue-800' : 'text-gray-500'}`}
             >
-              התחברות
+              {t('tabSignIn')}
             </button>
             <button
               type="button"
@@ -85,21 +91,19 @@ export function SignInUp() {
               }}
               className={`rounded px-3 py-1 ${mode === 'sign-up' ? 'bg-blue-100 font-semibold text-blue-800' : 'text-gray-500'}`}
             >
-              יצירת חשבון
+              {t('tabSignUp')}
             </button>
           </div>
         )}
 
         {mode === 'forgot-password' && (
           <>
-            <h2 className="mb-1 text-base font-semibold text-gray-800">שחזור סיסמה</h2>
-            <p className="mb-4 text-sm text-gray-500">
-              הזן/י את כתובת המייל שלך ונשלח קישור לבחירת סיסמה חדשה.
-            </p>
+            <h2 className="mb-1 text-base font-semibold text-gray-800">{t('forgotPasswordTitle')}</h2>
+            <p className="mb-4 text-sm text-gray-500">{t('forgotPasswordSubtitle')}</p>
           </>
         )}
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">אימייל</label>
+        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('email')}</label>
         <input
           type="email"
           value={email}
@@ -109,7 +113,7 @@ export function SignInUp() {
 
         {mode !== 'forgot-password' && (
           <>
-            <label className="mb-1 block text-xs font-semibold text-gray-500">סיסמה</label>
+            <label className="mb-1 block text-xs font-semibold text-gray-500">{t('password')}</label>
             <input
               type="password"
               value={password}
@@ -120,7 +124,7 @@ export function SignInUp() {
         )}
 
         {mode === 'sign-in' && (
-          <div className="mb-4 text-left">
+          <div className="mb-4 text-end">
             <button
               type="button"
               onClick={() => {
@@ -130,7 +134,7 @@ export function SignInUp() {
               }}
               className="text-xs text-blue-700 hover:underline"
             >
-              שכחתי סיסמה
+              {t('forgotPassword')}
             </button>
           </div>
         )}
@@ -154,7 +158,7 @@ export function SignInUp() {
               disabled={!canSendReset}
               className="mb-3 w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
             >
-              {busy ? 'שולח…' : 'שליחת קישור לאיפוס'}
+              {busy ? t('sendingReset') : t('sendResetLink')}
             </button>
             <button
               type="button"
@@ -165,7 +169,7 @@ export function SignInUp() {
               }}
               className="w-full rounded border border-gray-300 py-2 text-sm text-gray-500 hover:bg-gray-50"
             >
-              חזרה להתחברות
+              {t('backToSignIn')}
             </button>
           </>
         ) : (
@@ -174,7 +178,7 @@ export function SignInUp() {
             disabled={!canSubmit}
             className="w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
           >
-            {busy ? 'רגע…' : mode === 'sign-in' ? 'התחברות' : 'יצירת חשבון'}
+            {busy ? t('signInBusy') : mode === 'sign-in' ? t('tabSignIn') : t('tabSignUp')}
           </button>
         )}
       </form>
