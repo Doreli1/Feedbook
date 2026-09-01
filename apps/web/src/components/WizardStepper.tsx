@@ -1,13 +1,9 @@
-// AFD §3.7.1 — the 7 screens of the restaurant self-registration wizard.
-const STEPS = [
-  'הצטרפות',
-  'פרטי מסעדה',
-  'כשרות',
-  'תפריט',
-  'סקירה והסכם',
-  'ממתין לאישור',
-  'החלטה',
-];
+// AFD §3.7.1 — the restaurant self-registration wizard's numbered steps.
+// Screen 1 of the AFD table (הצטרפות/sign-in) is deliberately NOT part of
+// this numbered sequence: it's a precondition, not a step you revisit or
+// track progress through — the only way back to it is the "יציאה" button,
+// which signs out.
+const STEPS = ['פרטי מסעדה', 'כשרות', 'תפריט', 'סקירה והסכם', 'ממתין לאישור', 'החלטה'];
 
 interface Props {
   currentStep: number;
