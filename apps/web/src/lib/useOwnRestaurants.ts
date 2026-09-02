@@ -18,16 +18,26 @@ export function useOwnRestaurants(session: Session | null) {
   // step state to its initial value. Caught by watching the actual UI jump
   // back to screen 1 after an upload, not by reading the code.
   const hasLoadedOnce = useRef(false);
+  // Keyed on the user id (a stable primitive), not the `session` object
+  // itself. useAuth() calls setSession() with a brand-new object on every
+  // Supabase auth event — including the automatic token refresh that fires
+  // when a backgrounded tab regains focus/visibility, for the same signed-in
+  // user. Depending on `session` directly retriggered this effect on every
+  // one of those, which — despite the hasLoadedOnce guard above being reset
+  // right here — forced exactly the remount this hook exists to prevent.
+  // Caught by minimizing and restoring the browser mid-wizard, not by
+  // reading the code: the wizard silently bounced back to step 1.
+  const userId = session?.user.id ?? null;
 
   const refresh = useCallback(async () => {
-    if (!session) {
+    if (!userId) {
       setRestaurants([]);
       setLoading(false);
       hasLoadedOnce.current = true;
       return;
     }
     if (!hasLoadedOnce.current) setLoading(true);
-    const { data, error } = await supabase.from('staff').select('restaurants(*)').eq('user_id', session.user.id);
+    const { data, error } = await supabase.from('staff').select('restaurants(*)').eq('user_id', userId);
 
     if (error || !data) {
       setRestaurants([]);
@@ -36,13 +46,13 @@ export function useOwnRestaurants(session: Session | null) {
     }
     setLoading(false);
     hasLoadedOnce.current = true;
-  }, [session]);
+  }, [userId]);
 
   useEffect(() => {
     hasLoadedOnce.current = false;
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [userId]);
 
   return { loading, restaurants, refresh };
 }
