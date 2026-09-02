@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Dish, MenuCategory, Restaurant } from '@feedbook/types';
 import { WizardStepper } from '../components/WizardStepper';
 import { AppHeader } from '../components/AppHeader';
+import { TrashIcon, PencilIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 
 interface Props {
@@ -132,24 +133,90 @@ function CategoryCard({
 }) {
   const { t } = useI18n();
   const [addingDish, setAddingDish] = useState(false);
+  const [editingDishId, setEditingDishId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(category.name);
+
+  async function commitRename() {
+    const name = renameValue.trim();
+    setRenaming(false);
+    if (!name || name === category.name) {
+      setRenameValue(category.name);
+      return;
+    }
+    await supabase.from('menu_categories').update({ name }).eq('id', category.id);
+    onRefresh();
+  }
 
   return (
     <div className="rounded border border-border bg-surface-2 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-heading text-sm font-semibold text-ink">{category.name}</h2>
-        <button type="button" onClick={onDeleteCategory} className="text-xs text-danger hover:underline">
-          {t('deleteCategory')}
+      <div className="mb-3 flex items-center gap-2">
+        {renaming ? (
+          <input
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={() => void commitRename()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') {
+                setRenameValue(category.name);
+                setRenaming(false);
+              }
+            }}
+            autoFocus
+            className="font-heading flex-1 rounded border border-accent px-2 py-1 text-sm font-semibold text-ink"
+          />
+        ) : (
+          <h2 className="font-heading flex-1 text-sm font-semibold text-ink">{category.name}</h2>
+        )}
+        <button
+          type="button"
+          onClick={() => setRenaming(true)}
+          title={t('editCategory')}
+          aria-label={t('editCategory')}
+          className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
+        >
+          <PencilIcon />
+        </button>
+        <button
+          type="button"
+          onClick={onDeleteCategory}
+          title={t('deleteCategory')}
+          aria-label={t('deleteCategory')}
+          className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
+        >
+          <TrashIcon />
         </button>
       </div>
 
       <div className="space-y-2">
-        {dishes.map((dish) => (
-          <DishRow key={dish.id} dish={dish} onRefresh={onRefresh} />
-        ))}
+        {dishes.map((dish) =>
+          editingDishId === dish.id ? (
+            <DishForm
+              key={dish.id}
+              dish={dish}
+              categoryId={category.id}
+              restaurantId={category.restaurant_id}
+              onDone={() => {
+                setEditingDishId(null);
+                onRefresh();
+              }}
+              onCancel={() => setEditingDishId(null)}
+            />
+          ) : (
+            <DishRow
+              key={dish.id}
+              dish={dish}
+              onRefresh={onRefresh}
+              onEdit={() => setEditingDishId(dish.id)}
+            />
+          ),
+        )}
       </div>
 
       {addingDish ? (
-        <NewDishForm
+        <DishForm
           categoryId={category.id}
           restaurantId={category.restaurant_id}
           onDone={() => {
@@ -171,7 +238,7 @@ function CategoryCard({
   );
 }
 
-function DishRow({ dish, onRefresh }: { dish: Dish; onRefresh: () => void }) {
+function DishRow({ dish, onRefresh, onEdit }: { dish: Dish; onRefresh: () => void; onEdit: () => void }) {
   const { t } = useI18n();
 
   async function handleDelete() {
@@ -191,28 +258,45 @@ function DishRow({ dish, onRefresh }: { dish: Dish; onRefresh: () => void }) {
         <p className="truncate text-xs text-muted-foreground">{dish.description}</p>
       </div>
       <p className="shrink-0 text-sm font-medium text-ink">₪{dish.price}</p>
-      <button type="button" onClick={() => void handleDelete()} className="shrink-0 text-xs text-danger hover:underline">
-        {t('deleteDish')}
+      <button
+        type="button"
+        onClick={onEdit}
+        title={t('editDish')}
+        aria-label={t('editDish')}
+        className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
+      >
+        <PencilIcon className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => void handleDelete()}
+        title={t('deleteDish')}
+        aria-label={t('deleteDish')}
+        className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
+      >
+        <TrashIcon className="h-3.5 w-3.5" />
       </button>
     </div>
   );
 }
 
-function NewDishForm({
+function DishForm({
+  dish,
   categoryId,
   restaurantId,
   onDone,
   onCancel,
 }: {
+  dish?: Dish;
   categoryId: string;
   restaurantId: string;
   onDone: () => void;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
-  const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState(dish?.name ?? '');
+  const [price, setPrice] = useState(dish ? String(dish.price) : '');
+  const [description, setDescription] = useState(dish?.description ?? '');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -226,7 +310,8 @@ function NewDishForm({
     setSaving(true);
     setError(null);
 
-    let photoUrls: string[] = [];
+    // Keep the existing photo(s) untouched unless a new file was chosen.
+    let photoUrls: string[] = dish?.photo_urls ?? [];
     if (photoFile) {
       const ext = photoFile.name.split('.').pop() ?? 'jpg';
       const path = `${restaurantId}/${crypto.randomUUID()}.${ext}`;
@@ -242,17 +327,21 @@ function NewDishForm({
       photoUrls = [publicUrlData.publicUrl];
     }
 
-    const { error: insertError } = await supabase.from('dishes').insert({
+    const payload = {
       restaurant_id: restaurantId,
       category_id: categoryId,
       name: name.trim(),
       description: description.trim() || null,
       price: priceValue,
       photo_urls: photoUrls,
-    });
+    };
+
+    const { error: saveError } = dish
+      ? await supabase.from('dishes').update(payload).eq('id', dish.id)
+      : await supabase.from('dishes').insert(payload);
     setSaving(false);
-    if (insertError) {
-      setError(insertError.message);
+    if (saveError) {
+      setError(saveError.message);
       return;
     }
     onDone();
@@ -298,7 +387,7 @@ function NewDishForm({
           onClick={() => fileInputRef.current?.click()}
           className="rounded border border-border px-2 py-1 text-xs text-accent hover:bg-accent-soft"
         >
-          {photoFile ? photoFile.name : t('dishPhotoUpload')}
+          {photoFile ? photoFile.name : dish?.photo_urls[0] ? t('dishPhotoReplace') : t('dishPhotoUpload')}
         </button>
         <input
           ref={fileInputRef}
