@@ -45,7 +45,10 @@ const translations = {
       'תודה שהצטרפת! נשמח להכיר את המסעדה שלך — הפרטים נשמרים אוטומטית תוך כדי מילוי.',
     restaurantName: 'שם המסעדה',
     address: 'כתובת',
-    phone: 'טלפון',
+    phone: 'טלפון נייד',
+    phonePrefixPlaceholder: 'קידומת',
+    phoneNumberPlaceholder: '1234567',
+    phoneInvalid: 'יש להזין קידומת ומספר בן 7 ספרות',
     hours: 'שעות פעילות',
     hoursPlaceholder: "לדוגמה: א'-ה' 09:00-22:00, ו' 09:00-15:00",
     fillRequiredFields: 'יש למלא שם, כתובת וטלפון כדי לשמור',
@@ -84,7 +87,7 @@ const translations = {
     menuMinimumNotMet: 'נדרשת לפחות קטגוריה אחת עם מנה אחת כדי להמשיך.',
     dishNamePlaceholder: 'שם המנה',
     dishPricePlaceholder: 'מחיר',
-    dishDescriptionPlaceholder: 'תיאור קצר (עד 200 תווים)',
+    dishDescriptionPlaceholder: 'תיאור קצר (עד 400 תווים)',
     dishPhotoUpload: 'העלאת תמונה',
 
     // SetNewPassword
@@ -156,7 +159,10 @@ const translations = {
       "Thanks for joining! We'd love to get to know your restaurant — details are saved automatically as you go.",
     restaurantName: 'Restaurant name',
     address: 'Address',
-    phone: 'Phone',
+    phone: 'Mobile phone',
+    phonePrefixPlaceholder: 'Prefix',
+    phoneNumberPlaceholder: '1234567',
+    phoneInvalid: 'Enter a prefix and a 7-digit number',
     hours: 'Operating hours',
     hoursPlaceholder: 'e.g. Sun-Thu 09:00-22:00, Fri 09:00-15:00',
     fillRequiredFields: 'Fill in name, address and phone to save',
@@ -195,7 +201,7 @@ const translations = {
     menuMinimumNotMet: 'At least one category with one dish is required to continue.',
     dishNamePlaceholder: 'Dish name',
     dishPricePlaceholder: 'Price',
-    dishDescriptionPlaceholder: 'Short description (up to 200 characters)',
+    dishDescriptionPlaceholder: 'Short description (up to 400 characters)',
     dishPhotoUpload: 'Upload photo',
 
     // SetNewPassword

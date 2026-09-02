@@ -15,13 +15,28 @@ interface Props {
   onNext: () => void;
 }
 
+// Israeli mobile prefixes only — this is a mobile-contact field (matches the
+// hours field's own "call the restaurant" purpose), not a general phone
+// field, so landline area codes (02/03/04/etc.) are deliberately excluded.
+const MOBILE_PREFIXES = ['050', '051', '052', '053', '054', '055', '058'];
+
+// Splits a stored "050-1234567" value back into its two input fields when
+// editing an existing draft. Anything that doesn't match (empty, or a value
+// that predates this validation) just leaves both fields blank rather than
+// guessing.
+function parsePhone(stored: string | null): { prefix: string; number: string } {
+  const match = stored?.match(/^(0\d{2})-?(\d{7})$/);
+  return match ? { prefix: match[1] ?? '', number: match[2] ?? '' } : { prefix: '', number: '' };
+}
+
 // AFD §3.7.1 screen 2: "פרטי מסעדה בסיסיים" — name, address, phone, hours,
 // auto-saved as a draft at every step (DoD: no data loss on refresh/disconnect).
 export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState(restaurant?.name ?? '');
   const [address, setAddress] = useState(restaurant?.address ?? '');
-  const [phone, setPhone] = useState(restaurant?.phone ?? '');
+  const [phonePrefix, setPhonePrefix] = useState(() => parsePhone(restaurant?.phone ?? null).prefix);
+  const [phoneNumber, setPhoneNumber] = useState(() => parsePhone(restaurant?.phone ?? null).number);
   const [hours, setHours] = useState(() => {
     const h = restaurant?.hours as { text?: string } | null;
     return h?.text ?? '';
@@ -31,7 +46,9 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
   const restaurantId = restaurant?.id ?? null;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const hasRequiredFields = name.trim() !== '' && address.trim() !== '' && phone.trim() !== '';
+  const isPhoneValid = phonePrefix !== '' && /^\d{7}$/.test(phoneNumber);
+  const phone = isPhoneValid ? `${phonePrefix}-${phoneNumber}` : '';
+  const hasRequiredFields = name.trim() !== '' && address.trim() !== '' && isPhoneValid;
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -122,12 +139,32 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
         />
 
         <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('phone')}</label>
-        <input
-          type="tel"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          className="mb-3 w-full rounded border border-border px-3 py-2 text-sm"
-        />
+        <div dir="ltr" className="mb-1 flex gap-2">
+          <select
+            value={phonePrefix}
+            onChange={(e) => setPhonePrefix(e.target.value)}
+            className="rounded border border-border px-2 py-2 text-sm"
+          >
+            <option value="">{t('phonePrefixPlaceholder')}</option>
+            {MOBILE_PREFIXES.map((prefix) => (
+              <option key={prefix} value={prefix}>
+                {prefix}
+              </option>
+            ))}
+          </select>
+          <input
+            type="tel"
+            inputMode="numeric"
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 7))}
+            placeholder={t('phoneNumberPlaceholder')}
+            className="flex-1 rounded border border-border px-3 py-2 text-sm"
+          />
+        </div>
+        {phoneNumber !== '' && !isPhoneValid && (
+          <p className="mb-3 text-xs text-danger">{t('phoneInvalid')}</p>
+        )}
+        {(phoneNumber === '' || isPhoneValid) && <div className="mb-3" />}
 
         <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('hours')}</label>
         <input

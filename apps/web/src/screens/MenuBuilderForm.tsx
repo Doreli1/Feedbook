@@ -21,6 +21,10 @@ interface Props {
 // itself easy to raise in one place (MIN_DISHES) once decided.
 const MIN_DISHES = 1;
 
+// dishes.description has a matching char_length <= 400 DB constraint
+// (dish_description_length migration) — keep the two in sync.
+const MAX_DESCRIPTION_LENGTH = 400;
+
 export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onNext }: Props) {
   const { t } = useI18n();
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -264,7 +268,10 @@ function NewDishForm({
         placeholder={t('dishNamePlaceholder')}
         className="mb-2 w-full rounded border border-border px-2 py-1.5 text-sm"
       />
-      <div className="mb-2 flex gap-2">
+      <div className="relative mb-2 w-28">
+        <span className="pointer-events-none absolute inset-y-0 start-2 flex items-center text-sm text-muted-foreground">
+          ₪
+        </span>
         <input
           type="number"
           min="0"
@@ -272,16 +279,19 @@ function NewDishForm({
           value={price}
           onChange={(e) => setPrice(e.target.value)}
           placeholder={t('dishPricePlaceholder')}
-          className="w-24 rounded border border-border px-2 py-1.5 text-sm"
-        />
-        <input
-          type="text"
-          value={description}
-          onChange={(e) => setDescription(e.target.value.slice(0, 200))}
-          placeholder={t('dishDescriptionPlaceholder')}
-          className="flex-1 rounded border border-border px-2 py-1.5 text-sm"
+          className="w-full rounded border border-border py-1.5 ps-6 pe-2 text-sm"
         />
       </div>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))}
+        placeholder={t('dishDescriptionPlaceholder')}
+        rows={3}
+        className="mb-1 w-full resize-y rounded border border-border px-2 py-1.5 text-sm"
+      />
+      <p className="mb-2 text-end text-[10px] text-muted-foreground">
+        {description.length}/{MAX_DESCRIPTION_LENGTH}
+      </p>
       <div className="mb-3 flex items-center gap-2">
         <button
           type="button"
