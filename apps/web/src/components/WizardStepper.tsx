@@ -5,14 +5,16 @@ import type { TranslationKey } from '../lib/translations';
 // Screen 1 of the AFD table (הצטרפות/sign-in) is deliberately NOT part of
 // this numbered sequence: it's a precondition, not a step you revisit or
 // track progress through — the only way back to it is the sign-out button,
-// which signs out.
+// which signs out. Likewise "pending review" and "decision notification"
+// are NOT steps here: they aren't actions the owner takes, just states they
+// wait in / get notified about (by email + the Dashboard's own status label,
+// Dashboard.tsx's STATUS_KEYS) after submitting. A progress stepper only
+// tracks steps the user actively completes.
 const STEP_KEYS: TranslationKey[] = [
   'stepRestaurantDetails',
   'stepKosher',
   'stepMenu',
   'stepReview',
-  'stepPendingReview',
-  'stepDecision',
 ];
 
 interface Props {

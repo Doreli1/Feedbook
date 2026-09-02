@@ -92,8 +92,6 @@ const translations = {
     stepKosher: 'כשרות',
     stepMenu: 'תפריט',
     stepReview: 'סקירה והסכם',
-    stepPendingReview: 'ממתין לאישור',
-    stepDecision: 'החלטה',
   },
   en: {
     // Shared
@@ -186,8 +184,6 @@ const translations = {
     stepKosher: 'Kosher Status',
     stepMenu: 'Menu',
     stepReview: 'Review & Agreement',
-    stepPendingReview: 'Pending Review',
-    stepDecision: 'Decision',
   },
 } as const;
 
