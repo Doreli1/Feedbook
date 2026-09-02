@@ -21,18 +21,19 @@ interface Props {
 export function WizardShell({ restaurantName, restaurantAddress, currentStep, onStepClick, children }: Props) {
   return (
     <div className="min-h-screen bg-background">
-      <header className="bg-ink px-4 py-3 sm:px-8">
-        <div dir="ltr" className="mx-auto flex max-w-3xl items-center justify-between gap-4">
-          <FeedbookBrand onDark />
-          <div className="flex min-w-0 items-center gap-3">
-            {restaurantName && (
-              <div dir="auto" className="max-w-[220px] text-right">
-                <p className="truncate text-sm font-medium text-white">{restaurantName}</p>
-                {restaurantAddress && <p className="truncate text-xs text-white/70">{restaurantAddress}</p>}
-              </div>
-            )}
-            <LanguageToggle onDark />
-          </div>
+      {/* Brand and business-context+language sit at the true edges of the bar
+          (not a centered max-width block like the step bar/content below) —
+          same full-bleed placement as Booking's own header. */}
+      <header dir="ltr" className="flex items-center justify-between gap-4 bg-ink px-4 py-3 sm:px-8">
+        <FeedbookBrand onDark />
+        <div className="flex min-w-0 items-center gap-3">
+          {restaurantName && (
+            <div dir="auto" className="max-w-[220px] text-right">
+              <p className="truncate text-sm font-medium text-white">{restaurantName}</p>
+              {restaurantAddress && <p className="truncate text-xs text-white/70">{restaurantAddress}</p>}
+            </div>
+          )}
+          <LanguageToggle onDark />
         </div>
       </header>
 
