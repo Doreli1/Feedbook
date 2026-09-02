@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { WizardShell } from '../components/WizardShell';
+import { TrashIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 import type { Restaurant } from '@feedbook/types';
 
@@ -95,14 +96,16 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated }: Pro
         <p className="mb-3 text-sm font-medium text-ink">{t('kosherQuestion')}</p>
 
         {isCertified ? (
-          <div className="mb-4 rounded border border-success bg-success-soft px-3 py-3 text-sm text-success">
+          <div className="mb-4 flex items-center justify-between gap-2 rounded border border-success bg-success-soft px-3 py-3 text-sm text-success">
             {t('kosherCertified')}
             <button
               onClick={() => void handleRemove()}
               disabled={uploadState === 'uploading'}
-              className="mt-2 block text-xs text-danger hover:underline"
+              title={t('kosherRemove')}
+              aria-label={t('kosherRemove')}
+              className="shrink-0 rounded p-1.5 text-success hover:bg-danger-soft hover:text-danger disabled:opacity-50"
             >
-              {t('kosherRemove')}
+              <TrashIcon className="h-4 w-4" />
             </button>
           </div>
         ) : (

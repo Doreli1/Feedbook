@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Restaurant } from '@feedbook/types';
 import { WizardShell } from '../components/WizardShell';
+import { TrashIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
@@ -268,9 +269,11 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
               <button
                 type="button"
                 onClick={() => removeRule(rule.key)}
-                className="ms-auto text-xs text-danger hover:underline"
+                title={t('hoursRemoveRange')}
+                aria-label={t('hoursRemoveRange')}
+                className="ms-auto shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
               >
-                {t('hoursRemoveRange')}
+                <TrashIcon className="h-3.5 w-3.5" />
               </button>
             </div>
           ))}
