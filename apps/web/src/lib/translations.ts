@@ -6,6 +6,7 @@ const translations = {
     loading: 'טוען…',
     signOut: 'יציאה',
     saving: 'שומר…',
+    back: 'חזרה',
 
     // SignInUp
     restaurantManagement: 'ניהול מסעדה',
@@ -49,8 +50,26 @@ const translations = {
     hoursPlaceholder: "לדוגמה: א'-ה' 09:00-22:00, ו' 09:00-15:00",
     fillRequiredFields: 'יש למלא שם, כתובת וטלפון כדי לשמור',
     savedAsDraft: 'נשמר כטיוטה ✓',
+    continue: 'המשך',
     wizardInProgressNote:
-      'שלבי ההמשך של ההרשמה (כשרות, תפריט ראשוני, סקירה והגשה) בבנייה — הפרטים שכבר מילאת שמורים ולא ילכו לאיבוד.',
+      'שלבי ההמשך של ההרשמה (תפריט ראשוני, סקירה והגשה) בבנייה — הפרטים שכבר מילאת שמורים ולא ילכו לאיבוד.',
+
+    // KosherStatusForm
+    kosherStepTitle: 'סטטוס כשרות',
+    kosherStepSubtitle: 'אופציונלי — ניתן לדלג ולהוסיף מאוחר יותר.',
+    kosherQuestion: 'האם המסעדה מאושרת כשרות?',
+    kosherYesUpload: 'כן, יש לי תעודה',
+    kosherSkip: 'דלג/י בינתיים',
+    kosherUploadLabel: 'העלאת תעודת כשרות (JPG, PNG או PDF, עד 10MB)',
+    kosherUploading: 'מעלה…',
+    kosherCertified: 'המסעדה מאושרת כשרות ✓',
+    kosherRemove: 'הסרת תעודה',
+    kosherFileTooLarge: 'הקובץ גדול מ-10MB',
+    kosherUnsupportedType: 'פורמט קובץ לא נתמך (JPG, PNG או PDF בלבד)',
+    // Fixed disclaimer, Content Guidelines §7.2א — not restaurant-editable,
+    // do not reword.
+    kosherDisclaimer:
+      'המידע מבוסס על הצהרה עצמית של המסעדה ואינו מאומת על ידי Feedbook; לבירור נוסף יש לפנות ישירות לצוות המסעדה או לגורם המפקח.',
 
     // SetNewPassword
     setNewPasswordTitle: 'בחירת סיסמה חדשה',
@@ -81,6 +100,7 @@ const translations = {
     loading: 'Loading…',
     signOut: 'Sign out',
     saving: 'Saving…',
+    back: 'Back',
 
     // SignInUp
     restaurantManagement: 'Restaurant Management',
@@ -124,8 +144,26 @@ const translations = {
     hoursPlaceholder: 'e.g. Sun-Thu 09:00-22:00, Fri 09:00-15:00',
     fillRequiredFields: 'Fill in name, address and phone to save',
     savedAsDraft: 'Saved as draft ✓',
+    continue: 'Continue',
     wizardInProgressNote:
-      "The remaining registration steps (kosher status, initial menu, review & submit) are still being built — what you've filled in is saved and won't be lost.",
+      "The remaining registration steps (initial menu, review & submit) are still being built — what you've filled in is saved and won't be lost.",
+
+    // KosherStatusForm
+    kosherStepTitle: 'Kosher Status',
+    kosherStepSubtitle: "Optional — you can skip this and add it later.",
+    kosherQuestion: 'Is the restaurant kosher-certified?',
+    kosherYesUpload: 'Yes, I have a certificate',
+    kosherSkip: 'Skip for now',
+    kosherUploadLabel: 'Upload kosher certificate (JPG, PNG, or PDF, up to 10MB)',
+    kosherUploading: 'Uploading…',
+    kosherCertified: 'Restaurant is kosher-certified ✓',
+    kosherRemove: 'Remove certificate',
+    kosherFileTooLarge: 'File is larger than 10MB',
+    kosherUnsupportedType: 'Unsupported file format (JPG, PNG, or PDF only)',
+    // Fixed disclaimer, Content Guidelines §7.2א — not restaurant-editable,
+    // do not reword.
+    kosherDisclaimer:
+      'This information is self-declared by the restaurant and is not verified by Feedbook; for further details, please check directly with restaurant staff or the certifying authority.',
 
     // SetNewPassword
     setNewPasswordTitle: 'Choose a new password',
@@ -154,5 +192,18 @@ const translations = {
 } as const;
 
 export type TranslationKey = keyof (typeof translations)['he'];
+
+// Compile-time guarantee that he and en declare exactly the same keys. This
+// is exactly the bug class that caused the original language-inconsistency
+// report: a key present in one language's object but not the other used to
+// silently render `undefined` at runtime instead of failing the build.
+type HeKeys = keyof (typeof translations)['he'];
+type EnKeys = keyof (typeof translations)['en'];
+type MissingInEn = Exclude<HeKeys, EnKeys>;
+type ExtraInEn = Exclude<EnKeys, HeKeys>;
+const _assertNoMissingInEn: [MissingInEn] extends [never] ? true : ['keys missing from en:', MissingInEn] = true;
+const _assertNoExtraInEn: [ExtraInEn] extends [never] ? true : ['extra keys in en not in he:', ExtraInEn] = true;
+void _assertNoMissingInEn;
+void _assertNoExtraInEn;
 
 export default translations;

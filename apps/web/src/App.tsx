@@ -1,11 +1,12 @@
 import { useAuth } from './lib/useAuth';
 import { useOwnRestaurant } from './lib/useOwnRestaurant';
 import { useI18n } from './lib/i18n';
+import { LanguageSelect } from './screens/LanguageSelect';
 import { SignInUp } from './screens/SignInUp';
 import { SetNewPassword } from './screens/SetNewPassword';
 import { MfaEnroll } from './screens/MfaEnroll';
 import { MfaChallenge } from './screens/MfaChallenge';
-import { RestaurantDetailsForm } from './screens/RestaurantDetailsForm';
+import { RegistrationWizard } from './screens/RegistrationWizard';
 import { Dashboard } from './screens/Dashboard';
 
 function LoadingScreen() {
@@ -21,17 +22,20 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
   const { loading, restaurant, refresh } = useOwnRestaurant(session);
 
   if (loading) return <LoadingScreen />;
-  if (!restaurant) {
-    return <RestaurantDetailsForm session={session} restaurant={null} onCreated={refresh} />;
-  }
-  if (restaurant.onboarding_status === 'draft') {
-    return <RestaurantDetailsForm session={session} restaurant={restaurant} onCreated={refresh} />;
+  if (!restaurant || restaurant.onboarding_status === 'draft') {
+    return <RegistrationWizard session={session} restaurant={restaurant} onRefresh={refresh} />;
   }
   return <Dashboard email={session.user.email} restaurant={restaurant} />;
 }
 
 function App() {
+  const { hasChosenLang } = useI18n();
   const { status, session, refresh, refreshRecovery } = useAuth();
+
+  // First-launch language pick takes priority over everything, including
+  // auth state — there's no reasonable default direction to render the
+  // sign-in screen in before the user has told us which language they want.
+  if (!hasChosenLang) return <LanguageSelect />;
 
   if (status === 'loading') return <LoadingScreen />;
   if (status === 'signed-out') return <SignInUp />;

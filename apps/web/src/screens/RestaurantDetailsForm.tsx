@@ -13,11 +13,12 @@ interface Props {
   session: Session;
   restaurant: Restaurant | null;
   onCreated: () => void;
+  onNext: () => void;
 }
 
 // AFD §3.7.1 screen 2: "פרטי מסעדה בסיסיים" — name, address, phone, hours,
 // auto-saved as a draft at every step (DoD: no data loss on refresh/disconnect).
-export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props) {
+export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState(restaurant?.name ?? '');
   const [address, setAddress] = useState(restaurant?.address ?? '');
@@ -148,9 +149,13 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated }: Props)
           {saveState === 'error' && <span className="text-red-600">{errorMessage}</span>}
         </div>
 
-        <p className="mb-4 rounded border-l-4 border-blue-300 bg-blue-50 px-3 py-2 text-xs text-gray-600">
-          {t('wizardInProgressNote')}
-        </p>
+        <button
+          onClick={onNext}
+          disabled={!restaurantId}
+          className="mb-3 w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
+        >
+          {t('continue')}
+        </button>
 
         <button
           onClick={() => void supabase.auth.signOut()}
