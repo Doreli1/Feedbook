@@ -5,6 +5,7 @@ import type { Restaurant } from '@feedbook/types';
 import { WizardStepper } from '../components/WizardStepper';
 import { AppHeader } from '../components/AppHeader';
 import { useI18n } from '../lib/i18n';
+import type { TranslationKey } from '../lib/translations';
 
 type SaveState = 'idle' | 'incomplete' | 'saving' | 'saved' | 'error';
 
@@ -29,6 +30,48 @@ function parsePhone(stored: string | null): { prefix: string; number: string } {
   return match ? { prefix: match[1] ?? '', number: match[2] ?? '' } : { prefix: '', number: '' };
 }
 
+// Sunday=0 .. Saturday=6, matching the Israeli week convention used
+// throughout this project's content (e.g. "א'-ה'" for Sun-Thu).
+const DAY_KEYS: TranslationKey[] = ['daySun', 'dayMon', 'dayTue', 'dayWed', 'dayThu', 'dayFri', 'daySat'];
+
+interface HourRule {
+  key: string; // client-only React list key, never persisted
+  fromDay: string; // '' | '0'..'6'
+  toDay: string;
+  open: string; // 'HH:MM' or ''
+  close: string;
+}
+
+let ruleKeySeq = 0;
+function newRule(): HourRule {
+  ruleKeySeq += 1;
+  return { key: `rule-${ruleKeySeq}`, fromDay: '', toDay: '', open: '', close: '' };
+}
+
+interface StoredHourRule {
+  fromDay: number;
+  toDay: number;
+  open: string;
+  close: string;
+}
+
+// restaurant.hours is jsonb; the shape is our own convention, not a DB
+// constraint. An old value from before this structured picker existed
+// (the free-text {text} shape) has none of these fields — parses to no
+// rules rather than guessing at a conversion.
+function parseHours(stored: unknown): HourRule[] {
+  const rules = (stored as { rules?: StoredHourRule[] } | null)?.rules;
+  if (!rules?.length) return [];
+  return rules.map((r) => {
+    ruleKeySeq += 1;
+    return { key: `rule-${ruleKeySeq}`, fromDay: String(r.fromDay), toDay: String(r.toDay), open: r.open, close: r.close };
+  });
+}
+
+function isRuleComplete(rule: HourRule): boolean {
+  return rule.fromDay !== '' && rule.toDay !== '' && rule.open !== '' && rule.close !== '';
+}
+
 // AFD §3.7.1 screen 2: "פרטי מסעדה בסיסיים" — name, address, phone, hours,
 // auto-saved as a draft at every step (DoD: no data loss on refresh/disconnect).
 export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }: Props) {
@@ -37,10 +80,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
   const [address, setAddress] = useState(restaurant?.address ?? '');
   const [phonePrefix, setPhonePrefix] = useState(() => parsePhone(restaurant?.phone ?? null).prefix);
   const [phoneNumber, setPhoneNumber] = useState(() => parsePhone(restaurant?.phone ?? null).number);
-  const [hours, setHours] = useState(() => {
-    const h = restaurant?.hours as { text?: string } | null;
-    return h?.text ?? '';
-  });
+  const [hourRules, setHourRules] = useState<HourRule[]>(() => parseHours(restaurant?.hours ?? null));
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const restaurantId = restaurant?.id ?? null;
@@ -49,6 +89,13 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
   const isPhoneValid = phonePrefix !== '' && /^\d{7}$/.test(phoneNumber);
   const phone = isPhoneValid ? `${phonePrefix}-${phoneNumber}` : '';
   const hasRequiredFields = name.trim() !== '' && address.trim() !== '' && isPhoneValid;
+
+  const completeRules = hourRules.filter(isRuleComplete);
+  const dayLabel = (dayIndex: string) => t(DAY_KEYS[Number(dayIndex)] ?? 'daySun');
+  const formattedHours = completeRules.map((r) => {
+    const days = r.fromDay === r.toDay ? dayLabel(r.fromDay) : `${dayLabel(r.fromDay)}-${dayLabel(r.toDay)}`;
+    return `${days} ${r.open}-${r.close}`;
+  });
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -66,11 +113,28 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, address, phone, hours]);
+  }, [name, address, phone, hourRules]);
+
+  function updateRule(key: string, patch: Partial<HourRule>) {
+    setHourRules((rules) => rules.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  function removeRule(key: string) {
+    setHourRules((rules) => rules.filter((r) => r.key !== key));
+  }
 
   async function save() {
     setSaveState('saving');
     setErrorMessage(null);
+
+    const hours = {
+      rules: completeRules.map((r) => ({
+        fromDay: Number(r.fromDay),
+        toDay: Number(r.toDay),
+        open: r.open,
+        close: r.close,
+      })),
+    };
 
     if (!restaurantId) {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/register-restaurant`, {
@@ -79,13 +143,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
           Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          name,
-          address,
-          phone,
-          hours: { text: hours },
-          kosher_status: 'not_certified',
-        }),
+        body: JSON.stringify({ name, address, phone, hours, kosher_status: 'not_certified' }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
@@ -98,10 +156,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
       return;
     }
 
-    const { error } = await supabase
-      .from('restaurants')
-      .update({ name, address, phone, hours: { text: hours } })
-      .eq('id', restaurantId);
+    const { error } = await supabase.from('restaurants').update({ name, address, phone, hours }).eq('id', restaurantId);
 
     if (error) {
       setErrorMessage(error.message);
@@ -112,7 +167,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="flex min-h-screen items-center justify-center bg-background py-10">
       <div className="card w-full max-w-md p-8">
         <AppHeader restaurantName={restaurant?.name} restaurantAddress={restaurant?.address ?? undefined} />
         {/* This is step 1 of the numbered wizard — nothing precedes it, so
@@ -167,13 +222,71 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
         {(phoneNumber === '' || isPhoneValid) && <div className="mb-3" />}
 
         <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('hours')}</label>
-        <input
-          type="text"
-          value={hours}
-          onChange={(e) => setHours(e.target.value)}
-          placeholder={t('hoursPlaceholder')}
-          className="mb-4 w-full rounded border border-border px-3 py-2 text-sm"
-        />
+        <div className="mb-2 space-y-2">
+          {hourRules.map((rule) => (
+            <div key={rule.key} className="flex flex-wrap items-center gap-1.5 rounded border border-border bg-surface-2 p-2">
+              <span className="text-xs text-muted-foreground">{t('hoursDaysFrom')}</span>
+              <select
+                value={rule.fromDay}
+                onChange={(e) => updateRule(rule.key, { fromDay: e.target.value })}
+                className="rounded border border-border px-1.5 py-1 text-xs"
+              >
+                <option value="" />
+                {DAY_KEYS.map((key, i) => (
+                  <option key={key} value={i}>
+                    {t(key)}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-muted-foreground">{t('hoursDaysTo')}</span>
+              <select
+                value={rule.toDay}
+                onChange={(e) => updateRule(rule.key, { toDay: e.target.value })}
+                className="rounded border border-border px-1.5 py-1 text-xs"
+              >
+                <option value="" />
+                {DAY_KEYS.map((key, i) => (
+                  <option key={key} value={i}>
+                    {t(key)}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="time"
+                value={rule.open}
+                onChange={(e) => updateRule(rule.key, { open: e.target.value })}
+                className="rounded border border-border px-1.5 py-1 text-xs"
+              />
+              <span className="text-xs text-muted-foreground">{t('hoursDaysTo')}</span>
+              <input
+                type="time"
+                value={rule.close}
+                onChange={(e) => updateRule(rule.key, { close: e.target.value })}
+                className="rounded border border-border px-1.5 py-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => removeRule(rule.key)}
+                className="ms-auto text-xs text-danger hover:underline"
+              >
+                {t('hoursRemoveRange')}
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => setHourRules((rules) => [...rules, newRule()])}
+          className="mb-3 w-full rounded border border-dashed border-border-strong py-1.5 text-xs text-accent hover:bg-accent-soft"
+        >
+          {t('hoursAddRange')}
+        </button>
+
+        {formattedHours.length > 0 && (
+          <p dir="auto" className="mb-4 rounded bg-accent-soft px-3 py-2 text-xs text-ink-soft">
+            {formattedHours.join(', ')}
+          </p>
+        )}
 
         <div className="mb-4 min-h-5 text-xs">
           {saveState === 'incomplete' && <span className="text-muted-foreground">{t('fillRequiredFields')}</span>}
