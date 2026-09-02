@@ -53,14 +53,25 @@ export function WizardStepper({ currentStep, onStepClick, activeSubStep, onSubSt
         const clickable = !isCurrent && !!onStepClick;
 
         if (index === SETUP_STEP_INDEX && isCurrent && activeSubStep) {
+          // Booking-style: only the parent label shows text; the two
+          // sub-bars underneath are plain colored ticks (title/aria-label
+          // still carry the name for hover tooltips and screen readers,
+          // just nothing painted on the tick itself).
           return (
-            <div key={key} className="flex flex-1 gap-1.5">
-              <SubSegment label={t('stepMenu')} active={activeSubStep === 'menu'} onClick={() => onSubStepClick?.('menu')} />
-              <SubSegment
-                label={t('stepSeating')}
-                active={activeSubStep === 'seating'}
-                onClick={() => onSubStepClick?.('seating')}
-              />
+            <div key={key} className="flex-1">
+              <span className="mb-2 block truncate text-center text-xs font-medium text-ink sm:text-sm">{t(key)}</span>
+              <div className="flex gap-1.5">
+                <SubSegment
+                  label={t('stepMenu')}
+                  active={activeSubStep === 'menu'}
+                  onClick={() => onSubStepClick?.('menu')}
+                />
+                <SubSegment
+                  label={t('stepSeating')}
+                  active={activeSubStep === 'seating'}
+                  onClick={() => onSubStepClick?.('seating')}
+                />
+              </div>
             </div>
           );
         }
@@ -93,17 +104,19 @@ export function WizardStepper({ currentStep, onStepClick, activeSubStep, onSubSt
   );
 }
 
-// One half of the split "הגדרת המסעדה" segment — same visual language as a
-// full segment (label above a bar), just narrower and always clickable
-// (switching between menu/seating isn't a one-way completion gate the way
-// the parent steps are, so there's no separate "done" state to show here).
+// One half of the split "הגדרת המסעדה" segment — a plain colored tick, no
+// caption of its own (the one parent label above covers both), matching
+// Booking's own split-bar-under-one-title look. `label` still becomes the
+// button's accessible name (title + aria-label) for a hover tooltip and
+// screen readers, even though nothing is painted on the tick itself.
 function SubSegment({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="flex-1 text-center">
-      <span className={`mb-2 block truncate text-xs font-medium sm:text-sm ${active ? 'text-ink' : 'text-muted-foreground hover:text-accent'}`}>
-        {label}
-      </span>
-      <div className={`h-1.5 rounded-full ${active ? 'bg-accent' : 'bg-surface-2 hover:bg-accent/40'}`} />
-    </button>
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={`h-1.5 flex-1 rounded-full ${active ? 'bg-accent' : 'bg-surface-2 hover:bg-accent/40'}`}
+    />
   );
 }

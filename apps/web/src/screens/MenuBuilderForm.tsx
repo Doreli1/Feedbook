@@ -86,7 +86,7 @@ export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onN
       onStepClick={onStepClick && handleStepClick}
     >
       <div className="card p-8">
-        <h1 className="mb-1 text-xl font-bold text-ink">{t('stepRestaurantSetup')}</h1>
+        <h1 className="mb-1 text-xl font-bold text-ink">{t('menuSetupTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('menuStepSubtitle')}</p>
 
         {error && (

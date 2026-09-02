@@ -85,7 +85,8 @@ const translations = {
     kosherDisclaimer:
       'המידע מבוסס על הצהרה עצמית של המסעדה ואינו מאומת על ידי Feedbook; לבירור נוסף יש לפנות ישירות לצוות המסעדה או לגורם המפקח.',
 
-    // MenuBuilderForm + TableManagerForm (share the "הגדרת המסעדה" parent step)
+    // MenuBuilderForm + TableManagerForm (sub-steps of the "הגדרת המסעדה" parent step)
+    menuSetupTitle: 'הגדרת תפריט',
     menuStepSubtitle: 'הוסיפו קטגוריה אחת לפחות ומנה אחת לפחות כדי להמשיך — אפשר להרחיב את התפריט בכל שלב מאוחר יותר.',
     categoryNamePlaceholder: 'שם קטגוריה (למשל: מנות עיקריות)',
     addCategory: 'הוספת קטגוריה',
@@ -103,7 +104,8 @@ const translations = {
     dishPhotoReplace: 'החלפת תמונה',
 
     // TableManagerForm
-    tableStepSubtitle: 'הגדירו את מפת השולחנות של המסעדה — קיבולת ואזור עישון לכל שולחן. אופציונלי, ניתן להוסיף גם מאוחר יותר.',
+    tableSetupTitle: 'הגדרת הושבות',
+    tableStepSubtitle: 'הגדירו את מפת השולחנות של המסעדה — קיבולת, אזור עישון ומתחם סגור/פתוח לכל שולחן. אופציונלי, ניתן להוסיף גם מאוחר יותר.',
     addTable: '+ הוספת שולחן',
     editTable: 'עריכת שולחן',
     deleteTable: 'מחיקת שולחן',
@@ -113,9 +115,12 @@ const translations = {
     tableCapacityLabel: 'קיבולת',
     tableSmokingYes: 'מעשנים',
     tableSmokingNo: 'לא מעשנים',
+    tableIndoor: 'מתחם סגור',
+    tableOutdoor: 'מתחם פתוח',
     tableNumberPlaceholder: 'מספר שולחן',
     tableCapacityPlaceholder: 'קיבולת',
     tableSmokingCheckbox: 'אזור מעשנים',
+    tableOutdoorCheckbox: 'מתחם פתוח (מרפסת / חצר)',
 
     // SetNewPassword
     setNewPasswordTitle: 'בחירת סיסמה חדשה',
@@ -233,7 +238,8 @@ const translations = {
     kosherDisclaimer:
       'This information is self-declared by the restaurant and is not verified by Feedbook; for further details, please check directly with restaurant staff or the certifying authority.',
 
-    // MenuBuilderForm + TableManagerForm (share the "Restaurant Setup" parent step)
+    // MenuBuilderForm + TableManagerForm (sub-steps of the "Restaurant Setup" parent step)
+    menuSetupTitle: 'Menu Setup',
     menuStepSubtitle: 'Add at least one category and one dish to continue — you can expand the menu at any later stage.',
     categoryNamePlaceholder: 'Category name (e.g. Main Courses)',
     addCategory: 'Add category',
@@ -251,7 +257,8 @@ const translations = {
     dishPhotoReplace: 'Replace photo',
 
     // TableManagerForm
-    tableStepSubtitle: "Set up the restaurant's table map — capacity and smoking area for each table. Optional, can be added later too.",
+    tableSetupTitle: 'Seating Setup',
+    tableStepSubtitle: "Set up the restaurant's table map — capacity, smoking area, and indoor/outdoor for each table. Optional, can be added later too.",
     addTable: '+ Add table',
     editTable: 'Edit table',
     deleteTable: 'Delete table',
@@ -261,9 +268,12 @@ const translations = {
     tableCapacityLabel: 'Capacity',
     tableSmokingYes: 'Smoking',
     tableSmokingNo: 'Non-smoking',
+    tableIndoor: 'Indoor',
+    tableOutdoor: 'Outdoor',
     tableNumberPlaceholder: 'Table number',
     tableCapacityPlaceholder: 'Capacity',
     tableSmokingCheckbox: 'Smoking area',
+    tableOutdoorCheckbox: 'Outdoor area (terrace / courtyard)',
 
     // SetNewPassword
     setNewPasswordTitle: 'Choose a new password',

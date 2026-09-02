@@ -1001,6 +1001,7 @@ export type Database = {
           capacity: number
           created_at: string
           id: string
+          is_outdoor: boolean
           qr_code_token: string
           restaurant_id: string
           smoking_allowed: boolean
@@ -1011,6 +1012,7 @@ export type Database = {
           capacity: number
           created_at?: string
           id?: string
+          is_outdoor?: boolean
           qr_code_token: string
           restaurant_id: string
           smoking_allowed?: boolean
@@ -1021,6 +1023,7 @@ export type Database = {
           capacity?: number
           created_at?: string
           id?: string
+          is_outdoor?: boolean
           qr_code_token?: string
           restaurant_id?: string
           smoking_allowed?: boolean

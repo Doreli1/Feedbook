@@ -54,7 +54,7 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
       onStepClick={onStepClick}
     >
       <div className="card p-8">
-        <h1 className="mb-1 text-xl font-bold text-ink">{t('stepRestaurantSetup')}</h1>
+        <h1 className="mb-1 text-xl font-bold text-ink">{t('tableSetupTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('tableStepSubtitle')}</p>
 
         {error && (
@@ -128,7 +128,8 @@ function TableRow({ table, onEdit, onDelete }: { table: RestaurantTable; onEdit:
           {t('tableNumberLabel')} {table.table_number}
         </p>
         <p className="truncate text-xs text-muted-foreground">
-          {t('tableCapacityLabel')}: {table.capacity} · {table.smoking_allowed ? t('tableSmokingYes') : t('tableSmokingNo')}
+          {t('tableCapacityLabel')}: {table.capacity} · {table.smoking_allowed ? t('tableSmokingYes') : t('tableSmokingNo')} ·{' '}
+          {table.is_outdoor ? t('tableOutdoor') : t('tableIndoor')}
         </p>
       </div>
       <button
@@ -168,6 +169,7 @@ function TableForm({
   const [tableNumber, setTableNumber] = useState(table?.table_number ?? '');
   const [capacity, setCapacity] = useState(table ? String(table.capacity) : '');
   const [smokingAllowed, setSmokingAllowed] = useState(table?.smoking_allowed ?? false);
+  const [isOutdoor, setIsOutdoor] = useState(table?.is_outdoor ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -182,13 +184,19 @@ function TableForm({
     const { error: saveError } = table
       ? await supabase
           .from('tables')
-          .update({ table_number: tableNumber.trim(), capacity: capacityValue, smoking_allowed: smokingAllowed })
+          .update({
+            table_number: tableNumber.trim(),
+            capacity: capacityValue,
+            smoking_allowed: smokingAllowed,
+            is_outdoor: isOutdoor,
+          })
           .eq('id', table.id)
       : await supabase.from('tables').insert({
           restaurant_id: restaurantId,
           table_number: tableNumber.trim(),
           capacity: capacityValue,
           smoking_allowed: smokingAllowed,
+          is_outdoor: isOutdoor,
           qr_code_token: crypto.randomUUID(),
         });
     setSaving(false);
@@ -220,7 +228,7 @@ function TableForm({
           className="w-24 rounded border border-border px-2 py-1.5 text-sm"
         />
       </div>
-      <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+      <label className="mb-2 flex items-center gap-2 text-sm text-ink">
         <input
           type="checkbox"
           checked={smokingAllowed}
@@ -228,6 +236,15 @@ function TableForm({
           className="h-4 w-4 rounded border-border"
         />
         {t('tableSmokingCheckbox')}
+      </label>
+      <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          checked={isOutdoor}
+          onChange={(e) => setIsOutdoor(e.target.checked)}
+          className="h-4 w-4 rounded border-border"
+        />
+        {t('tableOutdoorCheckbox')}
       </label>
       <div className="flex gap-2">
         <button
