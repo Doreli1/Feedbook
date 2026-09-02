@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Dish, MenuCategory, Restaurant } from '@feedbook/types';
 import { WizardShell } from '../components/WizardShell';
+import { SubStepTabs } from '../components/SubStepTabs';
 import { TrashIcon, PencilIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 
@@ -11,6 +12,7 @@ interface Props {
   dishes: Dish[];
   onRefresh: () => void;
   onNext: () => void;
+  onSeating: () => void;
 }
 
 // AFD §3.7.1 screen 4: "בניית תפריט ראשוני" — at least one category and a
@@ -25,7 +27,7 @@ const MIN_DISHES = 1;
 // (dish_description_length migration) — keep the two in sync.
 const MAX_DESCRIPTION_LENGTH = 400;
 
-export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onNext }: Props) {
+export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onNext, onSeating }: Props) {
   const { t } = useI18n();
   const [newCategoryName, setNewCategoryName] = useState('');
   const [addingCategory, setAddingCategory] = useState(false);
@@ -63,8 +65,10 @@ export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onN
   return (
     <WizardShell restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} currentStep={3}>
       <div className="card p-8">
-        <h1 className="mb-1 text-xl font-bold text-ink">{t('menuStepTitle')}</h1>
-        <p className="mb-6 text-sm text-muted-foreground">{t('menuStepSubtitle')}</p>
+        <h1 className="mb-1 text-xl font-bold text-ink">{t('stepRestaurantSetup')}</h1>
+        <p className="mb-4 text-sm text-muted-foreground">{t('menuStepSubtitle')}</p>
+
+        <SubStepTabs active="menu" onMenu={() => {}} onSeating={onSeating} />
 
         {error && (
           <div className="mb-4 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">

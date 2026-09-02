@@ -4,9 +4,11 @@ import type { Restaurant } from '@feedbook/types';
 import { RestaurantDetailsForm } from './RestaurantDetailsForm';
 import { KosherStatusForm } from './KosherStatusForm';
 import { MenuBuilderForm } from './MenuBuilderForm';
+import { TableManagerForm } from './TableManagerForm';
 import { WizardShell } from '../components/WizardShell';
 import { useI18n } from '../lib/i18n';
 import { useMenu } from '../lib/useMenu';
+import { useTables } from '../lib/useTables';
 import { supabase } from '../lib/supabase';
 
 interface Props {
@@ -20,18 +22,23 @@ interface Props {
   onCreated?: (id: string) => void;
 }
 
-// AFD §3.7.1 — screens 1 (פרטי מסעדה), 2 (כשרות) and 4 (תפריט) of the
-// numbered wizard are built; pricing/agreement/review don't exist yet.
-// `step` is local component state, not persisted server-side — returning
-// users always re-land on step 1 with their data already filled in and
-// click through again, which loses no data (AFD §3.7.2 DoD), just a couple
-// of clicks.
-type Step = 1 | 2 | 3 | 'more-to-come';
+// AFD §3.7.1 — screens 1 (פרטי מסעדה), 2 (כשרות), and "הגדרת המסעדה" (תפריט
+// + הושבה, steps 3-4 here) of the numbered wizard are built; pricing,
+// agreement, and review don't exist yet. `step` is local component state,
+// not persisted server-side — returning users always re-land on step 1 with
+// their data already filled in and click through again, which loses no
+// data (AFD §3.7.2 DoD), just a couple of clicks.
+//
+// 3 and 4 are sub-steps of the SAME parent stepper segment
+// ("stepRestaurantSetup") — see WizardStepper's STEP_KEYS comment.
+type Step = 1 | 2 | 3 | 4 | 'more-to-come';
 
 export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }: Props) {
   const { t } = useI18n();
   const [step, setStep] = useState<Step>(1);
-  const { categories, dishes, refresh: refreshMenu } = useMenu(step === 3 ? restaurant?.id : undefined);
+  const needsMenu = step === 3 || step === 4;
+  const { categories, dishes, refresh: refreshMenu } = useMenu(needsMenu ? restaurant?.id : undefined);
+  const { tables, refresh: refreshTables } = useTables(step === 4 ? restaurant?.id : undefined);
 
   if (step === 1 || !restaurant) {
     return (
@@ -65,6 +72,19 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
         categories={categories}
         dishes={dishes}
         onRefresh={() => void refreshMenu()}
+        onNext={() => setStep(4)}
+        onSeating={() => setStep(4)}
+      />
+    );
+  }
+
+  if (step === 4) {
+    return (
+      <TableManagerForm
+        restaurant={restaurant}
+        tables={tables}
+        onRefresh={() => void refreshTables()}
+        onBack={() => setStep(3)}
         onNext={() => setStep('more-to-come')}
       />
     );
@@ -77,7 +97,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
           {t('wizardInProgressNote')}
         </p>
         <button
-          onClick={() => setStep(3)}
+          onClick={() => setStep(4)}
           className="mb-3 w-full rounded border border-border py-2 text-sm text-muted-foreground hover:bg-surface-2"
         >
           {t('back')}

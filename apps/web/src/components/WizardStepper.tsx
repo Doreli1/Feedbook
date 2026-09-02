@@ -11,10 +11,15 @@ import { CheckIcon } from './Icons';
 // wait in / get notified about (by email + the Dashboard's own status label,
 // Dashboard.tsx's STATUS_KEYS) after submitting. A progress stepper only
 // tracks steps the user actively completes.
+//
+// stepRestaurantSetup is a parent step covering TWO sub-steps (menu,
+// seating/tables) — RegistrationWizard's internal step numbers 3 and 4 both
+// map to this same parent segment (index 3 here); SubStepTabs, rendered
+// inside each of those two screens, is what actually distinguishes them.
 const STEP_KEYS: TranslationKey[] = [
   'stepRestaurantDetails',
   'stepKosher',
-  'stepMenu',
+  'stepRestaurantSetup',
   'stepReview',
 ];
 

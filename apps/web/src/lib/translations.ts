@@ -85,8 +85,7 @@ const translations = {
     kosherDisclaimer:
       'המידע מבוסס על הצהרה עצמית של המסעדה ואינו מאומת על ידי Feedbook; לבירור נוסף יש לפנות ישירות לצוות המסעדה או לגורם המפקח.',
 
-    // MenuBuilderForm
-    menuStepTitle: 'בניית תפריט ראשוני',
+    // MenuBuilderForm + TableManagerForm (share the "הגדרת המסעדה" parent step)
     menuStepSubtitle: 'הוסיפו קטגוריה אחת לפחות ומנה אחת לפחות כדי להמשיך — אפשר להרחיב את התפריט בכל שלב מאוחר יותר.',
     categoryNamePlaceholder: 'שם קטגוריה (למשל: מנות עיקריות)',
     addCategory: 'הוספת קטגוריה',
@@ -103,6 +102,21 @@ const translations = {
     dishPhotoUpload: 'העלאת תמונה',
     dishPhotoReplace: 'החלפת תמונה',
 
+    // TableManagerForm
+    tableStepSubtitle: 'הגדירו את מפת השולחנות של המסעדה — קיבולת ואזור עישון לכל שולחן. אופציונלי, ניתן להוסיף גם מאוחר יותר.',
+    addTable: '+ הוספת שולחן',
+    editTable: 'עריכת שולחן',
+    deleteTable: 'מחיקת שולחן',
+    saveTable: 'שמירת שולחן',
+    tableSkip: 'דלג/י בינתיים',
+    tableNumberLabel: 'שולחן',
+    tableCapacityLabel: 'קיבולת',
+    tableSmokingYes: 'מעשנים',
+    tableSmokingNo: 'לא מעשנים',
+    tableNumberPlaceholder: 'מספר שולחן',
+    tableCapacityPlaceholder: 'קיבולת',
+    tableSmokingCheckbox: 'אזור מעשנים',
+
     // SetNewPassword
     setNewPasswordTitle: 'בחירת סיסמה חדשה',
     setNewPasswordSubtitle: 'בחר/י סיסמה חדשה לחשבון שלך.',
@@ -118,14 +132,20 @@ const translations = {
     statusApproved: 'מאושר',
     statusRejected: 'נדחה',
     dashboardComingSoon: 'ניהול תפריטים, שולחנות והזמנות עדיין בבנייה — יתווספו כאן בהמשך.',
+    editRestaurantDetails: 'עריכת פרטי מסעדה',
+    saveAndReturnToDashboard: 'שמירה וחזרה',
 
     // AppHeader
     addRestaurant: '+ הוספת מסעדה',
 
-    // WizardStepper
+    // WizardStepper — stepRestaurantSetup is the parent step's own label
+    // (also used as the h1 on both its sub-steps); stepMenu/stepSeating
+    // label the two SubStepTabs within it, not separate parent segments.
     stepRestaurantDetails: 'פרטי מסעדה',
     stepKosher: 'כשרות',
+    stepRestaurantSetup: 'הגדרת המסעדה',
     stepMenu: 'תפריט',
+    stepSeating: 'הושבה',
     stepReview: 'סקירה והסכם',
   },
   en: {
@@ -212,8 +232,7 @@ const translations = {
     kosherDisclaimer:
       'This information is self-declared by the restaurant and is not verified by Feedbook; for further details, please check directly with restaurant staff or the certifying authority.',
 
-    // MenuBuilderForm
-    menuStepTitle: 'Build Your Initial Menu',
+    // MenuBuilderForm + TableManagerForm (share the "Restaurant Setup" parent step)
     menuStepSubtitle: 'Add at least one category and one dish to continue — you can expand the menu at any later stage.',
     categoryNamePlaceholder: 'Category name (e.g. Main Courses)',
     addCategory: 'Add category',
@@ -230,6 +249,21 @@ const translations = {
     dishPhotoUpload: 'Upload photo',
     dishPhotoReplace: 'Replace photo',
 
+    // TableManagerForm
+    tableStepSubtitle: "Set up the restaurant's table map — capacity and smoking area for each table. Optional, can be added later too.",
+    addTable: '+ Add table',
+    editTable: 'Edit table',
+    deleteTable: 'Delete table',
+    saveTable: 'Save table',
+    tableSkip: 'Skip for now',
+    tableNumberLabel: 'Table',
+    tableCapacityLabel: 'Capacity',
+    tableSmokingYes: 'Smoking',
+    tableSmokingNo: 'Non-smoking',
+    tableNumberPlaceholder: 'Table number',
+    tableCapacityPlaceholder: 'Capacity',
+    tableSmokingCheckbox: 'Smoking area',
+
     // SetNewPassword
     setNewPasswordTitle: 'Choose a new password',
     setNewPasswordSubtitle: 'Choose a new password for your account.',
@@ -245,6 +279,8 @@ const translations = {
     statusApproved: 'Approved',
     statusRejected: 'Rejected',
     dashboardComingSoon: 'Menu, table, and order management are still being built — they will be added here soon.',
+    editRestaurantDetails: 'Edit restaurant details',
+    saveAndReturnToDashboard: 'Save and return',
 
     // AppHeader
     addRestaurant: '+ Add restaurant',
@@ -252,7 +288,9 @@ const translations = {
     // WizardStepper
     stepRestaurantDetails: 'Restaurant Details',
     stepKosher: 'Kosher Status',
+    stepRestaurantSetup: 'Restaurant Setup',
     stepMenu: 'Menu',
+    stepSeating: 'Seating',
     stepReview: 'Review & Agreement',
   },
 } as const;
