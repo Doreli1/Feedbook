@@ -50,7 +50,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh }: Props) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
-        <AppHeader restaurantName={restaurant?.name} />
+        <AppHeader restaurantName={restaurant?.name} restaurantAddress={restaurant?.address ?? undefined} />
         <WizardStepper currentStep={2} />
         <p className="mb-4 rounded border-l-4 border-blue-300 bg-blue-50 px-3 py-2 text-sm text-gray-700">
           {t('wizardInProgressNote')}

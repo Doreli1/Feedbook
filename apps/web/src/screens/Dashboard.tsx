@@ -15,7 +15,7 @@ export function Dashboard({ email, restaurant }: { email: string | undefined; re
   const { t } = useI18n();
   return (
     <div className="min-h-screen bg-gray-50 px-6 py-4">
-      <AppHeader restaurantName={restaurant.name} />
+      <AppHeader restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} />
       <div className="flex flex-col items-center justify-center py-16">
         <p className="mb-2 text-sm text-gray-500">{t('signedInAs')}</p>
         <p className="mb-1 text-lg font-semibold text-gray-900">{email}</p>

@@ -97,7 +97,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
-        <AppHeader restaurantName={restaurant?.name} />
+        <AppHeader restaurantName={restaurant?.name} restaurantAddress={restaurant?.address ?? undefined} />
         {/* This is step 1 of the numbered wizard — nothing precedes it, so
             there's no onStepClick target yet. Going back to sign-in is only
             via the sign-out button below. */}
