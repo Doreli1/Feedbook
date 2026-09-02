@@ -12,6 +12,11 @@ interface Props {
   session: Session;
   restaurant: Restaurant | null;
   onRefresh: () => void;
+  // Fired once, right when a brand-new restaurant row is first created at
+  // step 1 — lets the caller make it the active restaurant immediately
+  // (relevant when adding an additional restaurant to an account that
+  // already has one; irrelevant, and safe to omit, for a first-ever signup).
+  onCreated?: (id: string) => void;
 }
 
 // AFD §3.7.1 — screens 1 (פרטי מסעדה) and 2 (כשרות) of the numbered wizard
@@ -21,7 +26,7 @@ interface Props {
 // again, which loses no data (AFD §3.7.2 DoD), just a couple of clicks.
 type Step = 1 | 2 | 'more-to-come';
 
-export function RegistrationWizard({ session, restaurant, onRefresh }: Props) {
+export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }: Props) {
   const { t } = useI18n();
   const [step, setStep] = useState<Step>(1);
 
@@ -30,7 +35,10 @@ export function RegistrationWizard({ session, restaurant, onRefresh }: Props) {
       <RestaurantDetailsForm
         session={session}
         restaurant={restaurant}
-        onCreated={onRefresh}
+        onCreated={(id) => {
+          onCreated?.(id);
+          onRefresh();
+        }}
         onNext={() => setStep(2)}
       />
     );

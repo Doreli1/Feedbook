@@ -3,9 +3,13 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import type { Restaurant } from '@feedbook/types';
 
-export function useOwnRestaurant(session: Session | null) {
+// A user can be an active manager at more than one restaurant (staff is a
+// proper many-to-many join), so this always fetches the full list — never
+// .maybeSingle(), which silently mis-reported "no restaurant" for anyone
+// with more than one staff row.
+export function useOwnRestaurants(session: Session | null) {
   const [loading, setLoading] = useState(true);
-  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   // Only the very first load should show a full-page loading state. A later
   // refresh() call (e.g. after a kosher-certificate upload) toggling
   // `loading` back to true would swap the wizard out for LoadingScreen and
@@ -17,22 +21,18 @@ export function useOwnRestaurant(session: Session | null) {
 
   const refresh = useCallback(async () => {
     if (!session) {
-      setRestaurant(null);
+      setRestaurants([]);
       setLoading(false);
       hasLoadedOnce.current = true;
       return;
     }
     if (!hasLoadedOnce.current) setLoading(true);
-    const { data, error } = await supabase
-      .from('staff')
-      .select('restaurants(*)')
-      .eq('user_id', session.user.id)
-      .maybeSingle();
+    const { data, error } = await supabase.from('staff').select('restaurants(*)').eq('user_id', session.user.id);
 
-    if (error || !data?.restaurants) {
-      setRestaurant(null);
+    if (error || !data) {
+      setRestaurants([]);
     } else {
-      setRestaurant(data.restaurants as Restaurant);
+      setRestaurants(data.map((row) => row.restaurants).filter((r): r is Restaurant => r !== null));
     }
     setLoading(false);
     hasLoadedOnce.current = true;
@@ -44,5 +44,5 @@ export function useOwnRestaurant(session: Session | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  return { loading, restaurant, refresh };
+  return { loading, restaurants, refresh };
 }

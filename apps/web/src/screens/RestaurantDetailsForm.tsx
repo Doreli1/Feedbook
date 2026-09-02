@@ -11,7 +11,7 @@ type SaveState = 'idle' | 'incomplete' | 'saving' | 'saved' | 'error';
 interface Props {
   session: Session;
   restaurant: Restaurant | null;
-  onCreated: () => void;
+  onCreated: (id: string) => void;
   onNext: () => void;
 }
 
@@ -70,14 +70,14 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
           kosher_status: 'not_certified',
         }),
       });
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
         setErrorMessage(body?.error?.message ?? 'Save failed, will retry automatically');
         setSaveState('error');
         return;
       }
       setSaveState('saved');
-      onCreated();
+      onCreated(body.restaurant.id);
       return;
     }
 

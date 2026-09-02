@@ -87,6 +87,9 @@ const translations = {
     statusRejected: 'נדחה',
     dashboardComingSoon: 'ניהול תפריטים, שולחנות והזמנות עדיין בבנייה — יתווספו כאן בהמשך.',
 
+    // AppHeader
+    addRestaurant: '+ הוספת מסעדה',
+
     // WizardStepper
     stepRestaurantDetails: 'פרטי מסעדה',
     stepKosher: 'כשרות',
@@ -178,6 +181,9 @@ const translations = {
     statusApproved: 'Approved',
     statusRejected: 'Rejected',
     dashboardComingSoon: 'Menu, table, and order management are still being built — they will be added here soon.',
+
+    // AppHeader
+    addRestaurant: '+ Add restaurant',
 
     // WizardStepper
     stepRestaurantDetails: 'Restaurant Details',

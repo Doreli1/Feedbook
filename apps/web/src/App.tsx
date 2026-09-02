@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useAuth } from './lib/useAuth';
-import { useOwnRestaurant } from './lib/useOwnRestaurant';
+import { useOwnRestaurants } from './lib/useOwnRestaurants';
+import { useActiveRestaurantId } from './lib/useActiveRestaurantId';
 import { useI18n } from './lib/i18n';
 import { SignInUp } from './screens/SignInUp';
 import { SetNewPassword } from './screens/SetNewPassword';
@@ -18,13 +20,45 @@ function LoadingScreen() {
 }
 
 function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<typeof useAuth>['session']> }) {
-  const { loading, restaurant, refresh } = useOwnRestaurant(session);
+  const { loading, restaurants, refresh } = useOwnRestaurants(session);
+  const { activeId, setActiveId } = useActiveRestaurantId(restaurants);
+  // Explicitly starting a second (or later) restaurant, via the header's
+  // "+ add restaurant" button — distinct from having zero restaurants yet,
+  // since in that case the active restaurant may already be a perfectly
+  // normal approved one that Dashboard would otherwise show.
+  const [startingNew, setStartingNew] = useState(false);
 
   if (loading) return <LoadingScreen />;
-  if (!restaurant || restaurant.onboarding_status === 'draft') {
-    return <RegistrationWizard session={session} restaurant={restaurant} onRefresh={refresh} />;
+
+  if (startingNew || restaurants.length === 0) {
+    return (
+      <RegistrationWizard
+        session={session}
+        restaurant={null}
+        onRefresh={refresh}
+        onCreated={(id) => {
+          setActiveId(id);
+          setStartingNew(false);
+        }}
+      />
+    );
   }
-  return <Dashboard email={session.user.email} restaurant={restaurant} />;
+
+  const activeRestaurant = restaurants.find((r) => r.id === activeId) ?? restaurants[0];
+  if (!activeRestaurant) return <LoadingScreen />;
+
+  if (activeRestaurant.onboarding_status === 'draft') {
+    return <RegistrationWizard session={session} restaurant={activeRestaurant} onRefresh={refresh} />;
+  }
+  return (
+    <Dashboard
+      email={session.user.email}
+      restaurant={activeRestaurant}
+      restaurants={restaurants}
+      onSwitchRestaurant={setActiveId}
+      onAddRestaurant={() => setStartingNew(true)}
+    />
+  );
 }
 
 function App() {
