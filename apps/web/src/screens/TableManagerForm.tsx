@@ -11,6 +11,10 @@ interface Props {
   onRefresh: () => void;
   onBack: () => void;
   onNext: () => void;
+  // Free step-bar navigation — nothing to flush here first: every added
+  // table already saved on its own explicit "שמירת שולחן" click, same as
+  // menu's categories/dishes.
+  onStepClick?: (step: number) => void;
 }
 
 // PRD §5.1.3 / Backend Schema §4.1 "tables" — virtual map, seating capacity,
@@ -22,7 +26,7 @@ interface Props {
 // minimum table count is defined anywhere in the PRD/AFD (unlike the menu's
 // documented >=1-category/>=1-dish requirement), so this step is entirely
 // optional/skippable.
-export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext }: Props) {
+export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext, onStepClick }: Props) {
   const { t } = useI18n();
   const [addingTable, setAddingTable] = useState(false);
   const [editingTableId, setEditingTableId] = useState<string | null>(null);
@@ -47,6 +51,7 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
       onSubStepClick={(subStep) => {
         if (subStep === 'menu') onBack();
       }}
+      onStepClick={onStepClick}
     >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('stepRestaurantSetup')}</h1>

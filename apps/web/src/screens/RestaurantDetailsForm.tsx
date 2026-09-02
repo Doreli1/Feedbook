@@ -22,6 +22,11 @@ interface Props {
   // restaurant's details from the Dashboard, where "continue" (implying a
   // next wizard step) doesn't apply; onNext there just returns to Dashboard.
   primaryLabel?: string;
+  // Free step-bar navigation (any step, not just completed ones). Wrapped
+  // below to flush the pending debounced autosave first — without that, a
+  // click within the 1200ms debounce window would navigate away before the
+  // last few keystrokes were ever sent.
+  onStepClick?: (step: number) => void;
 }
 
 // Israeli mobile prefixes only — this is a mobile-contact field (matches the
@@ -82,7 +87,7 @@ function isRuleComplete(rule: HourRule): boolean {
 
 // AFD §3.7.1 screen 2: "פרטי מסעדה בסיסיים" — name, address, phone, hours,
 // auto-saved as a draft at every step (DoD: no data loss on refresh/disconnect).
-export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, primaryLabel }: Props) {
+export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, primaryLabel, onStepClick }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState(restaurant?.name ?? '');
   const [address, setAddress] = useState(restaurant?.address ?? '');
@@ -122,6 +127,14 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, address, phone, hourRules]);
+
+  function handleStepClick(target: number) {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      if (hasRequiredFields) void save();
+    }
+    onStepClick?.(target);
+  }
 
   function updateRule(key: string, patch: Partial<HourRule>) {
     setHourRules((rules) => rules.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -175,14 +188,12 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, 
   }
 
   return (
-    // This is step 1 of the numbered wizard — nothing precedes it, so
-    // there's no onStepClick target yet. Going back to sign-in is only via
-    // the sign-out button below.
     <WizardShell
       restaurantName={restaurant?.name}
       restaurantAddress={restaurant?.address ?? undefined}
       currentStep={1}
       hideStepper={!!primaryLabel}
+      onStepClick={onStepClick && handleStepClick}
     >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>

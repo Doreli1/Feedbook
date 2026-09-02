@@ -13,11 +13,14 @@ interface Props {
   restaurant: Restaurant;
   onNext: () => void;
   onUpdated: () => void;
+  // Free step-bar navigation — nothing to flush here first: upload/remove
+  // both save immediately on click, there's no debounced draft in flight.
+  onStepClick?: (step: number) => void;
 }
 
 // AFD §3.7.1 screen 3: "סטטוס כשרות (אופציונלי)" — self-declaration + upload,
 // skippable. API Spec §5.1-5.2.
-export function KosherStatusForm({ session, restaurant, onNext, onUpdated }: Props) {
+export function KosherStatusForm({ session, restaurant, onNext, onUpdated, onStepClick }: Props) {
   const { t } = useI18n();
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +91,12 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated }: Pro
   }
 
   return (
-    <WizardShell restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} currentStep={2}>
+    <WizardShell
+      restaurantName={restaurant.name}
+      restaurantAddress={restaurant.address ?? undefined}
+      currentStep={2}
+      onStepClick={onStepClick}
+    >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('kosherStepTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('kosherStepSubtitle')}</p>

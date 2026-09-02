@@ -12,6 +12,14 @@ interface Props {
   onRefresh: () => void;
   onNext: () => void;
   onSeating: () => void;
+  // Free step-bar navigation. Every already-added category/dish is already
+  // saved (each has its own explicit save action) — the only thing that
+  // could be lost on the way out is a category name mid-typed in the "add
+  // category" field below, which handleStepClick commits first. An
+  // in-progress "add dish" form nested inside a specific category is left
+  // as an ordinary discardable draft, same as leaving any unsubmitted form;
+  // reaching into it from here isn't worth the complexity for that edge case.
+  onStepClick?: (step: number) => void;
 }
 
 // AFD §3.7.1 screen 4: "בניית תפריט ראשוני" — at least one category and a
@@ -26,7 +34,7 @@ const MIN_DISHES = 1;
 // (dish_description_length migration) — keep the two in sync.
 const MAX_DESCRIPTION_LENGTH = 400;
 
-export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onNext, onSeating }: Props) {
+export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onNext, onSeating, onStepClick }: Props) {
   const { t } = useI18n();
   const [newCategoryName, setNewCategoryName] = useState('');
   const [addingCategory, setAddingCategory] = useState(false);
@@ -61,6 +69,11 @@ export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onN
     onRefresh();
   }
 
+  function handleStepClick(target: number) {
+    if (newCategoryName.trim()) void handleAddCategory();
+    onStepClick?.(target);
+  }
+
   return (
     <WizardShell
       restaurantName={restaurant.name}
@@ -70,6 +83,7 @@ export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onN
       onSubStepClick={(subStep) => {
         if (subStep === 'seating') onSeating();
       }}
+      onStepClick={onStepClick && handleStepClick}
     >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('stepRestaurantSetup')}</h1>

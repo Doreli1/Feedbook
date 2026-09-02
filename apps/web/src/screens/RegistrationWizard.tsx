@@ -33,9 +33,31 @@ interface Props {
 // ("stepRestaurantSetup") — see WizardStepper's STEP_KEYS comment.
 type Step = 1 | 2 | 3 | 4 | 'more-to-come';
 
+// Every screen's step-bar is clickable for free navigation (any step, not
+// just completed ones) — each screen's own save logic is what guarantees
+// nothing typed is lost on the way out (RestaurantDetailsForm flushes its
+// debounced autosave before calling this; Kosher/Menu/Seating already save
+// each item immediately on its own explicit action, so there's nothing
+// in-flight to flush there). Clicking the setup parent segment itself
+// (not one of its two split sub-bars) lands on menu, the first sub-step.
+//
+// n is WizardStepper's own segment number (1-4, matching its 4 STEP_KEYS:
+// details/kosher/setup/review) — NOT the same numbering as this file's Step
+// type, where 3 and 4 are the setup parent's two sub-steps and there's a
+// 5th, string-valued state ('more-to-come') for what the stepper displays
+// as segment 4 ("review"). Segment 4 therefore maps to 'more-to-come', not
+// to the Step value 4 (which is seating, reachable only via onSubStepClick).
+function toStep(n: number): Step {
+  if (n <= 1) return 1;
+  if (n === 2) return 2;
+  if (n === 3) return 3;
+  return 'more-to-come';
+}
+
 export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }: Props) {
   const { t } = useI18n();
   const [step, setStep] = useState<Step>(1);
+  const goToStep = (n: number) => setStep(toStep(n));
   const needsMenu = step === 3 || step === 4;
   const { categories, dishes, refresh: refreshMenu } = useMenu(needsMenu ? restaurant?.id : undefined);
   const { tables, refresh: refreshTables } = useTables(step === 4 ? restaurant?.id : undefined);
@@ -50,6 +72,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
           onRefresh();
         }}
         onNext={() => setStep(2)}
+        onStepClick={restaurant ? goToStep : undefined}
       />
     );
   }
@@ -61,6 +84,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
         restaurant={restaurant}
         onUpdated={onRefresh}
         onNext={() => setStep(3)}
+        onStepClick={goToStep}
       />
     );
   }
@@ -74,6 +98,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
         onRefresh={() => void refreshMenu()}
         onNext={() => setStep(4)}
         onSeating={() => setStep(4)}
+        onStepClick={goToStep}
       />
     );
   }
@@ -86,12 +111,18 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
         onRefresh={() => void refreshTables()}
         onBack={() => setStep(3)}
         onNext={() => setStep('more-to-come')}
+        onStepClick={goToStep}
       />
     );
   }
 
   return (
-    <WizardShell restaurantName={restaurant?.name} restaurantAddress={restaurant?.address ?? undefined} currentStep={4}>
+    <WizardShell
+      restaurantName={restaurant?.name}
+      restaurantAddress={restaurant?.address ?? undefined}
+      currentStep={4}
+      onStepClick={goToStep}
+    >
       <div className="card p-8">
         <p className="mb-4 rounded border-l-4 border-accent bg-accent-soft px-3 py-2 text-sm text-ink-soft">
           {t('wizardInProgressNote')}

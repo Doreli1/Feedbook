@@ -46,7 +46,11 @@ export function WizardStepper({ currentStep, onStepClick, activeSubStep, onSubSt
         const stepNumber = index + 1;
         const isCurrent = stepNumber === currentStep;
         const isDone = stepNumber < currentStep;
-        const clickable = isDone && !!onStepClick;
+        // Free navigation: any step but the current one is clickable,
+        // forward or back — not gated on completion. isDone still drives the
+        // checkmark/accent styling below (a simple "have I passed this
+        // point" indicator), just no longer gates whether it's clickable.
+        const clickable = !isCurrent && !!onStepClick;
 
         if (index === SETUP_STEP_INDEX && isCurrent && activeSubStep) {
           return (
@@ -71,7 +75,7 @@ export function WizardStepper({ currentStep, onStepClick, activeSubStep, onSubSt
           >
             <span
               className={`mb-2 flex items-center justify-center gap-1 truncate text-xs font-medium sm:text-sm ${
-                isCurrent ? 'text-ink' : isDone ? 'text-accent' : 'text-muted-foreground'
+                isCurrent ? 'text-ink' : isDone ? 'text-accent' : `text-muted-foreground ${clickable ? 'hover:text-accent' : ''}`
               }`}
             >
               {isDone && <CheckIcon className="h-3.5 w-3.5 shrink-0" />}
@@ -79,7 +83,7 @@ export function WizardStepper({ currentStep, onStepClick, activeSubStep, onSubSt
             </span>
             <div
               className={`h-1.5 rounded-full ${
-                isCurrent ? 'bg-accent' : isDone ? 'bg-accent/60 hover:bg-accent' : 'bg-surface-2'
+                isCurrent ? 'bg-accent' : isDone ? 'bg-accent/60 hover:bg-accent' : `bg-surface-2 ${clickable ? 'hover:bg-accent/40' : ''}`
               }`}
             />
           </button>
