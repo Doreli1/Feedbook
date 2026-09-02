@@ -1,7 +1,6 @@
 import { useAuth } from './lib/useAuth';
 import { useOwnRestaurant } from './lib/useOwnRestaurant';
 import { useI18n } from './lib/i18n';
-import { LanguageSelect } from './screens/LanguageSelect';
 import { SignInUp } from './screens/SignInUp';
 import { SetNewPassword } from './screens/SetNewPassword';
 import { MfaEnroll } from './screens/MfaEnroll';
@@ -29,13 +28,7 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
 }
 
 function App() {
-  const { hasChosenLang } = useI18n();
   const { status, session, refresh, refreshRecovery } = useAuth();
-
-  // First-launch language pick takes priority over everything, including
-  // auth state — there's no reasonable default direction to render the
-  // sign-in screen in before the user has told us which language they want.
-  if (!hasChosenLang) return <LanguageSelect />;
 
   if (status === 'loading') return <LoadingScreen />;
   if (status === 'signed-out') return <SignInUp />;

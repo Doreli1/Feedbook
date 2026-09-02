@@ -3,8 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import type { Restaurant } from '@feedbook/types';
 import { RestaurantDetailsForm } from './RestaurantDetailsForm';
 import { KosherStatusForm } from './KosherStatusForm';
-import { FeedbookBrand } from '../components/FeedbookBrand';
-import { LanguageToggle } from '../components/LanguageToggle';
+import { AppHeader } from '../components/AppHeader';
 import { WizardStepper } from '../components/WizardStepper';
 import { useI18n } from '../lib/i18n';
 import { supabase } from '../lib/supabase';
@@ -51,10 +50,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh }: Props) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
-        <div dir="ltr" className="mb-3 flex items-start justify-between">
-          <FeedbookBrand />
-          <LanguageToggle />
-        </div>
+        <AppHeader restaurantName={restaurant?.name} />
         <WizardStepper currentStep={2} />
         <p className="mb-4 rounded border-l-4 border-blue-300 bg-blue-50 px-3 py-2 text-sm text-gray-700">
           {t('wizardInProgressNote')}
