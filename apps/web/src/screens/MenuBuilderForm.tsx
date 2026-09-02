@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Dish, MenuCategory, Restaurant } from '@feedbook/types';
-import { WizardStepper } from '../components/WizardStepper';
-import { AppHeader } from '../components/AppHeader';
+import { WizardShell } from '../components/WizardShell';
 import { TrashIcon, PencilIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 
@@ -62,10 +61,8 @@ export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onN
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background py-10">
-      <div className="card w-full max-w-lg p-8">
-        <AppHeader restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} />
-        <WizardStepper currentStep={3} />
+    <WizardShell restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} currentStep={3}>
+      <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('menuStepTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('menuStepSubtitle')}</p>
 
@@ -116,7 +113,7 @@ export function MenuBuilderForm({ restaurant, categories, dishes, onRefresh, onN
           {t('continue')}
         </button>
       </div>
-    </div>
+    </WizardShell>
   );
 }
 

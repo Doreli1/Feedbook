@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { WizardStepper } from '../components/WizardStepper';
-import { AppHeader } from '../components/AppHeader';
+import { WizardShell } from '../components/WizardShell';
 import { useI18n } from '../lib/i18n';
 import type { Restaurant } from '@feedbook/types';
 
@@ -88,10 +87,8 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated }: Pro
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="card w-full max-w-md p-8">
-        <AppHeader restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} />
-        <WizardStepper currentStep={2} />
+    <WizardShell restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} currentStep={2}>
+      <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('kosherStepTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('kosherStepSubtitle')}</p>
 
@@ -147,6 +144,6 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated }: Pro
           {t('signOut')}
         </button>
       </div>
-    </div>
+    </WizardShell>
   );
 }

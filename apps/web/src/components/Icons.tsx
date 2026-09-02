@@ -18,3 +18,11 @@ export function PencilIcon({ className = 'h-4 w-4' }: { className?: string }) {
     </svg>
   );
 }
+
+export function CheckIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M4 10.5 8 14l8-8" />
+    </svg>
+  );
+}

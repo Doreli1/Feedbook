@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Restaurant } from '@feedbook/types';
-import { WizardStepper } from '../components/WizardStepper';
-import { AppHeader } from '../components/AppHeader';
+import { WizardShell } from '../components/WizardShell';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
@@ -167,13 +166,15 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background py-10">
-      <div className="card w-full max-w-md p-8">
-        <AppHeader restaurantName={restaurant?.name} restaurantAddress={restaurant?.address ?? undefined} />
-        {/* This is step 1 of the numbered wizard — nothing precedes it, so
-            there's no onStepClick target yet. Going back to sign-in is only
-            via the sign-out button below. */}
-        <WizardStepper currentStep={1} />
+    // This is step 1 of the numbered wizard — nothing precedes it, so
+    // there's no onStepClick target yet. Going back to sign-in is only via
+    // the sign-out button below.
+    <WizardShell
+      restaurantName={restaurant?.name}
+      restaurantAddress={restaurant?.address ?? undefined}
+      currentStep={1}
+    >
+      <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('restaurantDetailsSubtitle')}</p>
 
@@ -310,6 +311,6 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
           {t('signOut')}
         </button>
       </div>
-    </div>
+    </WizardShell>
   );
 }

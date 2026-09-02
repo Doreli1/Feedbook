@@ -4,8 +4,7 @@ import type { Restaurant } from '@feedbook/types';
 import { RestaurantDetailsForm } from './RestaurantDetailsForm';
 import { KosherStatusForm } from './KosherStatusForm';
 import { MenuBuilderForm } from './MenuBuilderForm';
-import { AppHeader } from '../components/AppHeader';
-import { WizardStepper } from '../components/WizardStepper';
+import { WizardShell } from '../components/WizardShell';
 import { useI18n } from '../lib/i18n';
 import { useMenu } from '../lib/useMenu';
 import { supabase } from '../lib/supabase';
@@ -72,10 +71,8 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="card w-full max-w-md p-8">
-        <AppHeader restaurantName={restaurant?.name} restaurantAddress={restaurant?.address ?? undefined} />
-        <WizardStepper currentStep={4} />
+    <WizardShell restaurantName={restaurant?.name} restaurantAddress={restaurant?.address ?? undefined} currentStep={4}>
+      <div className="card p-8">
         <p className="mb-4 rounded border-l-4 border-accent bg-accent-soft px-3 py-2 text-sm text-ink-soft">
           {t('wizardInProgressNote')}
         </p>
@@ -92,6 +89,6 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
           {t('signOut')}
         </button>
       </div>
-    </div>
+    </WizardShell>
   );
 }

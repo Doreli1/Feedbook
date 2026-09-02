@@ -34,7 +34,7 @@ function FlagUS() {
 // A single circular flag badge reflecting the current language — click to
 // switch to the other one. IL flag while Hebrew is active, US flag while
 // English is.
-export function LanguageToggle({ className = '' }: { className?: string }) {
+export function LanguageToggle({ className = '', onDark = false }: { className?: string; onDark?: boolean }) {
   const { lang, setLang } = useI18n();
 
   return (
@@ -43,7 +43,7 @@ export function LanguageToggle({ className = '' }: { className?: string }) {
       onClick={() => setLang(lang === 'he' ? 'en' : 'he')}
       title={lang === 'he' ? 'English' : 'עברית'}
       aria-label={lang === 'he' ? 'Switch to English' : 'עבור לעברית'}
-      className={`h-8 w-8 overflow-hidden rounded-full border border-border shadow-sm hover:border-border-strong ${className}`}
+      className={`h-8 w-8 overflow-hidden rounded-full border shadow-sm ${onDark ? 'border-white/50 hover:border-white' : 'border-border hover:border-border-strong'} ${className}`}
     >
       {lang === 'he' ? <FlagIL /> : <FlagUS />}
     </button>

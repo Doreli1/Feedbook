@@ -1,5 +1,6 @@
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
+import { CheckIcon } from './Icons';
 
 // AFD §3.7.1 — the restaurant self-registration wizard's numbered steps.
 // Screen 1 of the AFD table (הצטרפות/sign-in) is deliberately NOT part of
@@ -22,11 +23,14 @@ interface Props {
   onStepClick?: (step: number) => void;
 }
 
+// Full-width segmented bar, Booking-partner-onboarding-inspired: a colored
+// line per step with the label above it, a checkmark once done. Lives inside
+// WizardShell's header area, spanning the page width, not a compact card.
 export function WizardStepper({ currentStep, onStepClick }: Props) {
   const { t } = useI18n();
 
   return (
-    <div className="mb-4 flex gap-1">
+    <div className="flex gap-2 sm:gap-4">
       {STEP_KEYS.map((key, index) => {
         const stepNumber = index + 1;
         const isCurrent = stepNumber === currentStep;
@@ -41,18 +45,19 @@ export function WizardStepper({ currentStep, onStepClick }: Props) {
             onClick={() => onStepClick?.(stepNumber)}
             className={`flex-1 text-center ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
           >
-            <div
-              className={`mb-1 h-1 rounded-full ${
-                isCurrent ? 'bg-accent' : isDone ? 'bg-accent-soft hover:bg-accent/60' : 'bg-surface-2'
-              }`}
-            />
             <span
-              className={`block truncate text-[9px] leading-tight ${
-                isCurrent ? 'font-semibold text-accent' : clickable ? 'text-accent/70' : 'text-muted-foreground'
+              className={`mb-2 flex items-center justify-center gap-1 truncate text-xs font-medium sm:text-sm ${
+                isCurrent ? 'text-ink' : isDone ? 'text-accent' : 'text-muted-foreground'
               }`}
             >
+              {isDone && <CheckIcon className="h-3.5 w-3.5 shrink-0" />}
               {t(key)}
             </span>
+            <div
+              className={`h-1.5 rounded-full ${
+                isCurrent ? 'bg-accent' : isDone ? 'bg-accent/60 hover:bg-accent' : 'bg-surface-2'
+              }`}
+            />
           </button>
         );
       })}
