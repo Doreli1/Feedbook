@@ -1,7 +1,85 @@
 @import "tailwindcss";
 
+/* Design tokens — see "Feedbook Design System" artifact for the full
+   rationale. Booking-inspired but deliberately distinct palette (teal-green
+   accent, not blue-on-blue) with real light/dark support via
+   prefers-color-scheme, not just a light-only mockup. */
+:root {
+  --bg: #f6f4ef;
+  --surface: #ffffff;
+  --surface-2: #efebe2;
+  --border: #e3ded2;
+  --border-strong: #cfc8b8;
+  --ink: #13314f;
+  --ink-soft: #1f4a73;
+  --ink-muted: #5b6472;
+  --text: #1b2430;
+  --text-muted: #6e6a61;
+  --accent: #1b7a6e;
+  --accent-hover: #145f56;
+  --accent-soft: #e4f1ee;
+  --success: #2f7d4f;
+  --success-soft: #e7f3ea;
+  --danger: #b23b3b;
+  --danger-soft: #fbeaea;
+  --warning: #b8862e;
+  --warning-soft: #faf1df;
+  --shadow: 0 1px 2px rgba(19, 49, 79, 0.06), 0 8px 24px rgba(19, 49, 79, 0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1620;
+    --surface: #17212e;
+    --surface-2: #1e2a38;
+    --border: #2a374689;
+    --border-strong: #3a4c60;
+    --ink: #eaf1f8;
+    --ink-soft: #bfd6ea;
+    --ink-muted: #93a3b5;
+    --text: #e9eef3;
+    --text-muted: #9aa3ae;
+    --accent: #3fb6a6;
+    --accent-hover: #57c9b9;
+    --accent-soft: #12332f;
+    --success: #57b37b;
+    --success-soft: #123322;
+    --danger: #e07a7a;
+    --danger-soft: #3a1d1d;
+    --warning: #dcb05c;
+    --warning-soft: #3a2e16;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.35);
+  }
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-muted: var(--ink-muted);
+  --color-foreground: var(--text);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --font-heading: 'Rubik', sans-serif;
+  --font-body: 'Heebo', sans-serif;
+}
+
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
 }
 
 /* Brand wordmark — rounded, heavy-weight geometric sans, same category of
@@ -9,4 +87,18 @@ body {
    Not the same typeface — just a similarly-styled Google Font. */
 .font-brand {
   font-family: 'Baloo 2', sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+}
+
+/* Shared card surface for every screen's central panel. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
 }

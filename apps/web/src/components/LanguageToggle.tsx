@@ -43,7 +43,7 @@ export function LanguageToggle({ className = '' }: { className?: string }) {
       onClick={() => setLang(lang === 'he' ? 'en' : 'he')}
       title={lang === 'he' ? 'English' : 'עברית'}
       aria-label={lang === 'he' ? 'Switch to English' : 'עבור לעברית'}
-      className={`h-8 w-8 overflow-hidden rounded-full border border-gray-200 shadow-sm hover:border-gray-300 ${className}`}
+      className={`h-8 w-8 overflow-hidden rounded-full border border-border shadow-sm hover:border-border-strong ${className}`}
     >
       {lang === 'he' ? <FlagIL /> : <FlagUS />}
     </button>

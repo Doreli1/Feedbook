@@ -22,7 +22,7 @@ interface Props {
 export function Dashboard({ email, restaurant, restaurants, onSwitchRestaurant, onAddRestaurant }: Props) {
   const { t } = useI18n();
   return (
-    <div className="min-h-screen bg-gray-50 px-6 py-4">
+    <div className="min-h-screen bg-background px-6 py-4">
       <AppHeader
         restaurantName={restaurant.name}
         restaurantAddress={restaurant.address ?? undefined}
@@ -32,17 +32,17 @@ export function Dashboard({ email, restaurant, restaurants, onSwitchRestaurant, 
         onAddRestaurant={onAddRestaurant}
       />
       <div className="flex flex-col items-center justify-center py-16">
-        <p className="mb-2 text-sm text-gray-500">{t('signedInAs')}</p>
-        <p className="mb-1 text-lg font-semibold text-gray-900">{email}</p>
-        <p className="mb-6 text-xs text-gray-400">
+        <p className="mb-2 text-sm text-muted-foreground">{t('signedInAs')}</p>
+        <p className="mb-1 text-lg font-semibold text-ink">{email}</p>
+        <p className="mb-6 text-xs text-muted-foreground">
           {t(STATUS_KEYS[restaurant.onboarding_status] ?? 'statusDraft')}
         </p>
         {restaurant.onboarding_status !== 'approved' && (
-          <p className="mb-6 max-w-sm text-center text-sm text-gray-400">{t('dashboardComingSoon')}</p>
+          <p className="mb-6 max-w-sm text-center text-sm text-muted-foreground">{t('dashboardComingSoon')}</p>
         )}
         <button
           onClick={() => void supabase.auth.signOut()}
-          className="rounded border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+          className="rounded border border-danger px-4 py-2 text-sm text-danger hover:bg-danger-soft"
         >
           {t('signOut')}
         </button>

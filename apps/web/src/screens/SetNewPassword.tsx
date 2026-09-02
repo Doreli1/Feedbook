@@ -32,37 +32,37 @@ export function SetNewPassword({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-lg bg-white p-8 shadow-md">
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <form onSubmit={handleSubmit} className="card w-full max-w-sm p-8">
         <div dir="ltr" className="mb-3 flex items-start justify-between">
           <FeedbookBrand />
           <LanguageToggle />
         </div>
-        <h1 className="mb-1 text-xl font-bold text-blue-900">{t('setNewPasswordTitle')}</h1>
-        <p className="mb-6 text-sm text-gray-500">{t('setNewPasswordSubtitle')}</p>
+        <h1 className="mb-1 text-xl font-bold text-ink">{t('setNewPasswordTitle')}</h1>
+        <p className="mb-6 text-sm text-muted-foreground">{t('setNewPasswordSubtitle')}</p>
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('newPassword')}</label>
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('newPassword')}</label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          className="mb-3 w-full rounded border border-border px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('confirmPassword')}</label>
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('confirmPassword')}</label>
         <input
           type="password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="mb-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          className="mb-1 w-full rounded border border-border px-3 py-2 text-sm"
         />
         {confirm.length > 0 && !passwordsMatch && (
-          <p className="mb-3 text-xs text-red-600">{t('passwordsDontMatch')}</p>
+          <p className="mb-3 text-xs text-danger">{t('passwordsDontMatch')}</p>
         )}
         {(confirm.length === 0 || passwordsMatch) && <div className="mb-3" />}
 
         {error && (
-          <div className="mb-3 rounded border-l-4 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mb-3 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
             {error}
           </div>
         )}
@@ -70,7 +70,7 @@ export function SetNewPassword({ onDone }: { onDone: () => void }) {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
+          className="w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
         >
           {busy ? t('saving') : t('updatePassword')}
         </button>

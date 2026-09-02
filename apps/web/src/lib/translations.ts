@@ -51,8 +51,9 @@ const translations = {
     fillRequiredFields: 'יש למלא שם, כתובת וטלפון כדי לשמור',
     savedAsDraft: 'נשמר כטיוטה ✓',
     continue: 'המשך',
+    cancel: 'ביטול',
     wizardInProgressNote:
-      'שלבי ההמשך של ההרשמה (תפריט ראשוני, סקירה והגשה) בבנייה — הפרטים שכבר מילאת שמורים ולא ילכו לאיבוד.',
+      'שלבי ההמשך של ההרשמה (תמחור, הסכם שותפות וסקירה סופית) בבנייה — הפרטים שכבר מילאת שמורים ולא ילכו לאיבוד.',
 
     // KosherStatusForm
     kosherStepTitle: 'סטטוס כשרות',
@@ -70,6 +71,21 @@ const translations = {
     // do not reword.
     kosherDisclaimer:
       'המידע מבוסס על הצהרה עצמית של המסעדה ואינו מאומת על ידי Feedbook; לבירור נוסף יש לפנות ישירות לצוות המסעדה או לגורם המפקח.',
+
+    // MenuBuilderForm
+    menuStepTitle: 'בניית תפריט ראשוני',
+    menuStepSubtitle: 'הוסיפו קטגוריה אחת לפחות ומנה אחת לפחות כדי להמשיך — אפשר להרחיב את התפריט בכל שלב מאוחר יותר.',
+    categoryNamePlaceholder: 'שם קטגוריה (למשל: מנות עיקריות)',
+    addCategory: 'הוספת קטגוריה',
+    deleteCategory: 'מחיקת קטגוריה',
+    addDish: '+ הוספת מנה',
+    deleteDish: 'מחיקה',
+    saveDish: 'שמירת מנה',
+    menuMinimumNotMet: 'נדרשת לפחות קטגוריה אחת עם מנה אחת כדי להמשיך.',
+    dishNamePlaceholder: 'שם המנה',
+    dishPricePlaceholder: 'מחיר',
+    dishDescriptionPlaceholder: 'תיאור קצר (עד 200 תווים)',
+    dishPhotoUpload: 'העלאת תמונה',
 
     // SetNewPassword
     setNewPasswordTitle: 'בחירת סיסמה חדשה',
@@ -146,8 +162,9 @@ const translations = {
     fillRequiredFields: 'Fill in name, address and phone to save',
     savedAsDraft: 'Saved as draft ✓',
     continue: 'Continue',
+    cancel: 'Cancel',
     wizardInProgressNote:
-      "The remaining registration steps (initial menu, review & submit) are still being built — what you've filled in is saved and won't be lost.",
+      "The remaining registration steps (pricing, partnership agreement, and final review) are still being built — what you've filled in is saved and won't be lost.",
 
     // KosherStatusForm
     kosherStepTitle: 'Kosher Status',
@@ -165,6 +182,21 @@ const translations = {
     // do not reword.
     kosherDisclaimer:
       'This information is self-declared by the restaurant and is not verified by Feedbook; for further details, please check directly with restaurant staff or the certifying authority.',
+
+    // MenuBuilderForm
+    menuStepTitle: 'Build Your Initial Menu',
+    menuStepSubtitle: 'Add at least one category and one dish to continue — you can expand the menu at any later stage.',
+    categoryNamePlaceholder: 'Category name (e.g. Main Courses)',
+    addCategory: 'Add category',
+    deleteCategory: 'Delete category',
+    addDish: '+ Add dish',
+    deleteDish: 'Delete',
+    saveDish: 'Save dish',
+    menuMinimumNotMet: 'At least one category with one dish is required to continue.',
+    dishNamePlaceholder: 'Dish name',
+    dishPricePlaceholder: 'Price',
+    dishDescriptionPlaceholder: 'Short description (up to 200 characters)',
+    dishPhotoUpload: 'Upload photo',
 
     // SetNewPassword
     setNewPasswordTitle: 'Choose a new password',

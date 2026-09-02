@@ -88,33 +88,33 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated }: Pro
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
-      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="card w-full max-w-md p-8">
         <AppHeader restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} />
         <WizardStepper currentStep={2} />
-        <h1 className="mb-1 text-xl font-bold text-blue-900">{t('kosherStepTitle')}</h1>
-        <p className="mb-6 text-sm text-gray-500">{t('kosherStepSubtitle')}</p>
+        <h1 className="mb-1 text-xl font-bold text-ink">{t('kosherStepTitle')}</h1>
+        <p className="mb-6 text-sm text-muted-foreground">{t('kosherStepSubtitle')}</p>
 
-        <p className="mb-3 text-sm font-medium text-gray-800">{t('kosherQuestion')}</p>
+        <p className="mb-3 text-sm font-medium text-ink">{t('kosherQuestion')}</p>
 
         {isCertified ? (
-          <div className="mb-4 rounded border border-green-300 bg-green-50 px-3 py-3 text-sm text-green-700">
+          <div className="mb-4 rounded border border-success bg-success-soft px-3 py-3 text-sm text-success">
             {t('kosherCertified')}
             <button
               onClick={() => void handleRemove()}
               disabled={uploadState === 'uploading'}
-              className="mt-2 block text-xs text-red-600 hover:underline"
+              className="mt-2 block text-xs text-danger hover:underline"
             >
               {t('kosherRemove')}
             </button>
           </div>
         ) : (
           <div className="mb-4">
-            <label className="mb-1 block text-xs font-semibold text-gray-500">{t('kosherUploadLabel')}</label>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('kosherUploadLabel')}</label>
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadState === 'uploading'}
-              className="w-full rounded border border-gray-300 py-2 text-sm text-blue-700 hover:bg-blue-50 disabled:text-gray-400"
+              className="w-full rounded border border-border py-2 text-sm text-accent hover:bg-accent-soft disabled:text-muted-foreground"
             >
               {uploadState === 'uploading' ? t('kosherUploading') : t('kosherYesUpload')}
             </button>
@@ -129,23 +129,20 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated }: Pro
         )}
 
         {error && (
-          <div className="mb-3 rounded border-l-4 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mb-3 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
             {error}
           </div>
         )}
 
-        <p className="mb-6 text-xs text-gray-400">{t('kosherDisclaimer')}</p>
+        <p className="mb-6 text-xs text-muted-foreground">{t('kosherDisclaimer')}</p>
 
-        <button
-          onClick={onNext}
-          className="mb-3 w-full rounded bg-blue-700 py-2 text-sm font-medium text-white"
-        >
+        <button onClick={onNext} className="mb-3 w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover">
           {isCertified ? t('continue') : t('kosherSkip')}
         </button>
 
         <button
           onClick={() => void supabase.auth.signOut()}
-          className="w-full rounded border border-red-300 py-2 text-sm text-red-600 hover:bg-red-50"
+          className="w-full rounded border border-danger py-2 text-sm text-danger hover:bg-danger-soft"
         >
           {t('signOut')}
         </button>

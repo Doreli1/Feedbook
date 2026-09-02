@@ -41,7 +41,7 @@ export function AppHeader({
             dir="auto"
             value={activeRestaurantId}
             onChange={(e) => onSwitchRestaurant(e.target.value)}
-            className="max-w-[200px] truncate rounded border border-gray-200 bg-transparent py-1 text-sm font-medium text-gray-700"
+            className="max-w-[200px] truncate rounded border border-border bg-transparent py-1 text-sm font-medium text-ink"
           >
             {restaurants.map((r) => (
               <option key={r.id} value={r.id}>
@@ -52,8 +52,8 @@ export function AppHeader({
         ) : (
           restaurantName && (
             <div dir="auto" className="max-w-[200px] text-right">
-              <p className="truncate text-sm font-medium text-gray-700">{restaurantName}</p>
-              {restaurantAddress && <p className="truncate text-xs text-gray-400">{restaurantAddress}</p>}
+              <p className="truncate text-sm font-medium text-ink">{restaurantName}</p>
+              {restaurantAddress && <p className="truncate text-xs text-muted-foreground">{restaurantAddress}</p>}
             </div>
           )
         )}
@@ -61,7 +61,7 @@ export function AppHeader({
           <button
             type="button"
             onClick={onAddRestaurant}
-            className="whitespace-nowrap text-xs font-medium text-blue-700 hover:underline"
+            className="whitespace-nowrap text-xs font-medium text-accent hover:underline"
           >
             {t('addRestaurant')}
           </button>

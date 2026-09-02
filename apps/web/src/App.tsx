@@ -14,7 +14,7 @@ function LoadingScreen() {
   const { t } = useI18n();
   return (
     <main className="flex min-h-screen items-center justify-center">
-      <p className="text-sm text-gray-400">{t('loading')}</p>
+      <p className="text-sm text-muted-foreground">{t('loading')}</p>
     </main>
   );
 }

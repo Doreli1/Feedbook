@@ -95,67 +95,67 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
-      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="card w-full max-w-md p-8">
         <AppHeader restaurantName={restaurant?.name} restaurantAddress={restaurant?.address ?? undefined} />
         {/* This is step 1 of the numbered wizard — nothing precedes it, so
             there's no onStepClick target yet. Going back to sign-in is only
             via the sign-out button below. */}
         <WizardStepper currentStep={1} />
-        <h1 className="mb-1 text-xl font-bold text-blue-900">{t('restaurantDetailsTitle')}</h1>
-        <p className="mb-6 text-sm text-gray-500">{t('restaurantDetailsSubtitle')}</p>
+        <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
+        <p className="mb-6 text-sm text-muted-foreground">{t('restaurantDetailsSubtitle')}</p>
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('restaurantName')}</label>
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('restaurantName')}</label>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          className="mb-3 w-full rounded border border-border px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('address')}</label>
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('address')}</label>
         <input
           type="text"
           value={address}
           onChange={(e) => setAddress(e.target.value)}
-          className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          className="mb-3 w-full rounded border border-border px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('phone')}</label>
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('phone')}</label>
         <input
           type="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          className="mb-3 w-full rounded border border-border px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('hours')}</label>
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('hours')}</label>
         <input
           type="text"
           value={hours}
           onChange={(e) => setHours(e.target.value)}
           placeholder={t('hoursPlaceholder')}
-          className="mb-4 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          className="mb-4 w-full rounded border border-border px-3 py-2 text-sm"
         />
 
         <div className="mb-4 min-h-5 text-xs">
-          {saveState === 'incomplete' && <span className="text-gray-400">{t('fillRequiredFields')}</span>}
-          {saveState === 'saving' && <span className="text-gray-400">{t('saving')}</span>}
-          {saveState === 'saved' && <span className="text-green-600">{t('savedAsDraft')}</span>}
-          {saveState === 'error' && <span className="text-red-600">{errorMessage}</span>}
+          {saveState === 'incomplete' && <span className="text-muted-foreground">{t('fillRequiredFields')}</span>}
+          {saveState === 'saving' && <span className="text-muted-foreground">{t('saving')}</span>}
+          {saveState === 'saved' && <span className="text-success">{t('savedAsDraft')}</span>}
+          {saveState === 'error' && <span className="text-danger">{errorMessage}</span>}
         </div>
 
         <button
           onClick={onNext}
           disabled={!restaurantId}
-          className="mb-3 w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
+          className="mb-3 w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
         >
           {t('continue')}
         </button>
 
         <button
           onClick={() => void supabase.auth.signOut()}
-          className="w-full rounded border border-red-300 py-2 text-sm text-red-600 hover:bg-red-50"
+          className="w-full rounded border border-danger py-2 text-sm text-danger hover:bg-danger-soft"
         >
           {t('signOut')}
         </button>

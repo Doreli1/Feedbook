@@ -58,16 +58,16 @@ export function SignInUp() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
+    <div className="flex min-h-screen items-center justify-center bg-background">
       <form
         onSubmit={mode === 'forgot-password' ? handleSendResetLink : handleSubmit}
-        className="w-full max-w-sm rounded-lg bg-white p-8 shadow-md"
+        className="card w-full max-w-sm p-8"
       >
         <div dir="ltr" className="mb-4 flex items-start justify-between">
           <FeedbookBrand />
           <LanguageToggle />
         </div>
-        <h1 className="mb-6 text-xl font-bold text-blue-900">{t('restaurantManagement')}</h1>
+        <h1 className="mb-6 text-xl font-bold text-ink">{t('restaurantManagement')}</h1>
 
         {mode !== 'forgot-password' && (
           <div className="mb-4 flex gap-2 text-sm">
@@ -78,7 +78,7 @@ export function SignInUp() {
                 setError(null);
                 setInfo(null);
               }}
-              className={`rounded px-3 py-1 ${mode === 'sign-in' ? 'bg-blue-100 font-semibold text-blue-800' : 'text-gray-500'}`}
+              className={`rounded px-3 py-1 ${mode === 'sign-in' ? 'bg-accent-soft font-semibold text-accent' : 'text-muted-foreground'}`}
             >
               {t('tabSignIn')}
             </button>
@@ -89,7 +89,7 @@ export function SignInUp() {
                 setError(null);
                 setInfo(null);
               }}
-              className={`rounded px-3 py-1 ${mode === 'sign-up' ? 'bg-blue-100 font-semibold text-blue-800' : 'text-gray-500'}`}
+              className={`rounded px-3 py-1 ${mode === 'sign-up' ? 'bg-accent-soft font-semibold text-accent' : 'text-muted-foreground'}`}
             >
               {t('tabSignUp')}
             </button>
@@ -98,27 +98,27 @@ export function SignInUp() {
 
         {mode === 'forgot-password' && (
           <>
-            <h2 className="mb-1 text-base font-semibold text-gray-800">{t('forgotPasswordTitle')}</h2>
-            <p className="mb-4 text-sm text-gray-500">{t('forgotPasswordSubtitle')}</p>
+            <h2 className="mb-1 text-base font-semibold text-ink">{t('forgotPasswordTitle')}</h2>
+            <p className="mb-4 text-sm text-muted-foreground">{t('forgotPasswordSubtitle')}</p>
           </>
         )}
 
-        <label className="mb-1 block text-xs font-semibold text-gray-500">{t('email')}</label>
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('email')}</label>
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          className="mb-3 w-full rounded border border-border px-3 py-2 text-sm"
         />
 
         {mode !== 'forgot-password' && (
           <>
-            <label className="mb-1 block text-xs font-semibold text-gray-500">{t('password')}</label>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('password')}</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mb-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              className="mb-1 w-full rounded border border-border px-3 py-2 text-sm"
             />
           </>
         )}
@@ -132,7 +132,7 @@ export function SignInUp() {
                 setError(null);
                 setInfo(null);
               }}
-              className="text-xs text-blue-700 hover:underline"
+              className="text-xs text-accent hover:underline"
             >
               {t('forgotPassword')}
             </button>
@@ -141,12 +141,12 @@ export function SignInUp() {
         {mode === 'sign-up' && <div className="mb-4" />}
 
         {error && (
-          <div className="mb-3 rounded border-l-4 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mb-3 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
             {error}
           </div>
         )}
         {info && (
-          <div className="mb-3 rounded border-l-4 border-green-600 bg-green-50 px-3 py-2 text-sm text-green-700">
+          <div className="mb-3 rounded border-l-4 border-success bg-success-soft px-3 py-2 text-sm text-success">
             {info}
           </div>
         )}
@@ -156,7 +156,7 @@ export function SignInUp() {
             <button
               type="submit"
               disabled={!canSendReset}
-              className="mb-3 w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
+              className="mb-3 w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
             >
               {busy ? t('sendingReset') : t('sendResetLink')}
             </button>
@@ -167,7 +167,7 @@ export function SignInUp() {
                 setError(null);
                 setInfo(null);
               }}
-              className="w-full rounded border border-gray-300 py-2 text-sm text-gray-500 hover:bg-gray-50"
+              className="w-full rounded border border-border py-2 text-sm text-muted-foreground hover:bg-surface-2"
             >
               {t('backToSignIn')}
             </button>
@@ -176,7 +176,7 @@ export function SignInUp() {
           <button
             type="submit"
             disabled={!canSubmit}
-            className="w-full rounded bg-blue-700 py-2 text-sm font-medium text-white disabled:bg-gray-300 disabled:text-gray-500"
+            className="w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
           >
             {busy ? t('signInBusy') : mode === 'sign-in' ? t('tabSignIn') : t('tabSignUp')}
           </button>

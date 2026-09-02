@@ -43,12 +43,12 @@ export function WizardStepper({ currentStep, onStepClick }: Props) {
           >
             <div
               className={`mb-1 h-1 rounded-full ${
-                isCurrent ? 'bg-blue-700' : isDone ? 'bg-blue-300 hover:bg-blue-500' : 'bg-gray-200'
+                isCurrent ? 'bg-accent' : isDone ? 'bg-accent-soft hover:bg-accent/60' : 'bg-surface-2'
               }`}
             />
             <span
               className={`block truncate text-[9px] leading-tight ${
-                isCurrent ? 'font-semibold text-blue-700' : clickable ? 'text-blue-500' : 'text-gray-400'
+                isCurrent ? 'font-semibold text-accent' : clickable ? 'text-accent/70' : 'text-muted-foreground'
               }`}
             >
               {t(key)}
