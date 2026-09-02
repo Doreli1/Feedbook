@@ -26,7 +26,7 @@ export function WizardShell({ restaurantName, restaurantAddress, currentStep, on
           same full-bleed placement as Booking's own header. */}
       <header dir="ltr" className="flex items-center justify-between gap-4 bg-ink px-4 py-3 sm:px-8">
         <FeedbookBrand onDark />
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           {restaurantName && (
             <div dir="auto" className="max-w-[220px] text-right">
               <p className="truncate text-sm font-medium text-white">{restaurantName}</p>
