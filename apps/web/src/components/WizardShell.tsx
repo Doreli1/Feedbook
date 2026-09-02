@@ -8,6 +8,11 @@ interface Props {
   restaurantAddress?: string;
   currentStep: number;
   onStepClick?: (step: number) => void;
+  // Omits the step bar entirely — for reusing this same header+content shell
+  // outside the actual wizard sequence (editing an already-approved
+  // restaurant's details from the Dashboard), where showing "step 1 of 4"
+  // would misleadingly imply the rest of the wizard still needs doing.
+  hideStepper?: boolean;
   children: ReactNode;
 }
 
@@ -18,15 +23,22 @@ interface Props {
 // Booking's blue. Deliberately distinct from the compact centered-card shell
 // still used by the plain auth screens (sign-in, MFA, password reset): this
 // is the "restaurant registration" family (AFD §3.7), not the "login" one.
-export function WizardShell({ restaurantName, restaurantAddress, currentStep, onStepClick, children }: Props) {
+export function WizardShell({
+  restaurantName,
+  restaurantAddress,
+  currentStep,
+  onStepClick,
+  hideStepper = false,
+  children,
+}: Props) {
   return (
     <div className="min-h-screen bg-background">
-      {/* Brand and business-context+language sit at the true edges of the bar
-          (not a centered max-width block like the step bar/content below) —
-          same full-bleed placement as Booking's own header. */}
-      <header dir="ltr" className="flex items-center justify-between gap-4 bg-ink px-4 py-3 sm:px-8">
+      {/* Brand and business-context+language sit at the bar's true edges —
+          full-bleed, same placement as Booking's own header — not
+          constrained to the step bar/content's narrower centered width. */}
+      <header dir="ltr" className="flex items-center justify-between gap-4 bg-ink px-6 py-3 sm:px-12">
         <FeedbookBrand onDark />
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
           {restaurantName && (
             <div dir="auto" className="max-w-[220px] text-right">
               <p className="truncate text-sm font-medium text-white">{restaurantName}</p>
@@ -37,11 +49,13 @@ export function WizardShell({ restaurantName, restaurantAddress, currentStep, on
         </div>
       </header>
 
-      <div className="border-b border-border bg-surface px-4 py-4 sm:px-8">
-        <div className="mx-auto max-w-3xl">
-          <WizardStepper currentStep={currentStep} onStepClick={onStepClick} />
+      {!hideStepper && (
+        <div className="border-b border-border bg-surface px-4 py-4 sm:px-8">
+          <div className="mx-auto max-w-3xl">
+            <WizardStepper currentStep={currentStep} onStepClick={onStepClick} />
+          </div>
         </div>
-      </div>
+      )}
 
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-8">{children}</main>
     </div>
