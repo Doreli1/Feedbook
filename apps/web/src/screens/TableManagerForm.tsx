@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Restaurant, RestaurantTable } from '@feedbook/types';
 import { WizardShell } from '../components/WizardShell';
-import { SubStepTabs } from '../components/SubStepTabs';
 import { TrashIcon, PencilIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 
@@ -40,12 +39,18 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
   }
 
   return (
-    <WizardShell restaurantName={restaurant.name} restaurantAddress={restaurant.address ?? undefined} currentStep={3}>
+    <WizardShell
+      restaurantName={restaurant.name}
+      restaurantAddress={restaurant.address ?? undefined}
+      currentStep={3}
+      activeSubStep="seating"
+      onSubStepClick={(subStep) => {
+        if (subStep === 'menu') onBack();
+      }}
+    >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('stepRestaurantSetup')}</h1>
-        <p className="mb-4 text-sm text-muted-foreground">{t('tableStepSubtitle')}</p>
-
-        <SubStepTabs active="seating" onMenu={onBack} onSeating={() => {}} />
+        <p className="mb-6 text-sm text-muted-foreground">{t('tableStepSubtitle')}</p>
 
         {error && (
           <div className="mb-4 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">

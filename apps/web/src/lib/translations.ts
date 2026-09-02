@@ -140,7 +140,8 @@ const translations = {
 
     // WizardStepper — stepRestaurantSetup is the parent step's own label
     // (also used as the h1 on both its sub-steps); stepMenu/stepSeating
-    // label the two SubStepTabs within it, not separate parent segments.
+    // label its split sub-bars (WizardStepper's SubSegment) while either is
+    // active, not separate parent segments of their own.
     stepRestaurantDetails: 'פרטי מסעדה',
     stepKosher: 'כשרות',
     stepRestaurantSetup: 'הגדרת המסעדה',

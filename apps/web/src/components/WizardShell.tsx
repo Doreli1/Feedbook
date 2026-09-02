@@ -8,6 +8,9 @@ interface Props {
   restaurantAddress?: string;
   currentStep: number;
   onStepClick?: (step: number) => void;
+  // Passed straight through to WizardStepper — see its own doc comment.
+  activeSubStep?: 'menu' | 'seating';
+  onSubStepClick?: (subStep: 'menu' | 'seating') => void;
   // Omits the step bar entirely — for reusing this same header+content shell
   // outside the actual wizard sequence (editing an already-approved
   // restaurant's details from the Dashboard), where showing "step 1 of 4"
@@ -28,6 +31,8 @@ export function WizardShell({
   restaurantAddress,
   currentStep,
   onStepClick,
+  activeSubStep,
+  onSubStepClick,
   hideStepper = false,
   children,
 }: Props) {
@@ -52,7 +57,12 @@ export function WizardShell({
       {!hideStepper && (
         <div className="border-b border-border bg-surface px-4 py-4 sm:px-8">
           <div className="mx-auto max-w-3xl">
-            <WizardStepper currentStep={currentStep} onStepClick={onStepClick} />
+            <WizardStepper
+              currentStep={currentStep}
+              onStepClick={onStepClick}
+              activeSubStep={activeSubStep}
+              onSubStepClick={onSubStepClick}
+            />
           </div>
         </div>
       )}
