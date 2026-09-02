@@ -8,6 +8,7 @@ import { SetNewPassword } from './screens/SetNewPassword';
 import { MfaEnroll } from './screens/MfaEnroll';
 import { MfaChallenge } from './screens/MfaChallenge';
 import { RegistrationWizard } from './screens/RegistrationWizard';
+import { RestaurantDetailsForm } from './screens/RestaurantDetailsForm';
 import { Dashboard } from './screens/Dashboard';
 
 function LoadingScreen() {
@@ -20,6 +21,7 @@ function LoadingScreen() {
 }
 
 function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<typeof useAuth>['session']> }) {
+  const { t } = useI18n();
   const { loading, restaurants, refresh } = useOwnRestaurants(session);
   const { activeId, setActiveId } = useActiveRestaurantId(restaurants);
   // Explicitly starting a second (or later) restaurant, via the header's
@@ -27,6 +29,10 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
   // since in that case the active restaurant may already be a perfectly
   // normal approved one that Dashboard would otherwise show.
   const [startingNew, setStartingNew] = useState(false);
+  // Editing an already-approved restaurant's details from the Dashboard —
+  // distinct from the wizard's own step 1 (onboarding_status === 'draft'),
+  // which is a different route below and doesn't need this flag at all.
+  const [editingDetails, setEditingDetails] = useState(false);
 
   if (loading) return <LoadingScreen />;
 
@@ -50,6 +56,21 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
   if (activeRestaurant.onboarding_status === 'draft') {
     return <RegistrationWizard session={session} restaurant={activeRestaurant} onRefresh={refresh} />;
   }
+
+  if (editingDetails) {
+    return (
+      <RestaurantDetailsForm
+        session={session}
+        restaurant={activeRestaurant}
+        onNext={() => {
+          setEditingDetails(false);
+          void refresh();
+        }}
+        primaryLabel={t('saveAndReturnToDashboard')}
+      />
+    );
+  }
+
   return (
     <Dashboard
       email={session.user.email}
@@ -57,6 +78,7 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
       restaurants={restaurants}
       onSwitchRestaurant={setActiveId}
       onAddRestaurant={() => setStartingNew(true)}
+      onEditDetails={() => setEditingDetails(true)}
     />
   );
 }

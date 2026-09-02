@@ -17,9 +17,10 @@ interface Props {
   restaurants: Restaurant[];
   onSwitchRestaurant: (id: string) => void;
   onAddRestaurant: () => void;
+  onEditDetails: () => void;
 }
 
-export function Dashboard({ email, restaurant, restaurants, onSwitchRestaurant, onAddRestaurant }: Props) {
+export function Dashboard({ email, restaurant, restaurants, onSwitchRestaurant, onAddRestaurant, onEditDetails }: Props) {
   const { t } = useI18n();
   return (
     <div className="min-h-screen bg-background px-6 py-4">
@@ -40,6 +41,12 @@ export function Dashboard({ email, restaurant, restaurants, onSwitchRestaurant, 
         {restaurant.onboarding_status !== 'approved' && (
           <p className="mb-6 max-w-sm text-center text-sm text-muted-foreground">{t('dashboardComingSoon')}</p>
         )}
+        <button
+          onClick={onEditDetails}
+          className="mb-3 rounded border border-border px-4 py-2 text-sm text-ink hover:bg-surface-2"
+        >
+          {t('editRestaurantDetails')}
+        </button>
         <button
           onClick={() => void supabase.auth.signOut()}
           className="rounded border border-danger px-4 py-2 text-sm text-danger hover:bg-danger-soft"

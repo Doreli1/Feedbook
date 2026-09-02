@@ -12,8 +12,16 @@ type SaveState = 'idle' | 'incomplete' | 'saving' | 'saved' | 'error';
 interface Props {
   session: Session;
   restaurant: Restaurant | null;
-  onCreated: (id: string) => void;
+  // Optional: this screen is never reached with restaurant === null outside
+  // the wizard's own step 1, so an edit-from-Dashboard visit (always an
+  // existing, already-approved restaurant) never actually calls this.
+  onCreated?: (id: string) => void;
   onNext: () => void;
+  // Overrides the primary button's label (default t('continue')) — for
+  // reuse outside the wizard sequence, editing an already-approved
+  // restaurant's details from the Dashboard, where "continue" (implying a
+  // next wizard step) doesn't apply; onNext there just returns to Dashboard.
+  primaryLabel?: string;
 }
 
 // Israeli mobile prefixes only — this is a mobile-contact field (matches the
@@ -74,7 +82,7 @@ function isRuleComplete(rule: HourRule): boolean {
 
 // AFD §3.7.1 screen 2: "פרטי מסעדה בסיסיים" — name, address, phone, hours,
 // auto-saved as a draft at every step (DoD: no data loss on refresh/disconnect).
-export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }: Props) {
+export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, primaryLabel }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState(restaurant?.name ?? '');
   const [address, setAddress] = useState(restaurant?.address ?? '');
@@ -152,7 +160,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
         return;
       }
       setSaveState('saved');
-      onCreated(body.restaurant.id);
+      onCreated?.(body.restaurant.id);
       return;
     }
 
@@ -174,6 +182,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
       restaurantName={restaurant?.name}
       restaurantAddress={restaurant?.address ?? undefined}
       currentStep={1}
+      hideStepper={!!primaryLabel}
     >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
@@ -304,7 +313,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext }
           disabled={!restaurantId}
           className="mb-3 w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
         >
-          {t('continue')}
+          {primaryLabel ?? t('continue')}
         </button>
 
         <button
