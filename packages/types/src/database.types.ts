@@ -1007,6 +1007,7 @@ export type Database = {
           smoking_allowed: boolean
           status: string
           table_number: string
+          table_type: string | null
         }
         Insert: {
           capacity: number
@@ -1018,6 +1019,7 @@ export type Database = {
           smoking_allowed?: boolean
           status?: string
           table_number: string
+          table_type?: string | null
         }
         Update: {
           capacity?: number
@@ -1029,6 +1031,7 @@ export type Database = {
           smoking_allowed?: boolean
           status?: string
           table_number?: string
+          table_type?: string | null
         }
         Relationships: [
           {
