@@ -62,6 +62,7 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
       <RestaurantDetailsForm
         session={session}
         restaurant={activeRestaurant}
+        onSaved={() => void refresh()}
         onNext={() => {
           setEditingDetails(false);
           void refresh();

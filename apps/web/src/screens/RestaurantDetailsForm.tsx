@@ -16,6 +16,13 @@ interface Props {
   // the wizard's own step 1, so an edit-from-Dashboard visit (always an
   // existing, already-approved restaurant) never actually calls this.
   onCreated?: (id: string) => void;
+  // Fired after every successful save, create or update — lets the parent
+  // refetch its own restaurant list so a later remount of this screen (step
+  // bar navigation, or leaving and returning) doesn't read a stale cached
+  // copy missing what was just saved. onCreated alone isn't enough: it only
+  // fires for a brand-new restaurant's first save, never for an update to
+  // one that already exists.
+  onSaved?: () => void;
   onNext: () => void;
   // Overrides the primary button's label (default t('continue')) — for
   // reuse outside the wizard sequence, editing an already-approved
@@ -87,7 +94,7 @@ function isRuleComplete(rule: HourRule): boolean {
 
 // AFD §3.7.1 screen 2: "פרטי מסעדה בסיסיים" — name, address, phone, hours,
 // auto-saved as a draft at every step (DoD: no data loss on refresh/disconnect).
-export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, primaryLabel, onStepClick }: Props) {
+export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved, onNext, primaryLabel, onStepClick }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState(restaurant?.name ?? '');
   const [address, setAddress] = useState(restaurant?.address ?? '');
@@ -136,6 +143,17 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, 
     onStepClick?.(target);
   }
 
+  // Same flush as handleStepClick, but awaited: "continue" unmounts this
+  // screen immediately after, so a fire-and-forget save here would race the
+  // unmount and could get cancelled by the debounce effect's own cleanup.
+  async function handleContinue() {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      if (hasRequiredFields) await save();
+    }
+    onNext();
+  }
+
   function updateRule(key: string, patch: Partial<HourRule>) {
     setHourRules((rules) => rules.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
@@ -174,6 +192,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, 
       }
       setSaveState('saved');
       onCreated?.(body.restaurant.id);
+      onSaved?.();
       return;
     }
 
@@ -185,6 +204,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, 
       return;
     }
     setSaveState('saved');
+    onSaved?.();
   }
 
   return (
@@ -320,7 +340,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onNext, 
         </div>
 
         <button
-          onClick={onNext}
+          onClick={() => void handleContinue()}
           disabled={!restaurantId}
           className="mb-3 w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
         >

@@ -71,6 +71,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
           onCreated?.(id);
           onRefresh();
         }}
+        onSaved={onRefresh}
         onNext={() => setStep(2)}
         onStepClick={restaurant ? goToStep : undefined}
       />
@@ -116,6 +117,14 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
     );
   }
 
+  // TODO(review screen): free step-bar navigation (goToStep, above) means a
+  // user can click straight here without ever completing kosher/menu/tables
+  // — there's no submission yet to block, so it's a non-issue today, but
+  // whatever replaces this placeholder MUST validate real completeness
+  // (menu's own >=1-category/>=1-dish minimum, at least) before allowing
+  // final submission — not just rely on having reached this screen. Flagged
+  // per direct product decision 2026-09-02: keep free navigation, add that
+  // check when this screen is actually built. See also AFD §3.7.1 screen 7.
   return (
     <WizardShell
       restaurantName={restaurant?.name}
