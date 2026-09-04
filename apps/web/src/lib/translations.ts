@@ -65,8 +65,6 @@ const translations = {
     savedAsDraft: 'נשמר כטיוטה ✓',
     continue: 'המשך',
     cancel: 'ביטול',
-    wizardInProgressNote:
-      'שלבי ההמשך של ההרשמה (תמחור, הסכם שותפות וסקירה סופית) בבנייה — הפרטים שכבר מילאת שמורים ולא ילכו לאיבוד.',
 
     // KosherStatusForm
     kosherStepTitle: 'סטטוס כשרות',
@@ -140,6 +138,29 @@ const translations = {
     tableGroupDecrement: 'הסרת שולחן אחד מהקבוצה',
     tableGroupQuantityLabel: 'עדכון כמות',
     tableBarCapacityHint: 'ישיבת בר מוגבלת למקום אחד לכל שולחן (כל שולחן מייצג מושב בודד)',
+
+    // ReviewSubmitForm
+    reviewTitle: 'סקירה סופית והסכם הצטרפות',
+    reviewSubtitle: 'בדקו שכל הפרטים נכונים, ואשרו את הסכם ההצטרפות כדי להגיש את הבקשה לבדיקה.',
+    reviewDetailsHeading: 'פרטי המסעדה',
+    reviewNoHours: 'לא הוגדרו שעות פעילות',
+    reviewKosherHeading: 'כשרות',
+    kosherNotCertifiedLabel: 'לא מאושרת כשרות',
+    reviewMenuHeading: 'תפריט',
+    reviewMenuSummaryPrefix: 'קטגוריות:',
+    reviewMenuSummaryDishes: 'מנות:',
+    reviewMenuIncomplete: 'התפריט לא הושלם — נדרשת קטגוריה אחת לפחות ומנה אחת לפחות לפני הגשה.',
+    reviewGoToMenu: 'מעבר להגדרת תפריט',
+    reviewTablesHeading: 'הושבה',
+    reviewTablesCountSuffix: 'שולחנות',
+    reviewTableTypesSuffix: 'סוגים',
+    reviewNoTables: 'לא הוגדרו שולחנות (אופציונלי)',
+    reviewAgreementHeading: 'הסכם הצטרפות',
+    reviewAgreementPlaceholderNote:
+      'טקסט ההסכם הסופי נמצא כעת בבדיקה משפטית ויעודכן בהמשך — זהו נוסח זמני (placeholder) לצורך בדיקת הזרימה בלבד.',
+    reviewAgreementCheckboxLabel: 'קראתי ואני מאשר/ת את תנאי הסכם ההצטרפות (טיוטה)',
+    reviewSubmit: 'הגשה לבדיקה',
+    reviewSubmitting: 'שולח...',
 
     // SetNewPassword
     setNewPasswordTitle: 'בחירת סיסמה חדשה',
@@ -237,8 +258,6 @@ const translations = {
     savedAsDraft: 'Saved as draft ✓',
     continue: 'Continue',
     cancel: 'Cancel',
-    wizardInProgressNote:
-      "The remaining registration steps (pricing, partnership agreement, and final review) are still being built — what you've filled in is saved and won't be lost.",
 
     // KosherStatusForm
     kosherStepTitle: 'Kosher Status',
@@ -312,6 +331,29 @@ const translations = {
     tableGroupDecrement: 'Remove one table from the group',
     tableGroupQuantityLabel: 'Update quantity',
     tableBarCapacityHint: 'Bar seating is limited to 1 seat per table (each table represents a single seat)',
+
+    // ReviewSubmitForm
+    reviewTitle: 'Final Review & Partnership Agreement',
+    reviewSubtitle: 'Check that everything is correct, and accept the partnership agreement to submit your application for review.',
+    reviewDetailsHeading: 'Restaurant Details',
+    reviewNoHours: 'No operating hours set',
+    reviewKosherHeading: 'Kosher Status',
+    kosherNotCertifiedLabel: 'Not kosher-certified',
+    reviewMenuHeading: 'Menu',
+    reviewMenuSummaryPrefix: 'Categories:',
+    reviewMenuSummaryDishes: 'Dishes:',
+    reviewMenuIncomplete: 'The menu is incomplete — at least one category and one dish are required before submitting.',
+    reviewGoToMenu: 'Go to menu setup',
+    reviewTablesHeading: 'Seating',
+    reviewTablesCountSuffix: 'tables',
+    reviewTableTypesSuffix: 'types',
+    reviewNoTables: 'No tables set up (optional)',
+    reviewAgreementHeading: 'Partnership Agreement',
+    reviewAgreementPlaceholderNote:
+      'The final agreement text is currently under legal review and will be updated later — this is placeholder wording for testing the flow only.',
+    reviewAgreementCheckboxLabel: 'I have read and agree to the partnership agreement terms (draft)',
+    reviewSubmit: 'Submit for Review',
+    reviewSubmitting: 'Submitting...',
 
     // SetNewPassword
     setNewPasswordTitle: 'Choose a new password',

@@ -28,7 +28,7 @@ interface Props {
 // and, per Content Guidelines §2.10, not yet set — this screen enforces the
 // one part that IS defined (>=1 category, >=1 dish) and leaves the number
 // itself easy to raise in one place (MIN_DISHES) once decided.
-const MIN_DISHES = 1;
+export const MIN_DISHES = 1;
 
 // dishes.description has a matching char_length <= 400 DB constraint
 // (dish_description_length migration) — keep the two in sync.
