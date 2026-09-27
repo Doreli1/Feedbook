@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { FeedbookBrand } from '../components/FeedbookBrand';
 import { LanguageToggle } from '../components/LanguageToggle';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useI18n } from '../lib/i18n';
 
 export function MfaChallenge({ onDone }: { onDone: () => void }) {
@@ -9,6 +10,7 @@ export function MfaChallenge({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
 
   async function handleVerify(e: FormEvent) {
     e.preventDefault();
@@ -80,12 +82,25 @@ export function MfaChallenge({ onDone }: { onDone: () => void }) {
         {/* Escape route (Nielsen heuristic #3) — wrong account or lost
             authenticator app, either way the user needs a way back. */}
         <button
-          onClick={() => void supabase.auth.signOut()}
+          onClick={() => setConfirmingSignOut(true)}
           className="w-full rounded border border-border py-2 text-sm text-muted-foreground hover:bg-surface-2"
         >
           {t('signOutAndStartOver')}
         </button>
       </div>
+      <ConfirmDialog
+        open={confirmingSignOut}
+        title={t('confirmSignOutTitle')}
+        description={t('confirmSignOutDescription')}
+        confirmLabel={t('signOut')}
+        cancelLabel={t('cancel')}
+        confirmVariant="danger"
+        onConfirm={() => {
+          setConfirmingSignOut(false);
+          void supabase.auth.signOut();
+        }}
+        onCancel={() => setConfirmingSignOut(false)}
+      />
     </div>
   );
 }

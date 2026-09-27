@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Restaurant } from '@feedbook/types';
 import { WizardShell } from '../components/WizardShell';
+import { Tooltip } from '../components/Tooltip';
 import { TrashIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
@@ -40,6 +41,16 @@ interface Props {
 // hours field's own "call the restaurant" purpose), not a general phone
 // field, so landline area codes (02/03/04/etc.) are deliberately excluded.
 const MOBILE_PREFIXES = ['050', '051', '052', '053', '054', '055', '058'];
+
+// Matches the restaurants.cuisine_tags CHECK constraint's valid-values list
+// exactly (20260910120000_restaurant_profile_fields.sql) — keep in sync if
+// a tag is ever added there.
+const CUISINE_TAG_KEYS: Record<string, TranslationKey> = {
+  dairy: 'cuisineDairy',
+  meat: 'cuisineMeat',
+  fish: 'cuisineFish',
+  asian: 'cuisineAsian',
+};
 
 // Splits a stored "050-1234567" value back into its two input fields when
 // editing an existing draft. Anything that doesn't match (empty, or a value
@@ -97,10 +108,19 @@ function isRuleComplete(rule: HourRule): boolean {
 export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved, onNext, primaryLabel, onStepClick }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState(restaurant?.name ?? '');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoUrl, setLogoUrl] = useState(restaurant?.logo_url ?? null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [description, setDescription] = useState(restaurant?.description ?? '');
+  const [cuisineTags, setCuisineTags] = useState<string[]>(restaurant?.cuisine_tags ?? []);
   const [address, setAddress] = useState(restaurant?.address ?? '');
   const [phonePrefix, setPhonePrefix] = useState(() => parsePhone(restaurant?.phone ?? null).prefix);
   const [phoneNumber, setPhoneNumber] = useState(() => parsePhone(restaurant?.phone ?? null).number);
   const [hourRules, setHourRules] = useState<HourRule[]>(() => parseHours(restaurant?.hours ?? null));
+  const [cancellationWindow, setCancellationWindow] = useState(
+    restaurant?.cancellation_window_minutes != null ? String(restaurant.cancellation_window_minutes) : '',
+  );
+  const [vatRate, setVatRate] = useState(restaurant ? String(restaurant.vat_rate_percent) : '18');
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const restaurantId = restaurant?.id ?? null;
@@ -133,7 +153,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, address, phone, hourRules]);
+  }, [name, address, phone, hourRules, logoFile, description, cuisineTags, cancellationWindow, vatRate]);
 
   function handleStepClick(target: number) {
     if (debounceRef.current) {
@@ -160,6 +180,23 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
 
   function removeRule(key: string) {
     setHourRules((rules) => rules.filter((r) => r.key !== key));
+  }
+
+  const isCertified = restaurant?.kosher_status === 'certified';
+
+  // Proactive UI guard in front of the real DB constraint
+  // (cuisine_tags_kosher_exclusive) — a certified restaurant can pick only
+  // one of dairy/meat, confirmed directly with the product owner
+  // (2026-09-10). Fish/asian/etc. are never restricted by this.
+  function toggleCuisineTag(tag: string) {
+    setCuisineTags((prev) => {
+      if (prev.includes(tag)) return prev.filter((t) => t !== tag);
+      if (isCertified && (tag === 'dairy' || tag === 'meat')) {
+        const other = tag === 'dairy' ? 'meat' : 'dairy';
+        return [...prev.filter((t) => t !== other), tag];
+      }
+      return [...prev, tag];
+    });
   }
 
   async function save() {
@@ -196,13 +233,46 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       return;
     }
 
-    const { error } = await supabase.from('restaurants').update({ name, address, phone, hours }).eq('id', restaurantId);
+    // Keep the existing logo untouched unless a new file was chosen — same
+    // "only touch what changed" approach already used for dish photos.
+    let nextLogoUrl = logoUrl;
+    if (logoFile) {
+      const ext = logoFile.name.split('.').pop() ?? 'jpg';
+      const path = `${restaurantId}/${crypto.randomUUID()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('restaurant-logos')
+        .upload(path, logoFile, { contentType: logoFile.type });
+      if (uploadError) {
+        setErrorMessage(uploadError.message);
+        setSaveState('error');
+        return;
+      }
+      const { data: publicUrlData } = supabase.storage.from('restaurant-logos').getPublicUrl(path);
+      nextLogoUrl = publicUrlData.publicUrl;
+    }
+
+    const { error } = await supabase
+      .from('restaurants')
+      .update({
+        name,
+        address,
+        phone,
+        hours,
+        logo_url: nextLogoUrl,
+        description: description.trim() || null,
+        cuisine_tags: cuisineTags,
+        cancellation_window_minutes: cancellationWindow.trim() === '' ? null : Number(cancellationWindow),
+        vat_rate_percent: vatRate.trim() === '' ? 18 : Number(vatRate),
+      })
+      .eq('id', restaurantId);
 
     if (error) {
       setErrorMessage(error.message);
       setSaveState('error');
       return;
     }
+    setLogoUrl(nextLogoUrl);
+    setLogoFile(null);
     setSaveState('saved');
     onSaved?.();
   }
@@ -211,6 +281,8 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     <WizardShell
       restaurantName={restaurant?.name}
       restaurantAddress={restaurant?.address ?? undefined}
+      userEmail={session.user.email}
+      onSignOut={() => void supabase.auth.signOut()}
       currentStep={1}
       hideStepper={!!primaryLabel}
       onStepClick={onStepClick && handleStepClick}
@@ -226,6 +298,77 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           onChange={(e) => setName(e.target.value)}
           className="mb-3 w-full rounded border border-border px-3 py-2 text-sm"
         />
+
+        {restaurantId && (
+          <div className="mb-3">
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('restaurantLogo')}</label>
+            <div className="flex items-center gap-3">
+              {logoFile || logoUrl ? (
+                <img
+                  src={logoFile ? URL.createObjectURL(logoFile) : (logoUrl as string)}
+                  alt=""
+                  className="h-12 w-12 rounded-full border border-border object-cover"
+                />
+              ) : (
+                <div className="h-12 w-12 rounded-full border border-border bg-surface-2" />
+              )}
+              <button
+                type="button"
+                onClick={() => logoInputRef.current?.click()}
+                className="rounded border border-border px-2 py-1 text-xs text-accent hover:bg-accent-soft"
+              >
+                {logoUrl || logoFile ? t('logoReplace') : t('logoUpload')}
+              </button>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+            <p className="mt-1 text-[10px] text-muted-foreground">{t('logoHelp')}</p>
+          </div>
+        )}
+
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('restaurantDescription')}</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          placeholder={t('restaurantDescriptionPlaceholder')}
+          className="mb-3 w-full resize-y rounded border border-border px-3 py-2 text-sm"
+        />
+
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('cuisineTags')}</label>
+        <div className="mb-1 flex flex-wrap gap-2">
+          {Object.entries(CUISINE_TAG_KEYS).map(([tag, key]) => {
+            const selected = cuisineTags.includes(tag);
+            const otherDairyMeat = tag === 'dairy' ? 'meat' : tag === 'meat' ? 'dairy' : null;
+            const disabled = !selected && isCertified && !!otherDairyMeat && cuisineTags.includes(otherDairyMeat);
+            return (
+              <button
+                key={tag}
+                type="button"
+                disabled={disabled}
+                onClick={() => toggleCuisineTag(tag)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  selected
+                    ? 'border-accent bg-accent-soft text-accent'
+                    : disabled
+                      ? 'cursor-not-allowed border-border text-muted-foreground opacity-50'
+                      : 'border-border text-ink hover:bg-surface-2'
+                }`}
+              >
+                {t(key)}
+              </button>
+            );
+          })}
+        </div>
+        {isCertified && (
+          <p className="mb-3 text-[10px] text-muted-foreground">{t('cuisineKosherExclusiveHint')}</p>
+        )}
+        {!isCertified && <div className="mb-3" />}
 
         <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('address')}</label>
         <input
@@ -275,7 +418,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
               >
                 <option value="" />
                 {DAY_KEYS.map((key, i) => (
-                  <option key={key} value={i}>
+                  <option key={key} value={i} disabled={isCertified && i === 6}>
                     {t(key)}
                   </option>
                 ))}
@@ -288,7 +431,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
               >
                 <option value="" />
                 {DAY_KEYS.map((key, i) => (
-                  <option key={key} value={i}>
+                  <option key={key} value={i} disabled={isCertified && i === 6}>
                     {t(key)}
                   </option>
                 ))}
@@ -306,15 +449,16 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
                 onChange={(e) => updateRule(rule.key, { close: e.target.value })}
                 className="rounded border border-border px-1.5 py-1 text-xs"
               />
-              <button
-                type="button"
-                onClick={() => removeRule(rule.key)}
-                title={t('hoursRemoveRange')}
-                aria-label={t('hoursRemoveRange')}
-                className="ms-auto shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
-              >
-                <TrashIcon className="h-3.5 w-3.5" />
-              </button>
+              <Tooltip content={t('hoursRemoveRange')} className="ms-auto">
+                <button
+                  type="button"
+                  onClick={() => removeRule(rule.key)}
+                  aria-label={t('hoursRemoveRange')}
+                  className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
+                >
+                  <TrashIcon className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
             </div>
           ))}
         </div>
@@ -325,12 +469,45 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         >
           {t('hoursAddRange')}
         </button>
+        {isCertified && (
+          <p className="mb-3 text-[10px] text-muted-foreground">{t('hoursKosherClosedSaturdayHint')}</p>
+        )}
 
         {formattedHours.length > 0 && (
           <p dir="auto" className="mb-4 rounded bg-accent-soft px-3 py-2 text-xs text-ink-soft">
             {formattedHours.join(', ')}
           </p>
         )}
+
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('cancellationWindow')}</label>
+        <div className="mb-1 flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            value={cancellationWindow}
+            onChange={(e) => setCancellationWindow(e.target.value.replace(/\D/g, ''))}
+            placeholder="10"
+            className="w-24 rounded border border-border px-3 py-2 text-sm"
+          />
+          <span className="text-xs text-muted-foreground">{t('cancellationWindowUnit')}</span>
+        </div>
+        <p className="mb-4 text-[10px] text-muted-foreground">{t('cancellationWindowHelp')}</p>
+
+        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('vatRateLabel')}</label>
+        <div className="mb-1 flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="0.1"
+            value={vatRate}
+            onChange={(e) => setVatRate(e.target.value)}
+            placeholder="18"
+            className="w-24 rounded border border-border px-3 py-2 text-sm"
+          />
+          <span className="text-xs text-muted-foreground">%</span>
+        </div>
+        <p className="mb-4 text-[10px] text-muted-foreground">{t('vatRateHelp')}</p>
 
         <div className="mb-4 min-h-5 text-xs">
           {saveState === 'incomplete' && <span className="text-muted-foreground">{t('fillRequiredFields')}</span>}
@@ -342,16 +519,9 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         <button
           onClick={() => void handleContinue()}
           disabled={!restaurantId}
-          className="mb-3 w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
+          className="w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
         >
           {primaryLabel ?? t('continue')}
-        </button>
-
-        <button
-          onClick={() => void supabase.auth.signOut()}
-          className="w-full rounded border border-danger py-2 text-sm text-danger hover:bg-danger-soft"
-        >
-          {t('signOut')}
         </button>
       </div>
     </WizardShell>

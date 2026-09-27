@@ -25,6 +25,13 @@
   --warning: #b8862e;
   --warning-soft: #faf1df;
   --shadow: 0 1px 2px rgba(19, 49, 79, 0.06), 0 8px 24px rgba(19, 49, 79, 0.08);
+  /* Brand chrome (TopBar/WizardShell header bar only) — deliberately fixed
+     across light/dark, unlike --ink which flips role in dark mode (becomes a
+     light text color, not a background). Matches the diner mobile app's own
+     splash-screen blue (Mobile UI Spec), so the brand reads as one color on
+     both sides of the product. Not used for heading/label text anywhere —
+     that stays on --ink. */
+  --chrome-bg: #1b3fa8;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -71,6 +78,7 @@
   --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
+  --color-chrome: var(--chrome-bg);
   --font-heading: 'Rubik', sans-serif;
   --font-body: 'Heebo', sans-serif;
 }
@@ -89,10 +97,38 @@ body {
   font-family: 'Baloo 2', sans-serif;
 }
 
+/* Typography system, per the Feedbook Design System: Rubik for every
+   heading, form label, button, and other piece of "UI chrome" — Heebo (the
+   body default above) stays reserved for actual reading text (paragraphs,
+   descriptions, table cell values). This only sets font-family, never size —
+   every screen's own Tailwind text-* utility keeps controlling that, so
+   existing className="text-xl" etc. usages are unaffected. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+label,
+button,
+select {
+  font-family: var(--font-heading);
+}
+
 h1,
 h2,
 h3 {
+  letter-spacing: -0.01em;
+}
+
+/* Small uppercase section/column label — table headers, group titles. Same
+   role as the badge/eyebrow labels in the Design System artifact. */
+.text-eyebrow {
   font-family: var(--font-heading);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 
 /* Shared card surface for every screen's central panel. */
@@ -101,4 +137,43 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: var(--shadow);
+}
+
+/* Browsers ship `<button>` with a default cursor of `default`, not
+   `pointer` (only `<a href>` gets pointer for free) — a few call sites had
+   already patched this one at a time with an ad hoc `cursor-pointer` class
+   before this rule existed. Applied project-wide instead (2026-09-23) so
+   every clickable control shows a pointer, not just the ones someone
+   remembered to annotate. No clickable non-interactive element (e.g. a
+   <div onClick>) exists anywhere in this codebase as of this writing —
+   every real click target is one of the selectors below. */
+button:not(:disabled),
+select,
+a[href],
+[role='button'],
+input[type='checkbox']:not(:disabled),
+input[type='radio']:not(:disabled) {
+  cursor: pointer;
+}
+
+/* Generic "print only this element" pattern (visibility, not display, so
+   the target's own internal layout is unaffected; position:absolute then
+   pulls it to the page origin so the hidden siblings' now-empty space
+   doesn't leave a blank first page). Shared by TableQrModal's QR sheet and
+   BarTicketLabelModal's pickup label — both just need one card printed
+   alone, nothing about this rule is QR-specific. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 0;
+    width: 100%;
+  }
 }

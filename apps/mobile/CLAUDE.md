@@ -6,17 +6,36 @@ React Native app: QR entry, table session, ordering, split payment, reviews, Gen
 tier. Screen inventory and flows: `../../../2.Feedbook_App_Flow v2.docx` Part A (§2).
 Feature specs: `../../../1.PRD_restaurant_system_v5.docx` §5.2.
 
-Scaffolded (2026-08-31): Expo ~57 (Managed) + NativeWind v4, placeholder screen only —
-no real UI or feature work started. This app is intentionally last in build order
-(Implementation Plan Stage 4) — don't start real feature work here before Web Admin's
-Auth+MFA and restaurant registration are done, per the plan's own build order.
+Stage 4 (mobile core) build started 2026-09-07, Week 1 of the 4-week plan in
+`Feedbook_UI_Milestone4_Mobile_Spec.docx` — see that doc for the full M-01..M-10 screen
+map, copy, and week-by-week order; don't re-derive it from scratch. Real screens so far:
+`app/index.tsx` (M-01 Splash, real), `app/sign-in.tsx` / `app/profile.tsx` (placeholder
+stubs only — real M-02/M-03/M-04 land in Weeks 2–3). Shared components already real:
+`src/components/ConfirmModal.tsx` (M-05 pattern), `ErrorModal.tsx` (M-09),
+`SuccessToast.tsx` (M-10).
 
 ## Stack
 
 React Native, **Expo Managed workflow** — stay managed; don't run `expo prebuild` or
 add a native module without discussing it first (Tech Stack Doc §4.2 explains why:
 camera, push, biometrics, and OTA updates all work without ejecting). NativeWind for
-styling. Expo Router / Zustand: not yet installed.
+styling. Navigation: **expo-router** (file-based, `app/` directory — not
+`@react-navigation` directly). State: zustand (installed, not yet used).
+
+## Known infra gotcha — pnpm + Metro on Windows
+
+`metro.config.js` needs the monorepo/pnpm block (`watchFolders`, `resolver.nodeModulesPaths`,
+`unstable_enableSymlinks`, and an `extraNodeModules` Proxy fallback) — without it, bundling
+fails with `Unable to resolve module "expo"` from deep inside `expo-router`'s own `.pnpm`
+store, even though the symlink is real and valid on disk (confirmed via `ls -la`). Root
+cause: Metro's directory crawler on Windows doesn't reliably pick up pnpm's symlinked
+`node_modules` entries even with `unstable_enableSymlinks` on — `extraNodeModules` is what
+actually closes the gap, by resolving any otherwise-unfound bare import straight to its
+real path under the workspace root instead of relying on the crawler having indexed it.
+Verified by actually building the Android and iOS bundles against the dev server (HTTP 200,
+~10MB), not just by `tsc --noEmit` (which can't catch this class of bug at all). If a new
+native/Expo package mysteriously fails to resolve later, check this block before assuming
+the package itself is broken.
 
 ## Commands
 

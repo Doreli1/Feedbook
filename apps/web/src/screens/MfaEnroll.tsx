@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { FeedbookBrand } from '../components/FeedbookBrand';
 import { LanguageToggle } from '../components/LanguageToggle';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useI18n } from '../lib/i18n';
 
 export function MfaEnroll({ onDone }: { onDone: () => void }) {
@@ -12,6 +13,7 @@ export function MfaEnroll({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   // Guards against a second concurrent enrollment attempt — React 19
   // StrictMode double-invokes effects in development specifically to catch
   // exactly this: two overlapping startEnrollment() calls otherwise race on
@@ -123,12 +125,25 @@ export function MfaEnroll({ onDone }: { onDone: () => void }) {
             an errored enrollment (wrong account, wants different credentials)
             has no way back to sign-in. */}
         <button
-          onClick={() => void supabase.auth.signOut()}
+          onClick={() => setConfirmingSignOut(true)}
           className="w-full rounded border border-border py-2 text-sm text-muted-foreground hover:bg-surface-2"
         >
           {t('signOutAndStartOver')}
         </button>
       </div>
+      <ConfirmDialog
+        open={confirmingSignOut}
+        title={t('confirmSignOutTitle')}
+        description={t('confirmSignOutDescription')}
+        confirmLabel={t('signOut')}
+        cancelLabel={t('cancel')}
+        confirmVariant="danger"
+        onConfirm={() => {
+          setConfirmingSignOut(false);
+          void supabase.auth.signOut();
+        }}
+        onCancel={() => setConfirmingSignOut(false)}
+      />
     </div>
   );
 }

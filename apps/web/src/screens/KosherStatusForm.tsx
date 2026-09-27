@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { WizardShell } from '../components/WizardShell';
+import { Tooltip } from '../components/Tooltip';
 import { TrashIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 import type { Restaurant } from '@feedbook/types';
@@ -94,6 +95,8 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated, onSte
     <WizardShell
       restaurantName={restaurant.name}
       restaurantAddress={restaurant.address ?? undefined}
+      userEmail={session.user.email}
+      onSignOut={() => void supabase.auth.signOut()}
       currentStep={2}
       onStepClick={onStepClick}
     >
@@ -106,15 +109,16 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated, onSte
         {isCertified ? (
           <div className="mb-4 flex items-center justify-between gap-2 rounded border border-success bg-success-soft px-3 py-3 text-sm text-success">
             {t('kosherCertified')}
-            <button
-              onClick={() => void handleRemove()}
-              disabled={uploadState === 'uploading'}
-              title={t('kosherRemove')}
-              aria-label={t('kosherRemove')}
-              className="shrink-0 rounded p-1.5 text-success hover:bg-danger-soft hover:text-danger disabled:opacity-50"
-            >
-              <TrashIcon className="h-4 w-4" />
-            </button>
+            <Tooltip content={t('kosherRemove')}>
+              <button
+                onClick={() => void handleRemove()}
+                disabled={uploadState === 'uploading'}
+                aria-label={t('kosherRemove')}
+                className="shrink-0 rounded p-1.5 text-success hover:bg-danger-soft hover:text-danger disabled:opacity-50"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </button>
+            </Tooltip>
           </div>
         ) : (
           <div className="mb-4">
@@ -144,15 +148,8 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated, onSte
 
         <p className="mb-6 text-xs text-muted-foreground">{t('kosherDisclaimer')}</p>
 
-        <button onClick={onNext} className="mb-3 w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover">
+        <button onClick={onNext} className="w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover">
           {isCertified ? t('continue') : t('kosherSkip')}
-        </button>
-
-        <button
-          onClick={() => void supabase.auth.signOut()}
-          className="w-full rounded border border-danger py-2 text-sm text-danger hover:bg-danger-soft"
-        >
-          {t('signOut')}
         </button>
       </div>
     </WizardShell>

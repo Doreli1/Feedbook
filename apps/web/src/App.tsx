@@ -74,7 +74,7 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
 
   return (
     <Dashboard
-      email={session.user.email}
+      session={session}
       restaurant={activeRestaurant}
       restaurants={restaurants}
       onSwitchRestaurant={setActiveId}

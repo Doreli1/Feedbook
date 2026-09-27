@@ -4,6 +4,19 @@ packages:
 allowBuilds:
   esbuild: true
 shamefullyHoist: true
+# Metro's crawler (metro-file-map) cannot reliably discover/hash files
+# reached through pnpm's .pnpm symlink store on Windows — confirmed against
+# Metro's own source (metro-file-map's enableSymlinks is hardcoded true, so
+# it isn't a config flag we can flip) and against the real dev server:
+# "Failed to get the SHA-1" for expo-router's entry file, reproducibly,
+# regardless of which real/symlinked path variant is handed to it.
+# shamefullyHoist alone doesn't remove the indirection — pnpm still stores
+# the real files under node_modules/.pnpm and only symlinks them into the
+# flat root. nodeLinker: hoisted creates genuinely flat directories (no
+# .pnpm hop) for every package, matching npm/yarn's classic layout that
+# Metro's crawler was built around. This is the standard, documented fix for
+# this exact class of Expo+Metro+pnpm+Windows issue.
+nodeLinker: hoisted
 overrides:
   # rollup's native win32 binary (used internally by vite@7's build step) gets
   # blocked by Windows Smart App Control on this machine, same root cause as
@@ -11,3 +24,13 @@ overrides:
   # @rollup/wasm-node is Rollup's own official pure-WASM build, published for
   # exactly this kind of locked-down environment — no native binary at all.
   rollup: "npm:@rollup/wasm-node@4.63.1"
+minimumReleaseAgeExclude:
+  - '@expo/cli@57.0.23'
+  - '@expo/metro-file-map@57.0.3'
+  - babel-preset-expo@57.0.11
+  - expo-modules-core@57.0.17
+  - expo-modules-jsi@57.1.0
+  - expo@57.0.21
+  - '@expo/ui@57.0.17'
+  - expo-glass-effect@57.0.2
+  - expo-router@57.0.20

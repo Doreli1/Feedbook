@@ -66,7 +66,7 @@ export function AppHeader({
             {t('addRestaurant')}
           </button>
         )}
-        <LanguageToggle />
+        <LanguageToggle placement="bottom" />
       </div>
     </div>
   );

@@ -101,6 +101,8 @@ export function ReviewSubmitForm({ session, restaurant, categories, dishes, tabl
     <WizardShell
       restaurantName={restaurant.name}
       restaurantAddress={restaurant.address ?? undefined}
+      userEmail={session.user.email}
+      onSignOut={() => void supabase.auth.signOut()}
       currentStep={4}
       onStepClick={onStepClick}
     >

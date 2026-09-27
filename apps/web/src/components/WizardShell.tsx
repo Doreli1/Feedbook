@@ -1,11 +1,18 @@
-import type { ReactNode } from 'react';
-import { FeedbookBrand } from './FeedbookBrand';
-import { LanguageToggle } from './LanguageToggle';
+import { useState, type ReactNode } from 'react';
+import { TopBar } from './TopBar';
 import { WizardStepper } from './WizardStepper';
+import { ConfirmDialog } from './ConfirmDialog';
+import { useI18n } from '../lib/i18n';
 
 interface Props {
   restaurantName?: string;
   restaurantAddress?: string;
+  // Shown in the header's account menu in place of restaurantName until a
+  // restaurant exists to name it (step 1, before the first save) — mirrors
+  // the Dashboard's own TopBar, which always has a restaurant name to show by
+  // the time it renders at all.
+  userEmail?: string;
+  onSignOut: () => void;
   currentStep: number;
   onStepClick?: (step: number) => void;
   // Passed straight through to WizardStepper — see its own doc comment.
@@ -16,6 +23,12 @@ interface Props {
   // restaurant's details from the Dashboard), where showing "step 1 of 4"
   // would misleadingly imply the rest of the wizard still needs doing.
   hideStepper?: boolean;
+  // Only screens with a real, genuinely-lossy draft (typed but not yet
+  // submitted — e.g. a half-filled "add dish" form) should ever pass true.
+  // A screen that already saves everything before navigating (like
+  // RestaurantDetailsForm's autosave flush) must NOT set this — warning
+  // about data loss that can't actually happen would just be a false alarm.
+  isDirty?: boolean;
   children: ReactNode;
 }
 
@@ -29,45 +42,76 @@ interface Props {
 export function WizardShell({
   restaurantName,
   restaurantAddress,
+  userEmail,
+  onSignOut,
   currentStep,
   onStepClick,
   activeSubStep,
   onSubStepClick,
   hideStepper = false,
+  isDirty = false,
   children,
 }: Props) {
+  const { t } = useI18n();
+  // Stashes the navigation that was about to happen so the dialog's own
+  // "leave" button can run it later — a step number OR a sub-step name,
+  // never both, so a single pending-action slot covers either source.
+  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
+
+  function guardedStepClick(step: number) {
+    if (isDirty) {
+      setPendingNav(() => () => onStepClick?.(step));
+    } else {
+      onStepClick?.(step);
+    }
+  }
+
+  function guardedSubStepClick(subStep: 'menu' | 'seating') {
+    if (isDirty) {
+      setPendingNav(() => () => onSubStepClick?.(subStep));
+    } else {
+      onSubStepClick?.(subStep);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Brand and business-context+language sit at the bar's true edges —
           full-bleed, same placement as Booking's own header — not
           constrained to the step bar/content's narrower centered width. */}
-      <header dir="ltr" className="flex items-center justify-between gap-4 bg-ink px-6 py-3 sm:px-12">
-        <FeedbookBrand onDark />
-        <div className="flex min-w-0 items-center gap-1.5">
-          {restaurantName && (
-            <div dir="auto" className="max-w-[220px] text-right">
-              <p className="truncate text-sm font-medium text-white">{restaurantName}</p>
-              {restaurantAddress && <p className="truncate text-xs text-white/70">{restaurantAddress}</p>}
-            </div>
-          )}
-          <LanguageToggle onDark />
-        </div>
-      </header>
+      <TopBar
+        restaurantName={restaurantName ?? userEmail}
+        restaurantAddress={restaurantAddress}
+        onSignOut={onSignOut}
+      />
 
       {!hideStepper && (
         <div className="border-b border-border bg-surface px-4 py-4 sm:px-8">
           <div className="mx-auto max-w-3xl">
             <WizardStepper
               currentStep={currentStep}
-              onStepClick={onStepClick}
+              onStepClick={onStepClick && guardedStepClick}
               activeSubStep={activeSubStep}
-              onSubStepClick={onSubStepClick}
+              onSubStepClick={onSubStepClick && guardedSubStepClick}
             />
           </div>
         </div>
       )}
 
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-8">{children}</main>
+
+      <ConfirmDialog
+        open={pendingNav !== null}
+        title={t('unsavedChangesTitle')}
+        description={t('unsavedChangesDescription')}
+        confirmLabel={t('leaveStepConfirm')}
+        cancelLabel={t('continue')}
+        onConfirm={() => {
+          pendingNav?.();
+          setPendingNav(null);
+        }}
+        onCancel={() => setPendingNav(null)}
+      />
     </div>
   );
 }

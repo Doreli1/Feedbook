@@ -8,6 +8,7 @@ import { TableManagerForm } from './TableManagerForm';
 import { ReviewSubmitForm } from './ReviewSubmitForm';
 import { useMenu } from '../lib/useMenu';
 import { useTables } from '../lib/useTables';
+import { useInventory } from '../lib/useInventory';
 
 interface Props {
   session: Session;
@@ -57,8 +58,9 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
   const [step, setStep] = useState<Step>(1);
   const goToStep = (n: number) => setStep(toStep(n));
   const needsMenu = step === 3 || step === 4 || step === 5;
-  const { categories, dishes, refresh: refreshMenu } = useMenu(needsMenu ? restaurant?.id : undefined);
+  const { categories, dishes, dishSizeOptions, refresh: refreshMenu } = useMenu(needsMenu ? restaurant?.id : undefined);
   const { tables, refresh: refreshTables } = useTables(step === 4 || step === 5 ? restaurant?.id : undefined);
+  const { ingredients } = useInventory(step === 3 ? restaurant?.id : undefined);
 
   if (step === 1 || !restaurant) {
     return (
@@ -91,9 +93,12 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
   if (step === 3) {
     return (
       <MenuBuilderForm
+        session={session}
         restaurant={restaurant}
         categories={categories}
         dishes={dishes}
+        dishSizeOptions={dishSizeOptions}
+        ingredients={ingredients}
         onRefresh={() => void refreshMenu()}
         onNext={() => setStep(4)}
         onSeating={() => setStep(4)}
@@ -105,6 +110,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
   if (step === 4) {
     return (
       <TableManagerForm
+        session={session}
         restaurant={restaurant}
         tables={tables}
         onRefresh={() => void refreshTables()}

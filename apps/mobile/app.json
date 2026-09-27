@@ -3,11 +3,16 @@
     "name": "Feedbook",
     "slug": "feedbook",
     "version": "1.0.0",
+    "scheme": "feedbook",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "כדי לסרוק את קוד ה-QR של השולחן ולהתחבר לתפריט המסעדה.",
+        "NSContactsUsageDescription": "כדי להציע להוסיף לשולחן רק חברים שגם להם מותקנת Feedbook."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -16,10 +21,19 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "CAMERA",
+        "READ_CONTACTS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-web-browser",
+      "expo-font"
+    ]
   }
 }

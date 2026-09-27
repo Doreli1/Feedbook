@@ -1,4 +1,5 @@
 import { useI18n } from '../lib/i18n';
+import { Tooltip } from './Tooltip';
 
 // Inline SVGs, not emoji flags: Windows has no native color-emoji glyphs for
 // regional-indicator flag sequences and silently falls back to rendering the
@@ -34,18 +35,32 @@ function FlagUS() {
 // A single circular flag badge reflecting the current language — click to
 // switch to the other one. IL flag while Hebrew is active, US flag while
 // English is.
-export function LanguageToggle({ className = '', onDark = false }: { className?: string; onDark?: boolean }) {
+export function LanguageToggle({
+  className = '',
+  onDark = false,
+  placement = 'top',
+}: {
+  className?: string;
+  onDark?: boolean;
+  // TopBar's own usage sits in the header, at the very top of the page, so
+  // the default upward-opening bubble had nowhere to go and got clipped by
+  // the top of the browser window (reported 2026-09-24) — every other
+  // usage (sign-in, MFA screens, etc.) has room above it, so 'top' stays the
+  // default there.
+  placement?: 'top' | 'bottom';
+}) {
   const { lang, setLang } = useI18n();
 
   return (
-    <button
-      type="button"
-      onClick={() => setLang(lang === 'he' ? 'en' : 'he')}
-      title={lang === 'he' ? 'English' : 'עברית'}
-      aria-label={lang === 'he' ? 'Switch to English' : 'עבור לעברית'}
-      className={`h-8 w-8 overflow-hidden rounded-full border shadow-sm ${onDark ? 'border-white/50 hover:border-white' : 'border-border hover:border-border-strong'} ${className}`}
-    >
-      {lang === 'he' ? <FlagIL /> : <FlagUS />}
-    </button>
+    <Tooltip content={lang === 'he' ? 'English' : 'עברית'} className={className} placement={placement}>
+      <button
+        type="button"
+        onClick={() => setLang(lang === 'he' ? 'en' : 'he')}
+        aria-label={lang === 'he' ? 'Switch to English' : 'עבור לעברית'}
+        className={`h-8 w-8 overflow-hidden rounded-full border shadow-sm ${onDark ? 'border-white/50 hover:border-white' : 'border-border hover:border-border-strong'}`}
+      >
+        {lang === 'he' ? <FlagIL /> : <FlagUS />}
+      </button>
+    </Tooltip>
   );
 }

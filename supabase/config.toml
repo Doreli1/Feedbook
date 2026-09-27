@@ -182,6 +182,12 @@ refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
 enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
+# Product decision (2026-09-09): every diner is a registered account — no
+# anonymous guest path — so the owner can learn from customers' own choices
+# and personalize/optimize both the diner and restaurant sides. Was true
+# (PRD's original guest-journey design); scan-qr/join-session now also
+# reject any is_anonymous caller directly as a defense-in-depth backstop,
+# since a token minted before this flip could still be valid until expiry.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
@@ -334,6 +340,25 @@ client_id = ""
 # DO NOT commit your OAuth provider secret to git. Use environment variable substitution instead:
 secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"
 # Overrides the default auth callback URL derived from auth.external_url.
+redirect_uri = ""
+
+# Diner app M-02 (Mobile UI Spec §5) — "המשך עם Google" / "המשך עם Facebook".
+# Disabled until real OAuth app credentials exist (Google Cloud OAuth consent
+# screen + client ID, a Facebook Developer app) — a business/infra step for
+# whoever owns those accounts, not something to fabricate here. The mobile
+# code calls signInWithOAuth({ provider: 'google' | 'facebook' }) regardless;
+# with the provider disabled server-side, Supabase returns a clear error that
+# the app surfaces via the shared M-09 error modal instead of failing silently.
+[auth.external.google]
+enabled = false
+client_id = ""
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+redirect_uri = ""
+
+[auth.external.facebook]
+enabled = false
+client_id = ""
+secret = "env(SUPABASE_AUTH_EXTERNAL_FACEBOOK_SECRET)"
 redirect_uri = ""
 # Overrides the default auth provider URL. Used to support self-hosted gitlab, single-tenant Azure,
 # or any other third-party OIDC providers.

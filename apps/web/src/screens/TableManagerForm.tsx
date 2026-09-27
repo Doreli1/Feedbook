@@ -1,12 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Restaurant, RestaurantTable } from '@feedbook/types';
 import { WizardShell } from '../components/WizardShell';
-import { TrashIcon, PencilIcon } from '../components/Icons';
+import { TrashIcon, PencilIcon, QrCodeIcon } from '../components/Icons';
+import { TableQrModal } from '../components/TableQrModal';
+import { Tooltip } from '../components/Tooltip';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
-interface Props {
+interface WizardProps {
+  session: Session;
   restaurant: Restaurant;
   tables: RestaurantTable[];
   onRefresh: () => void;
@@ -21,17 +26,26 @@ interface Props {
 type TableTypeKey = 'couple' | 'family' | 'family_extended' | 'high' | 'bar';
 
 // Presets cover the shapes owners actually asked for (couple/family/extended
-// family/high-bar-table/bar-stool seating), each with a sensible default
-// capacity that's still fully editable per batch. Bar seating defaults to 1
-// and is capped there — a bar "table" here is one stool, physically seating
-// exactly one person, so nothing lets it drift to an unrealistic capacity
-// (guards the exact mistake of e.g. typing 40 for a single bar seat).
-const TABLE_TYPE_PRESETS: { key: TableTypeKey; labelKey: TranslationKey; defaultCapacity: number; maxCapacity?: number }[] = [
+// family/high-bar-table seating), each with a sensible default capacity
+// that's still fully editable per batch.
+//
+// "bar" is different from every other preset (2026-09-15 redesign): a
+// restaurant's bar is no longer N individually-QR'd 1-seat stools — one
+// shared QR represents the whole bar counter, any number of diners can join
+// it (no capacity cap exists anywhere in join-session/add-participants), and
+// each diner's order carries its own short-lived pickup ticket number
+// instead (see place_order_transaction's bar_ticket_number). So there is
+// only ever ONE bar row per restaurant (`singleton`, also enforced in the DB
+// via one_bar_table_per_restaurant), it always gets the fixed identifier
+// "בר" instead of participating in the numeric table sequence
+// (`fixedNumber`), and its "capacity" is purely informational (how many
+// stools physically exist) rather than a seating cap.
+const TABLE_TYPE_PRESETS: { key: TableTypeKey; labelKey: TranslationKey; defaultCapacity: number; singleton?: boolean; fixedNumber?: string }[] = [
   { key: 'couple', labelKey: 'tableTypeCouple', defaultCapacity: 2 },
   { key: 'family', labelKey: 'tableTypeFamily', defaultCapacity: 4 },
   { key: 'family_extended', labelKey: 'tableTypeFamilyExtended', defaultCapacity: 6 },
   { key: 'high', labelKey: 'tableTypeHigh', defaultCapacity: 4 },
-  { key: 'bar', labelKey: 'tableTypeBar', defaultCapacity: 1, maxCapacity: 1 },
+  { key: 'bar', labelKey: 'tableTypeBar', defaultCapacity: 8, singleton: true, fixedNumber: 'בר' },
 ];
 
 interface TableGroup {
@@ -71,21 +85,41 @@ function groupPresetTables(tables: RestaurantTable[]): TableGroup[] {
   return Array.from(groups.values());
 }
 
-// Continues numbering from whatever's already there for this type (e.g.
-// adding 2 more "משפחתי" tables to an existing 5 yields "משפחתי 6"/"משפחתי
-// 7"), so repeated quick-adds of the same type never collide with the
-// table's own unique (restaurant_id, table_number) constraint.
-function nextTableNumbers(existing: RestaurantTable[], type: TableTypeKey, label: string, quantity: number): string[] {
-  const prefix = `${label} `;
-  const usedNumbers = existing
-    .filter((t) => t.table_type === type && t.table_number.startsWith(prefix))
-    .map((t) => Number(t.table_number.slice(prefix.length)))
-    .filter((n) => Number.isFinite(n));
+// A guest-facing table number must read as a plain number ("1", "2"...) —
+// never the table's type baked into the string ("משפחתי 1") — since it's
+// what a diner sees on the QR sheet and inside the app itself (the account
+// tab's "שולחן" field just prints table_number as-is). The type stays
+// visible in the admin UI as the group's own heading, kept separate from
+// the number. Numbering is one running sequence across the WHOLE
+// restaurant (every table, any type, quick-added or custom), not per type,
+// so two different presets can never generate the same number and collide
+// with the table's own unique (restaurant_id, table_number) constraint.
+function nextTableNumbers(existing: RestaurantTable[], quantity: number): string[] {
+  const usedNumbers = existing.map((t) => Number(t.table_number)).filter((n) => Number.isInteger(n) && n >= 0);
   const start = usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
-  return Array.from({ length: quantity }, (_, i) => `${prefix}${start + i}`);
+  return Array.from({ length: quantity }, (_, i) => String(start + i));
 }
 
-export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext, onStepClick }: Props) {
+interface ContentProps {
+  restaurant: Restaurant;
+  tables: RestaurantTable[];
+  onRefresh: () => void;
+  // Only the wizard step needs a trailing continue/skip button here — the
+  // Dashboard's own "שולחנות" tab (added 2026-09-14, see memory: table
+  // management used to exist only inside the once-only onboarding wizard,
+  // with no way back into it for an already-approved, operating restaurant)
+  // renders this content with no footer at all.
+  footer?: ReactNode;
+  // Lets the wizard wrapper keep its own "unsaved draft" warning working
+  // now that the draft state (open panels/forms) lives inside this
+  // component instead of the wizard screen itself.
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+// The actual table-management UI — extracted 2026-09-14 so it can be reused
+// both inside the onboarding wizard (TableManagerForm below) and as a normal
+// Dashboard tab for a restaurant that's already approved and operating.
+export function TableManagerContent({ restaurant, tables, onRefresh, footer, onDirtyChange }: ContentProps) {
   const { t } = useI18n();
   const [openPreset, setOpenPreset] = useState<TableTypeKey | null>(null);
   const [quickQuantity, setQuickQuantity] = useState('1');
@@ -101,6 +135,7 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
   const [addingCustomTable, setAddingCustomTable] = useState(false);
   const [editingTableId, setEditingTableId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [qrTables, setQrTables] = useState<RestaurantTable[] | null>(null);
 
   const groups = groupPresetTables(tables);
   const customTables = tables.filter((table) => !table.table_type);
@@ -120,16 +155,18 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
 
   async function handleQuickAdd() {
     const preset = TABLE_TYPE_PRESETS.find((p) => p.key === openPreset);
-    const quantity = Number(quickQuantity);
-    // Locked types (bar seating) ignore whatever's in the capacity field —
-    // the input for it isn't even rendered, see the JSX below.
-    const capacity = preset?.maxCapacity ?? Number(quickCapacity);
-    if (!preset || !Number.isInteger(quantity) || quantity < 1 || !Number.isInteger(capacity) || capacity < 1) return;
+    if (!preset) return;
+    // Defensive re-check: the chip itself is disabled once a singleton
+    // exists, but a stale panel left open across a refresh (another tab
+    // creating it, say) shouldn't be able to insert a second one.
+    if (preset.singleton && tables.some((table) => table.table_type === preset.key)) return;
+    const quantity = preset.singleton ? 1 : Number(quickQuantity);
+    const capacity = Number(quickCapacity);
+    if (!Number.isInteger(quantity) || quantity < 1 || !Number.isInteger(capacity) || capacity < 1) return;
 
     setError(null);
     setBusyKey('quick-add');
-    const label = t(preset.labelKey);
-    const numbers = nextTableNumbers(tables, preset.key, label, quantity);
+    const numbers = preset.fixedNumber ? [preset.fixedNumber] : nextTableNumbers(tables, quantity);
     const rows = numbers.map((table_number) => ({
       restaurant_id: restaurant.id,
       table_number,
@@ -153,6 +190,9 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
   // quantity input (any delta) — grows a group by inserting new numbered
   // tables, or shrinks it by deleting the most-recently-added ones first.
   async function handleSetGroupQuantity(group: TableGroup, targetQuantity: number) {
+    const preset = TABLE_TYPE_PRESETS.find((p) => p.key === group.type);
+    if (preset?.singleton) return; // singleton types (the bar) have no +/- control to begin with
+
     const current = group.ids.length;
     const delta = targetQuantity - current;
     if (!Number.isInteger(targetQuantity) || targetQuantity < 1 || delta === 0) return;
@@ -161,17 +201,12 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
     setBusyKey(group.key);
 
     if (delta > 0) {
-      const preset = TABLE_TYPE_PRESETS.find((p) => p.key === group.type);
       if (!preset) {
         setBusyKey(null);
         return;
       }
-      const numbers = nextTableNumbers(tables, group.type, t(preset.labelKey), delta);
-      // Clamp to the type's own cap rather than trusting group.capacity —
-      // a group whose capacity predates this cap (or slipped in before it
-      // existed) must not have that bad value copied onto every new seat
-      // added here; it re-locks to what the type actually allows.
-      const capacity = preset.maxCapacity ?? group.capacity;
+      const numbers = nextTableNumbers(tables, delta);
+      const capacity = group.capacity;
       const rows = numbers.map((table_number) => ({
         restaurant_id: restaurant.id,
         table_number,
@@ -203,22 +238,15 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
   }
 
   function openGroupEdit(group: TableGroup) {
-    const preset = TABLE_TYPE_PRESETS.find((p) => p.key === group.type);
     setEditingGroupKey(group.key);
-    // A locked type forces the correct value here regardless of what's
-    // actually stored — this is also how a pre-existing group saved before
-    // this cap existed (e.g. capacity 40 on a bar group) gets silently
-    // corrected back to 1 the moment it's opened for editing.
-    setEditCapacity(String(preset?.maxCapacity ?? group.capacity));
+    setEditCapacity(String(group.capacity));
     setEditSmoking(group.smokingAllowed);
     setEditOutdoor(group.isOutdoor);
   }
 
   async function handleGroupEditSave(group: TableGroup) {
     const capacity = Number(editCapacity);
-    const preset = TABLE_TYPE_PRESETS.find((p) => p.key === group.type);
     if (!Number.isInteger(capacity) || capacity < 1) return;
-    if (preset?.maxCapacity && capacity > preset.maxCapacity) return;
     setError(null);
     setBusyKey(group.key);
     const { error: updateError } = await supabase
@@ -257,17 +285,18 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
     onRefresh();
   }
 
+  // A real, lossy draft: the quick-add preset panel or the custom-table form
+  // has typed-but-unsubmitted values (quantity/capacity/checkboxes), or an
+  // existing group/table is mid-edit — none of that autosaves.
+  const isDirty = openPreset !== null || addingCustomTable || editingGroupKey !== null || editingTableId !== null;
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty]);
+
   return (
-    <WizardShell
-      restaurantName={restaurant.name}
-      restaurantAddress={restaurant.address ?? undefined}
-      currentStep={3}
-      activeSubStep="seating"
-      onSubStepClick={(subStep) => {
-        if (subStep === 'menu') onBack();
-      }}
-      onStepClick={onStepClick}
-    >
+    <>
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('tableSetupTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('tableStepSubtitle')}</p>
@@ -280,56 +309,58 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
 
         <p className="mb-2 text-xs text-muted-foreground">{t('tableQuickAddHint')}</p>
         <div className="mb-3 flex flex-wrap gap-2">
-          {TABLE_TYPE_PRESETS.map((preset) => (
-            <button
-              key={preset.key}
-              type="button"
-              onClick={() => openQuickAdd(preset)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
-                openPreset === preset.key
-                  ? 'border-accent bg-accent text-white'
-                  : 'border-border-strong text-ink hover:border-accent hover:text-accent'
-              }`}
-            >
-              {t(preset.labelKey)} · {preset.defaultCapacity} {t('tableGroupSeats')}
-            </button>
-          ))}
+          {TABLE_TYPE_PRESETS.map((preset) => {
+            const alreadyExists = !!preset.singleton && tables.some((table) => table.table_type === preset.key);
+            return (
+              <Tooltip key={preset.key} content={alreadyExists ? t('tableBarAlreadyExists') : null}>
+                <button
+                  type="button"
+                  onClick={() => !alreadyExists && openQuickAdd(preset)}
+                  disabled={alreadyExists}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                    alreadyExists
+                      ? 'cursor-not-allowed border-border text-muted-foreground opacity-60'
+                      : openPreset === preset.key
+                        ? 'border-accent bg-accent text-white'
+                        : 'border-border-strong text-ink hover:border-accent hover:text-accent'
+                  }`}
+                >
+                  {t(preset.labelKey)} · {preset.defaultCapacity} {t('tableGroupSeats')}
+                </button>
+              </Tooltip>
+            );
+          })}
         </div>
 
         {openPreset && (
           <div className="mb-6 rounded border border-accent bg-accent-soft p-3">
             <div className="mb-2 flex flex-wrap items-end gap-2">
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('tableQuantityLabel')}</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={quickQuantity}
-                  onChange={(e) => setQuickQuantity(e.target.value)}
-                  className="w-20 rounded border border-border px-2 py-1.5 text-sm"
-                />
-              </div>
-              {openPresetDef?.maxCapacity ? (
-                // Bar seating: one stool = one seat, not editable — prevents
-                // the exact mistake of typing an oversized capacity for it.
+              {!openPresetDef?.singleton && (
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">{t('tableCapacityLabel')}</label>
-                  <p className="px-2 py-1.5 text-sm text-ink">{openPresetDef.maxCapacity} {t('tableGroupSeats')}</p>
-                </div>
-              ) : (
-                <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">{t('tableCapacityLabel')}</label>
+                  <label className="mb-1 block text-xs text-muted-foreground">{t('tableQuantityLabel')}</label>
                   <input
                     type="number"
                     min="1"
                     step="1"
-                    value={quickCapacity}
-                    onChange={(e) => setQuickCapacity(e.target.value)}
+                    value={quickQuantity}
+                    onChange={(e) => setQuickQuantity(e.target.value)}
                     className="w-20 rounded border border-border px-2 py-1.5 text-sm"
                   />
                 </div>
               )}
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">
+                  {openPresetDef?.singleton ? t('tableBarSeatCountLabel') : t('tableCapacityLabel')}
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={quickCapacity}
+                  onChange={(e) => setQuickCapacity(e.target.value)}
+                  className="w-20 rounded border border-border px-2 py-1.5 text-sm"
+                />
+              </div>
               <label className="flex items-center gap-1.5 pb-1.5 text-sm text-ink">
                 <input type="checkbox" checked={quickSmoking} onChange={(e) => setQuickSmoking(e.target.checked)} className="h-4 w-4 rounded border-border" />
                 {t('tableSmokingCheckbox')}
@@ -362,36 +393,26 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
               if (isEditing) {
                 const editPreset = TABLE_TYPE_PRESETS.find((p) => p.key === group.type);
                 const editCapacityValue = Number(editCapacity);
-                const editCapacityExceedsMax = !!editPreset?.maxCapacity && editCapacityValue > editPreset.maxCapacity;
-                const editCapacityInvalid = !Number.isInteger(editCapacityValue) || editCapacityValue < 1 || editCapacityExceedsMax;
+                const editCapacityInvalid = !Number.isInteger(editCapacityValue) || editCapacityValue < 1;
                 return (
                   <div key={group.key} className="rounded border border-border bg-surface p-3">
                     <div className="mb-2 flex flex-wrap items-end gap-2">
                       <p className="w-full text-sm font-medium text-ink">
-                        {group.ids.length} × {label}
+                        {editPreset?.singleton ? label : `${group.ids.length} ${t('tableGroupCountLabel')} · ${t('tableTypeLabel')}: ${label}`}
                       </p>
-                      {editPreset?.maxCapacity ? (
-                        // Same lock as quick-add: a bar seat's capacity isn't
-                        // a choice, so there's nothing to type here — this
-                        // group's own quantity field (on the row below, once
-                        // editing closes) is where "how many bar seats" goes.
-                        <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">{t('tableCapacityLabel')}</label>
-                          <p className="px-2 py-1.5 text-sm text-ink">{editPreset.maxCapacity} {t('tableGroupSeats')}</p>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">{t('tableCapacityLabel')}</label>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={editCapacity}
-                            onChange={(e) => setEditCapacity(e.target.value)}
-                            className="w-20 rounded border border-border px-2 py-1.5 text-sm"
-                          />
-                        </div>
-                      )}
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          {editPreset?.singleton ? t('tableBarSeatCountLabel') : t('tableCapacityLabel')}
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={editCapacity}
+                          onChange={(e) => setEditCapacity(e.target.value)}
+                          className="w-20 rounded border border-border px-2 py-1.5 text-sm"
+                        />
+                      </div>
                       <label className="flex items-center gap-1.5 pb-1.5 text-sm text-ink">
                         <input type="checkbox" checked={editSmoking} onChange={(e) => setEditSmoking(e.target.checked)} className="h-4 w-4 rounded border-border" />
                         {t('tableSmokingCheckbox')}
@@ -448,69 +469,121 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
               return (
                 <div key={group.key} className="flex items-center gap-3 rounded bg-surface-2 p-3">
                   <div className="min-w-0 flex-1">
+                    {/* "N × type" reads ambiguously as if the number were a
+                        per-table multiplier (e.g. "כפול 6" sounding like 6
+                        seats on a couple table) — spelled out as two
+                        explicitly-labeled facts instead: how many tables,
+                        and what type they are. Capacity (seats per table)
+                        stays on its own line below, already labeled. */}
                     <p className="truncate text-sm font-medium text-ink">
-                      {group.ids.length} × {label}
+                      {preset?.singleton ? label : `${group.ids.length} ${t('tableGroupCountLabel')} · ${t('tableTypeLabel')}: ${label}`}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {group.capacity} {t('tableGroupSeats')} · {group.smokingAllowed ? t('tableSmokingYes') : t('tableSmokingNo')} ·{' '}
+                      {group.capacity} {preset?.singleton ? t('tableBarSeatCountLabel') : t('tableGroupSeats')} ·{' '}
+                      {group.smokingAllowed ? t('tableSmokingYes') : t('tableSmokingNo')} ·{' '}
                       {group.isOutdoor ? t('tableOutdoor') : t('tableIndoor')}
                     </p>
+                    {/* The row above only shows the group's shared traits
+                        (count/capacity/smoking/indoor) — the actual per-table
+                        numbers (e.g. "משפחתי 1", "משפחתי 2"...) that a real
+                        printed QR sheet needs to be told apart by are only
+                        otherwise visible inside the QR modal itself, which
+                        isn't discoverable enough on its own. A singleton (the
+                        bar) has nothing to disambiguate — its one row's fixed
+                        "בר" identifier is already the whole header above. */}
+                    {!preset?.singleton &&
+                      (() => {
+                        const tableNumbersList = tables
+                          .filter((table) => group.ids.includes(table.id))
+                          .map((table) => table.table_number)
+                          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+                          .join(', ');
+                        return (
+                          // The wrapper needs `block w-full min-w-0` (not
+                          // Tooltip's own default shrink-to-fit inline-flex)
+                          // so the truncate below still clips against this
+                          // row's real available width instead of the
+                          // text's own natural (untruncated) width.
+                          <Tooltip content={tableNumbersList} className="block w-full min-w-0">
+                            <p className="mt-0.5 truncate text-xs text-ink-muted">
+                              {t('tableGroupNumbersLabel')}: {tableNumbersList}
+                            </p>
+                          </Tooltip>
+                        );
+                      })()}
                   </div>
-                  <div className="flex shrink-0 items-center gap-1 rounded border border-border">
+                  {!preset?.singleton && (
+                    <div className="flex shrink-0 items-center gap-1 rounded border border-border">
+                      <Tooltip content={t('tableGroupDecrement')}>
+                        <button
+                          type="button"
+                          onClick={() => void handleSetGroupQuantity(group, group.ids.length - 1)}
+                          disabled={isBusy || group.ids.length <= 1}
+                          aria-label={t('tableGroupDecrement')}
+                          className="px-2 py-1 text-sm text-muted-foreground hover:bg-surface disabled:opacity-50"
+                        >
+                          −
+                        </button>
+                      </Tooltip>
+                      <Tooltip content={t('tableGroupQuantityLabel')}>
+                        <input
+                          key={group.key + group.ids.length}
+                          type="number"
+                          min="1"
+                          step="1"
+                          defaultValue={group.ids.length}
+                          disabled={isBusy}
+                          aria-label={t('tableGroupQuantityLabel')}
+                          onBlur={(e) => void handleSetGroupQuantity(group, Number(e.target.value))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                          }}
+                          className="w-10 rounded border-0 bg-transparent text-center text-xs text-ink [appearance:textfield] disabled:opacity-50 [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                      </Tooltip>
+                      <Tooltip content={t('tableGroupIncrement')}>
+                        <button
+                          type="button"
+                          onClick={() => void handleSetGroupQuantity(group, group.ids.length + 1)}
+                          disabled={isBusy}
+                          aria-label={t('tableGroupIncrement')}
+                          className="px-2 py-1 text-sm text-muted-foreground hover:bg-surface disabled:opacity-50"
+                        >
+                          +
+                        </button>
+                      </Tooltip>
+                    </div>
+                  )}
+                  <Tooltip content={t('showQr')}>
                     <button
                       type="button"
-                      onClick={() => void handleSetGroupQuantity(group, group.ids.length - 1)}
-                      disabled={isBusy || group.ids.length <= 1}
-                      title={t('tableGroupDecrement')}
-                      aria-label={t('tableGroupDecrement')}
-                      className="px-2 py-1 text-sm text-muted-foreground hover:bg-surface disabled:opacity-50"
+                      onClick={() => setQrTables(tables.filter((table) => group.ids.includes(table.id)))}
+                      aria-label={t('showQr')}
+                      className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
                     >
-                      −
+                      <QrCodeIcon className="h-3.5 w-3.5" />
                     </button>
-                    <input
-                      key={group.key + group.ids.length}
-                      type="number"
-                      min="1"
-                      step="1"
-                      defaultValue={group.ids.length}
-                      disabled={isBusy}
-                      title={t('tableGroupQuantityLabel')}
-                      aria-label={t('tableGroupQuantityLabel')}
-                      onBlur={(e) => void handleSetGroupQuantity(group, Number(e.target.value))}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') e.currentTarget.blur();
-                      }}
-                      className="w-10 rounded border-0 bg-transparent text-center text-xs text-ink [appearance:textfield] disabled:opacity-50 [&::-webkit-inner-spin-button]:appearance-none"
-                    />
+                  </Tooltip>
+                  <Tooltip content={t('editTable')}>
                     <button
                       type="button"
-                      onClick={() => void handleSetGroupQuantity(group, group.ids.length + 1)}
-                      disabled={isBusy}
-                      title={t('tableGroupIncrement')}
-                      aria-label={t('tableGroupIncrement')}
-                      className="px-2 py-1 text-sm text-muted-foreground hover:bg-surface disabled:opacity-50"
+                      onClick={() => openGroupEdit(group)}
+                      aria-label={t('editTable')}
+                      className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
                     >
-                      +
+                      <PencilIcon className="h-3.5 w-3.5" />
                     </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => openGroupEdit(group)}
-                    title={t('editTable')}
-                    aria-label={t('editTable')}
-                    className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
-                  >
-                    <PencilIcon className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmingDeleteKey(group.key)}
-                    title={t('deleteTable')}
-                    aria-label={t('deleteTable')}
-                    className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
-                  >
-                    <TrashIcon className="h-3.5 w-3.5" />
-                  </button>
+                  </Tooltip>
+                  <Tooltip content={t('deleteTable')}>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDeleteKey(group.key)}
+                      aria-label={t('deleteTable')}
+                      className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </Tooltip>
                 </div>
               );
             })}
@@ -536,6 +609,7 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
                 <TableRow
                   key={table.id}
                   table={table}
+                  onShowQr={() => setQrTables([table])}
                   onEdit={() => setEditingTableId(table.id)}
                   onDelete={() => void handleDeleteCustomTable(table.id)}
                 />
@@ -563,19 +637,49 @@ export function TableManagerForm({ restaurant, tables, onRefresh, onBack, onNext
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onNext}
-          className="w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover"
-        >
-          {tables.length > 0 ? t('continue') : t('tableSkip')}
-        </button>
+        {footer}
       </div>
+      {qrTables && <TableQrModal tables={qrTables} onClose={() => setQrTables(null)} />}
+    </>
+  );
+}
+
+// Thin onboarding-wizard wrapper around TableManagerContent — unchanged
+// external signature/behavior for RegistrationWizard's existing usage.
+export function TableManagerForm({ session, restaurant, tables, onRefresh, onBack, onNext, onStepClick }: WizardProps) {
+  const { t } = useI18n();
+  const [isDirty, setIsDirty] = useState(false);
+
+  return (
+    <WizardShell
+      restaurantName={restaurant.name}
+      restaurantAddress={restaurant.address ?? undefined}
+      userEmail={session.user.email}
+      onSignOut={() => void supabase.auth.signOut()}
+      currentStep={3}
+      activeSubStep="seating"
+      isDirty={isDirty}
+      onSubStepClick={(subStep) => {
+        if (subStep === 'menu') onBack();
+      }}
+      onStepClick={onStepClick}
+    >
+      <TableManagerContent
+        restaurant={restaurant}
+        tables={tables}
+        onRefresh={onRefresh}
+        onDirtyChange={setIsDirty}
+        footer={
+          <button type="button" onClick={onNext} className="w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover">
+            {tables.length > 0 ? t('continue') : t('tableSkip')}
+          </button>
+        }
+      />
     </WizardShell>
   );
 }
 
-function TableRow({ table, onEdit, onDelete }: { table: RestaurantTable; onEdit: () => void; onDelete: () => void }) {
+function TableRow({ table, onShowQr, onEdit, onDelete }: { table: RestaurantTable; onShowQr: () => void; onEdit: () => void; onDelete: () => void }) {
   const { t } = useI18n();
 
   return (
@@ -589,24 +693,36 @@ function TableRow({ table, onEdit, onDelete }: { table: RestaurantTable; onEdit:
           {table.is_outdoor ? t('tableOutdoor') : t('tableIndoor')}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onEdit}
-        title={t('editTable')}
-        aria-label={t('editTable')}
-        className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
-      >
-        <PencilIcon className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        title={t('deleteTable')}
-        aria-label={t('deleteTable')}
-        className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
-      >
-        <TrashIcon className="h-3.5 w-3.5" />
-      </button>
+      <Tooltip content={t('showQr')}>
+        <button
+          type="button"
+          onClick={onShowQr}
+          aria-label={t('showQr')}
+          className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
+        >
+          <QrCodeIcon className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
+      <Tooltip content={t('editTable')}>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={t('editTable')}
+          className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
+        >
+          <PencilIcon className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
+      <Tooltip content={t('deleteTable')}>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={t('deleteTable')}
+          className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
+        >
+          <TrashIcon className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
     </div>
   );
 }

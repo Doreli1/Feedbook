@@ -1,6 +1,7 @@
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { CheckIcon } from './Icons';
+import { Tooltip } from './Tooltip';
 
 // AFD §3.7.1 — the restaurant self-registration wizard's numbered steps.
 // Screen 1 of the AFD table (הצטרפות/sign-in) is deliberately NOT part of
@@ -82,11 +83,13 @@ export function WizardStepper({ currentStep, onStepClick, activeSubStep, onSubSt
             type="button"
             disabled={!clickable}
             onClick={() => onStepClick?.(stepNumber)}
-            className={`flex-1 text-center ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+            className={`group flex-1 rounded-md px-2 py-1.5 text-center transition-colors ${
+              clickable ? 'cursor-pointer hover:bg-surface-2' : 'cursor-default'
+            }`}
           >
             <span
               className={`mb-2 flex items-center justify-center gap-1 truncate text-xs font-medium sm:text-sm ${
-                isCurrent ? 'text-ink' : isDone ? 'text-accent' : `text-muted-foreground ${clickable ? 'hover:text-accent' : ''}`
+                isCurrent ? 'text-ink' : isDone ? 'text-accent' : `text-muted-foreground ${clickable ? 'group-hover:text-accent' : ''}`
               }`}
             >
               {isDone && <CheckIcon className="h-3.5 w-3.5 shrink-0" />}
@@ -94,7 +97,7 @@ export function WizardStepper({ currentStep, onStepClick, activeSubStep, onSubSt
             </span>
             <div
               className={`h-1.5 rounded-full ${
-                isCurrent ? 'bg-accent' : isDone ? 'bg-accent/60 hover:bg-accent' : `bg-surface-2 ${clickable ? 'hover:bg-accent/40' : ''}`
+                isCurrent ? 'bg-accent' : isDone ? 'bg-accent/60' : 'bg-surface-2'
               }`}
             />
           </button>
@@ -107,16 +110,21 @@ export function WizardStepper({ currentStep, onStepClick, activeSubStep, onSubSt
 // One half of the split "הגדרת המסעדה" segment — a plain colored tick, no
 // caption of its own (the one parent label above covers both), matching
 // Booking's own split-bar-under-one-title look. `label` still becomes the
-// button's accessible name (title + aria-label) for a hover tooltip and
-// screen readers, even though nothing is painted on the tick itself.
+// button's accessible name (aria-label, plus the shared bubble tooltip on
+// hover) even though nothing is painted on the tick itself.
 function SubSegment({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className={`h-1.5 flex-1 rounded-full ${active ? 'bg-accent' : 'bg-surface-2 hover:bg-accent/40'}`}
-    />
+    // flex-1 goes on the tooltip's own wrapper (className prop), not just the
+    // button — the wrapper is what actually sits in the parent flex row now,
+    // and its own default shrink-to-fit sizing would otherwise stop the two
+    // ticks from splitting the row width evenly.
+    <Tooltip content={label} className="flex-1">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        className={`h-1.5 w-full cursor-pointer rounded-full transition-colors ${active ? 'bg-accent' : 'bg-surface-2 hover:bg-accent/40'}`}
+      />
+    </Tooltip>
   );
 }
