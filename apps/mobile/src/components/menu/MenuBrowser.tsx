@@ -159,6 +159,35 @@ function useDishOrderStats(restaurantId: string | null) {
   return stats;
 }
 
+// Shared broadcast subscription for the three ingredient-derived hooks below
+// (2026-09-27) — replaces separate postgres_changes listeners on
+// ingredients/dish_ingredients/modifier_option_ingredients. Root cause found
+// via a live test: Realtime filters postgres_changes delivery through the
+// SUBSCRIBER's own RLS on the changed table, and all three of those tables
+// are staff-only (no diner SELECT policy, by design — exact stock, SKUs and
+// supplier info are private operational data) — so a diner's client could
+// never receive an event there no matter how healthy the replication
+// connection was (confirmed: the identical subscription on the *publicly*
+// readable `dishes` table delivered instantly). A DB trigger
+// (notify_restaurant_inventory_change, 20260927090000) now broadcasts an
+// empty ping to `restaurant_inventory:<restaurant_id>` on any change to
+// those three tables — broadcast is a plain message, not a row-level
+// replication event, so it's entirely unaffected by the source tables' RLS.
+function useRestaurantInventoryBroadcast(restaurantId: string | null, onChange: () => void) {
+  useEffect(() => {
+    if (!restaurantId) return;
+    const rid = restaurantId;
+    const channel = supabase
+      .channel(`restaurant_inventory:${rid}`, { config: { private: true } })
+      .on('broadcast', { event: 'changed' }, () => onChange())
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurantId]);
+}
+
 // Which of a dish's marked-critical ingredients (Web Admin's own "קריטי"
 // toggle in MenuManager.tsx's ingredient tags) are currently low or fully
 // out — same "real data only" rule and same RLS reasoning as
@@ -179,16 +208,17 @@ function useDishCriticalStock(restaurantId: string | null) {
     }
 
     void refresh();
-    const channel = supabase
-      .channel(`dish-critical-stock-${rid}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => void refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dish_ingredients' }, () => void refresh())
-      .subscribe();
     return () => {
       cancelled = true;
-      void supabase.removeChannel(channel);
     };
   }, [restaurantId]);
+
+  useRestaurantInventoryBroadcast(restaurantId, () => {
+    if (!restaurantId) return;
+    void supabase.rpc('get_dish_critical_stock_status', { p_restaurant_id: restaurantId }).then(({ data }) => {
+      setStatus(new Map((data ?? []).map((row) => [row.dish_id, row.status as 'low' | 'out'])));
+    });
+  });
 
   return status;
 }
@@ -218,16 +248,21 @@ function useDishMissingIngredients(restaurantId: string | null) {
     }
 
     void refresh();
-    const channel = supabase
-      .channel(`dish-missing-ingredients-${rid}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => void refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dish_ingredients' }, () => void refresh())
-      .subscribe();
     return () => {
       cancelled = true;
-      void supabase.removeChannel(channel);
     };
   }, [restaurantId]);
+
+  useRestaurantInventoryBroadcast(restaurantId, () => {
+    if (!restaurantId) return;
+    void supabase.rpc('get_dish_missing_ingredients', { p_restaurant_id: restaurantId }).then(({ data }) => {
+      const map = new Map<string, string[]>();
+      for (const row of data ?? []) {
+        map.set(row.dish_id, [...(map.get(row.dish_id) ?? []), row.ingredient_name]);
+      }
+      setMissing(map);
+    });
+  });
 
   return missing;
 }
@@ -256,16 +291,17 @@ function useUnavailableModifierOptions(restaurantId: string | null) {
     }
 
     void refresh();
-    const channel = supabase
-      .channel(`unavailable-modifier-options-${rid}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => void refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'modifier_option_ingredients' }, () => void refresh())
-      .subscribe();
     return () => {
       cancelled = true;
-      void supabase.removeChannel(channel);
     };
   }, [restaurantId]);
+
+  useRestaurantInventoryBroadcast(restaurantId, () => {
+    if (!restaurantId) return;
+    void supabase.rpc('get_unavailable_modifier_options', { p_restaurant_id: restaurantId }).then(({ data }) => {
+      setUnavailable(new Set((data ?? []).map((row) => row.option_id)));
+    });
+  });
 
   return unavailable;
 }
@@ -384,8 +420,17 @@ function ratingTierLabel(score: number, t: (key: TranslationKey) => string): Tra
   return 'ratingTierFair';
 }
 
+// "החל מ-" only means something once the sizes actually span 2+ distinct
+// PRICES (2026-09-29, refined per explicit follow-up) — two serving sizes
+// that happen to cost the same are still just one real price to the diner.
+// Checked by distinct price value, not option count, and independent of
+// sort order (Math.min already doesn't care which one comes first).
 function priceLabel(dish: Dish, sizes: DishSizeOption[], t: (key: TranslationKey) => string): string {
-  if (sizes.length === 0) return `₪${dish.price}`;
+  const distinctPrices = new Set(sizes.map((s) => s.price));
+  if (distinctPrices.size <= 1) {
+    const price = sizes.length > 0 ? sizes[0]!.price : dish.price;
+    return `${t('dishPriceLabel')} ₪${price}`;
+  }
   const min = Math.min(...sizes.map((s) => s.price));
   return `${t('dishPriceFrom')} ₪${min}`;
 }
@@ -404,9 +449,11 @@ function PriceRow({ dish, sizes, t }: { dish: Dish; sizes: DishSizeOption[]; t: 
       </Text>
     );
   }
-  const hasSizes = sizes.length > 0;
-  const basePrice = hasSizes ? Math.min(...sizes.map((s) => s.price)) : dish.price;
-  const prefix = hasSizes ? `${t('dishPriceFrom')} ` : '';
+  // "From" only once sizes span 2+ distinct prices (2026-09-29) — same rule
+  // as priceLabel above, not just 2+ options.
+  const hasMultiplePrices = new Set(sizes.map((s) => s.price)).size > 1;
+  const basePrice = sizes.length >= 1 ? Math.min(...sizes.map((s) => s.price)) : dish.price;
+  const prefix = hasMultiplePrices ? `${t('dishPriceFrom')} ` : '';
   const discounted = Math.round(basePrice * (1 - dish.discount_percent / 100) * 100) / 100;
   return (
     <View className="flex-row items-center" style={{ gap: 5 }}>

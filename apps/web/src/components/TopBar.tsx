@@ -41,6 +41,11 @@ interface Props {
   onSwitchRestaurant?: (id: string) => void;
   onAddRestaurant?: () => void;
   notifications?: TopBarNotification[];
+  // Only set when there's somewhere real to go back to (e.g. the wizard was
+  // opened to add an additional restaurant, and at least one other already
+  // exists) — never for a genuine first-time signup, where the wizard IS the
+  // only path forward and a "way out" would just strand the user mid-air.
+  onLogoClick?: () => void;
 }
 
 export function TopBar({
@@ -53,12 +58,19 @@ export function TopBar({
   onSwitchRestaurant,
   onAddRestaurant,
   notifications = [],
+  onLogoClick,
 }: Props) {
   const showAccountMenu = !!onSignOut;
 
   return (
     <header dir="ltr" className="flex items-center justify-between gap-4 bg-chrome px-6 py-3 sm:px-12">
-      <FeedbookBrand onDark />
+      {onLogoClick ? (
+        <button type="button" onClick={onLogoClick} className="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-white">
+          <FeedbookBrand onDark />
+        </button>
+      ) : (
+        <FeedbookBrand onDark />
+      )}
       <div className="flex min-w-0 items-center gap-2">
         {restaurantName && !showAccountMenu && (
           <div dir="auto" className="max-w-[220px] text-right">

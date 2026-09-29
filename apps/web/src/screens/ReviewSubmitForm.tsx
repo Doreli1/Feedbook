@@ -20,6 +20,7 @@ interface Props {
   // Dashboard on its own; no separate "submitted" screen needed here.
   onSubmitted: () => void;
   onStepClick?: (step: number) => void;
+  onExit?: () => void;
 }
 
 // Same jsonb shape RestaurantDetailsForm's hours picker writes — duplicated
@@ -54,7 +55,7 @@ const AGREEMENT_VERSION = 'placeholder-pending-legal-v0';
 // requirement is actually met (free step-bar navigation lets a user reach
 // this screen without it), and records the agreement acceptance + the
 // draft -> pending_review transition (API Spec §4.3) in one action.
-export function ReviewSubmitForm({ session, restaurant, categories, dishes, tables, onBack, onSubmitted, onStepClick }: Props) {
+export function ReviewSubmitForm({ session, restaurant, categories, dishes, tables, onBack, onSubmitted, onStepClick, onExit }: Props) {
   const { t } = useI18n();
   const [agreementChecked, setAgreementChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -105,6 +106,7 @@ export function ReviewSubmitForm({ session, restaurant, categories, dishes, tabl
       onSignOut={() => void supabase.auth.signOut()}
       currentStep={4}
       onStepClick={onStepClick}
+      onExit={onExit}
     >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('reviewTitle')}</h1>

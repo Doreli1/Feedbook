@@ -21,6 +21,7 @@ interface WizardProps {
   // table already saved on its own explicit action (quick-add, +/-, edit
   // save), same as menu's categories/dishes.
   onStepClick?: (step: number) => void;
+  onExit?: () => void;
 }
 
 type TableTypeKey = 'couple' | 'family' | 'family_extended' | 'high' | 'bar';
@@ -646,7 +647,7 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
 
 // Thin onboarding-wizard wrapper around TableManagerContent — unchanged
 // external signature/behavior for RegistrationWizard's existing usage.
-export function TableManagerForm({ session, restaurant, tables, onRefresh, onBack, onNext, onStepClick }: WizardProps) {
+export function TableManagerForm({ session, restaurant, tables, onRefresh, onBack, onNext, onStepClick, onExit }: WizardProps) {
   const { t } = useI18n();
   const [isDirty, setIsDirty] = useState(false);
 
@@ -663,6 +664,7 @@ export function TableManagerForm({ session, restaurant, tables, onRefresh, onBac
         if (subStep === 'menu') onBack();
       }}
       onStepClick={onStepClick}
+      onExit={onExit}
     >
       <TableManagerContent
         restaurant={restaurant}

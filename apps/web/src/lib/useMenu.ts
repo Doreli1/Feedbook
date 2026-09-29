@@ -33,8 +33,11 @@ export function useMenu(restaurantId: string | undefined) {
     const dishIds = (dishesRes.data ?? []).map((d) => d.id);
     const [dishIngredientsRes, dishSizeOptionsRes] = await Promise.all([
       dishIds.length ? supabase.from('dish_ingredients').select('*').in('dish_id', dishIds) : Promise.resolve({ data: [] as DishIngredient[] }),
+      // is_active only (2026-09-29) — a "removed" size option is soft-
+      // deleted, not deleted, so it must not reappear in the edit form or
+      // the dish list's own "from" price.
       dishIds.length
-        ? supabase.from('dish_size_options').select('*').in('dish_id', dishIds).order('sort_order')
+        ? supabase.from('dish_size_options').select('*').eq('is_active', true).in('dish_id', dishIds).order('sort_order')
         : Promise.resolve({ data: [] as DishSizeOption[] }),
     ]);
     setDishIngredients(dishIngredientsRes.data ?? []);

@@ -268,6 +268,7 @@ export type Database = {
         Row: {
           dish_id: string
           id: string
+          is_active: boolean
           name: string
           price: number
           sort_order: number
@@ -275,6 +276,7 @@ export type Database = {
         Insert: {
           dish_id: string
           id?: string
+          is_active?: boolean
           name: string
           price: number
           sort_order?: number
@@ -282,6 +284,7 @@ export type Database = {
         Update: {
           dish_id?: string
           id?: string
+          is_active?: boolean
           name?: string
           price?: number
           sort_order?: number

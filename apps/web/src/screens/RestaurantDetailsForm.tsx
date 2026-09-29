@@ -35,6 +35,11 @@ interface Props {
   // click within the 1200ms debounce window would navigate away before the
   // last few keystrokes were ever sent.
   onStepClick?: (step: number) => void;
+  // Lets the Feedbook logo exit the wizard back to the Dashboard — only
+  // passed when adding an additional restaurant to an account that already
+  // has one; never for a first-ever signup or the Dashboard edit-details
+  // reuse of this same screen (see App.tsx / RegistrationWizard.tsx).
+  onExit?: () => void;
 }
 
 // Israeli mobile prefixes only — this is a mobile-contact field (matches the
@@ -105,7 +110,7 @@ function isRuleComplete(rule: HourRule): boolean {
 
 // AFD §3.7.1 screen 2: "פרטי מסעדה בסיסיים" — name, address, phone, hours,
 // auto-saved as a draft at every step (DoD: no data loss on refresh/disconnect).
-export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved, onNext, primaryLabel, onStepClick }: Props) {
+export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved, onNext, primaryLabel, onStepClick, onExit }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState(restaurant?.name ?? '');
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -161,6 +166,14 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       if (hasRequiredFields) void save();
     }
     onStepClick?.(target);
+  }
+
+  function handleExit() {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      if (hasRequiredFields) void save();
+    }
+    onExit?.();
   }
 
   // Same flush as handleStepClick, but awaited: "continue" unmounts this
@@ -286,6 +299,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       currentStep={1}
       hideStepper={!!primaryLabel}
       onStepClick={onStepClick && handleStepClick}
+      onExit={onExit && handleExit}
     >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>

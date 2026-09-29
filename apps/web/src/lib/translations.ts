@@ -129,6 +129,7 @@ const translations = {
     dishNamePlaceholder: 'שם המנה',
     dishNamePlaceholderDrink: 'שם השתייה',
     dishPricePlaceholder: 'מחיר',
+    dishPriceRequiredError: 'שדה חובה — יש להזין מחיר גדול מ-0.',
     dishDescriptionLabel: 'תיאור',
     dishDescriptionPlaceholder: 'תיאור קצר (עד 400 תווים)',
     dishPhotoUpload: 'העלאת תמונה',
@@ -148,7 +149,6 @@ const translations = {
     dishSizeOptionPriceColumnLabel: 'מחיר',
     dishSizeOptionAdd: '+ הוספת אפשרות הגשה',
     dishSizeOptionRemove: 'הסרת אפשרות',
-    dishSizeOptionInUseError: 'לא ניתן להסיר אפשרות הגשה זו — היא כבר משויכת להזמנות קיימות.',
     dishModifierGroupInUseError: 'לא ניתן לבטל קבוצה זו — לפחות אחת מהאפשרויות בה כבר משויכת להזמנות קיימות.',
     dishModifierOptionInUseError: 'לא ניתן להסיר אפשרות זו — היא כבר משויכת להזמנות קיימות.',
     dishAddonsLabel: 'תוספות למנה',
@@ -389,6 +389,12 @@ const translations = {
       'שימו לב: חומר/י הגלם הבאים מקושרים גם כ"כל הגדלים" וגם לגודל הגשה ספציפי — {ingredients}. בהזמנה של הגודל הספציפי ינוכו שני הקישורים יחד (ניכוי כפול, לא רק הכמות של הגודל שהוזמן). יש להסיר את הקישור "כל הגדלים" של חומר גלם זה ולהגדיר לו כמות נפרדת לכל גודל הגשה בנפרד.',
     dishIngredientSizesDisabledDuplicateWarning:
       'לא ניתן לשמור: כיבוי אפשרויות ההגשה הופך את כל הקישורים לחלים על "כל הגדלים" — אך חומר/י הגלם הבאים מקושרים למנה זו יותר מפעם אחת (כמות שונה לכל גודל) — {ingredients}. יש להשאיר קישור אחד בלבד לכל חומר גלם (למחוק את הכפילות) לפני כיבוי אפשרויות ההגשה.',
+    dishIngredientRemovedCriticalWarning:
+      'לא ניתן לשמור: חומר/י הגלם הבאים היו מסומנים "קריטי" למנה זו והוסרו לגמרי — {ingredients}. הסרת חומר גלם קריטי מבטלת בשקט את הגנת המלאי הקריטי של המנה באפליקציה (התג "כמעט אזל"/"אזל" לא יעבוד יותר). קשרו את חומר הגלם מחדש כדי לשמור, או — אם אתם בטוחים שהוא כבר לא קריטי — בטלו את סימון "קריטי" עליו ושמרו קודם, ורק לאחר מכן חִזרו לערוך ולהסיר אותו.',
+    dishNoCriticalIngredientError:
+      'לא ניתן לשמור: קושרו חומרי גלם למנה זו, אך אף אחד מהם לא סומן "קריטי". ללא חומר גלם קריטי, המנה לא תוצג כ"כמעט אזל"/"אזל" באפליקציה גם אם המלאי שלה יאזל. סמנו לפחות חומר גלם אחד כ"קריטי" כדי לשמור.',
+    dishAddonMissingIngredientError:
+      'לא ניתן לשמור: לתוספת/ות הבאות אין חומר גלם מקושר — {addons}. ללא קישור, בחירת התוספת הזו לא תנכה כלום מהמלאי. קשרו לפחות חומר גלם אחד לכל תוספת כדי לשמור.',
     dishIngredientStockDeductionLabel: 'הפחתה ממלאי',
     addIngredientToDish: 'הוספה',
     dishIngredientsEmpty: 'עדיין לא הוספת חומרי גלם למנה הזו.',
@@ -653,6 +659,7 @@ const translations = {
     dishNamePlaceholder: 'Dish name',
     dishNamePlaceholderDrink: 'Drink name',
     dishPricePlaceholder: 'Price',
+    dishPriceRequiredError: 'Required — enter a price greater than 0.',
     dishDescriptionLabel: 'Description',
     dishDescriptionPlaceholder: 'Short description (up to 400 characters)',
     dishPhotoUpload: 'Upload photo',
@@ -672,7 +679,6 @@ const translations = {
     dishSizeOptionPriceColumnLabel: 'Price',
     dishSizeOptionAdd: '+ Add serving option',
     dishSizeOptionRemove: 'Remove option',
-    dishSizeOptionInUseError: "This serving option can't be removed — it's already linked to existing orders.",
     dishModifierGroupInUseError: "This group can't be turned off — at least one of its options is already linked to existing orders.",
     dishModifierOptionInUseError: "This option can't be removed — it's already linked to existing orders.",
     dishAddonsLabel: 'Add-ons',
@@ -909,6 +915,12 @@ const translations = {
       'Warning: the following ingredient(s) are linked both as "All sizes" and to a specific serving size — {ingredients}. Ordering that specific size will deduct both links together (double deduction, not just the ordered size\'s quantity). Remove the "All sizes" link for this ingredient and set a separate quantity for each serving size instead.',
     dishIngredientSizesDisabledDuplicateWarning:
       'Can\'t save: turning off serving sizes makes every link apply to "All sizes" — but the following ingredient(s) are linked to this dish more than once (a different quantity per size) — {ingredients}. Keep only one link per ingredient (delete the duplicate) before turning off serving sizes.',
+    dishIngredientRemovedCriticalWarning:
+      'Can\'t save: the following ingredient(s) were marked "critical" for this dish and have been removed entirely — {ingredients}. Removing a critical ingredient silently disables this dish\'s critical-stock protection on mobile (the "almost out"/"out" badge will stop working). Link the ingredient back to save, or — if you\'re sure it\'s no longer critical — uncheck "critical" on it and save first, then come back and remove it.',
+    dishNoCriticalIngredientError:
+      'Can\'t save: ingredients are linked to this dish, but none of them are marked "critical". Without a critical ingredient, this dish will never show "almost out"/"out" on mobile even if its stock runs out. Mark at least one ingredient "critical" to save.',
+    dishAddonMissingIngredientError:
+      'Can\'t save: the following add-on(s) have no linked ingredient — {addons}. Without a link, choosing this add-on deducts nothing from stock. Link at least one ingredient to each add-on to save.',
     dishIngredientStockDeductionLabel: 'Stock deduction',
     addIngredientToDish: 'Add',
     dishIngredientsEmpty: "You haven't added any ingredients to this dish yet.",

@@ -29,6 +29,10 @@ interface Props {
   // RestaurantDetailsForm's autosave flush) must NOT set this — warning
   // about data loss that can't actually happen would just be a false alarm.
   isDirty?: boolean;
+  // Lets the Feedbook logo act as a "back to dashboard" exit — only passed
+  // when the caller has a real dashboard to return to (see App.tsx). Guarded
+  // by the same unsaved-changes dialog as in-wizard step navigation.
+  onExit?: () => void;
   children: ReactNode;
 }
 
@@ -50,12 +54,14 @@ export function WizardShell({
   onSubStepClick,
   hideStepper = false,
   isDirty = false,
+  onExit,
   children,
 }: Props) {
   const { t } = useI18n();
   // Stashes the navigation that was about to happen so the dialog's own
-  // "leave" button can run it later — a step number OR a sub-step name,
-  // never both, so a single pending-action slot covers either source.
+  // "leave" button can run it later — a step number, a sub-step name, or the
+  // exit action, never more than one at a time, so a single pending-action
+  // slot covers any of the three sources.
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
 
   function guardedStepClick(step: number) {
@@ -74,6 +80,14 @@ export function WizardShell({
     }
   }
 
+  function guardedExit() {
+    if (isDirty) {
+      setPendingNav(() => () => onExit?.());
+    } else {
+      onExit?.();
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Brand and business-context+language sit at the bar's true edges —
@@ -83,6 +97,7 @@ export function WizardShell({
         restaurantName={restaurantName ?? userEmail}
         restaurantAddress={restaurantAddress}
         onSignOut={onSignOut}
+        onLogoClick={onExit && guardedExit}
       />
 
       {!hideStepper && (

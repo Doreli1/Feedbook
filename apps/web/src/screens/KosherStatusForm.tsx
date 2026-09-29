@@ -17,11 +17,12 @@ interface Props {
   // Free step-bar navigation — nothing to flush here first: upload/remove
   // both save immediately on click, there's no debounced draft in flight.
   onStepClick?: (step: number) => void;
+  onExit?: () => void;
 }
 
 // AFD §3.7.1 screen 3: "סטטוס כשרות (אופציונלי)" — self-declaration + upload,
 // skippable. API Spec §5.1-5.2.
-export function KosherStatusForm({ session, restaurant, onNext, onUpdated, onStepClick }: Props) {
+export function KosherStatusForm({ session, restaurant, onNext, onUpdated, onStepClick, onExit }: Props) {
   const { t } = useI18n();
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +100,7 @@ export function KosherStatusForm({ session, restaurant, onNext, onUpdated, onSte
       onSignOut={() => void supabase.auth.signOut()}
       currentStep={2}
       onStepClick={onStepClick}
+      onExit={onExit}
     >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('kosherStepTitle')}</h1>

@@ -557,6 +557,7 @@ function ModifierSection({
   onPhotoChange,
   onAddIngredient,
   extraHeaderContent,
+  errorContent,
 }: {
   enabled: boolean;
   onToggle: (v: boolean) => void;
@@ -579,7 +580,14 @@ function ModifierSection({
   // today (the single/multiple-choice segmented control), doneness passes
   // nothing and is unaffected.
   extraHeaderContent?: ReactNode;
+  // Rendered right above the add button — validation feedback that belongs
+  // to this section's own rows (e.g. an add-on missing its ingredient
+  // link), kept next to the button a restaurant would use to fix it rather
+  // than floating below the whole section.
+  errorContent?: ReactNode;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="mb-3">
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -613,6 +621,13 @@ function ModifierSection({
               ))}
             </div>
           )}
+          {ingredients && ingredients.length > 0 && rows.length > 0 && (
+            <p className="mb-2 flex items-start gap-1 text-[11px] text-muted-foreground">
+              <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600" />
+              <span>{t('dishAddonIngredientsHint')}</span>
+            </p>
+          )}
+          {errorContent}
           <button
             type="button"
             onClick={onAdd}
@@ -682,7 +697,7 @@ function ModifierOptionRowEditor({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <Tooltip content={photoUrl ? t('dishOptionPhotoRemove') : t('dishOptionPhotoAdd')}>
           <button
             type="button"
@@ -711,7 +726,7 @@ function ModifierOptionRowEditor({
           className="w-32 shrink-0 rounded border border-border px-2 py-1.5 text-xs"
         />
         {includePrice && (
-          <div className="relative w-24 shrink-0">
+          <div className="relative w-32 shrink-0">
             <span className="pointer-events-none absolute inset-y-0 start-2 flex items-center text-xs text-muted-foreground">₪</span>
             <input
               type="number"
@@ -723,6 +738,60 @@ function ModifierOptionRowEditor({
               className="w-full rounded border border-border py-1.5 ps-5 pe-1 text-xs"
             />
           </div>
+        )}
+        {ingredients && ingredients.length > 0 && (
+          <>
+            <select
+              value={pickIngredientId}
+              onChange={(e) => {
+                setPickIngredientId(e.target.value);
+                setPickUnitId('');
+                setPickError(null);
+              }}
+              className="w-32 shrink-0 rounded border border-border px-2 py-1.5 text-xs"
+            >
+              <option value="">{t('dishIngredientPickPlaceholder')}</option>
+              {ingredients.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name} ({i.unit})
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={pickQuantity}
+              onChange={(e) => {
+                setPickQuantity(e.target.value);
+                setPickError(null);
+              }}
+              placeholder={t('dishIngredientQuantityPlaceholder')}
+              className="w-32 shrink-0 rounded border border-border px-2 py-1.5 text-xs"
+            />
+            <select
+              value={pickUnitId}
+              onChange={(e) => {
+                setPickUnitId(e.target.value);
+                setPickError(null);
+              }}
+              className="w-32 shrink-0 rounded border border-border px-2 py-1.5 text-xs"
+            >
+              <option value="">{ingredients.find((i) => i.id === pickIngredientId)?.unit ?? t('dishIngredientUnitPlaceholder')}</option>
+              {(ingredientUnitsMap?.get(pickIngredientId) ?? []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={addIngredient}
+              className="shrink-0 rounded bg-accent-soft px-2 py-1.5 text-xs font-medium text-accent hover:bg-accent hover:text-white"
+            >
+              {t('addIngredientToDish')}
+            </button>
+          </>
         )}
         <Tooltip content={removeLabel}>
           <button
@@ -750,77 +819,17 @@ function ModifierOptionRowEditor({
           <span>{t('dishOptionPhotoMissingWarning')}</span>
         </p>
       )}
-      {ingredients && ingredients.length > 0 && (
-        <div className="ms-9 mt-1.5">
-          <p className="mb-1 flex items-start gap-1 text-[11px] text-muted-foreground">
-            <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600" />
-            <span>{t('dishAddonIngredientsHint')}</span>
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            <select
-              value={pickIngredientId}
-              onChange={(e) => {
-                setPickIngredientId(e.target.value);
-                setPickUnitId('');
-                setPickError(null);
-              }}
-              className="w-40 shrink-0 rounded border border-border px-2 py-1 text-[11px]"
-            >
-              <option value="">{t('dishIngredientPickPlaceholder')}</option>
-              {ingredients.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name} ({i.unit})
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={pickQuantity}
-              onChange={(e) => {
-                setPickQuantity(e.target.value);
-                setPickError(null);
-              }}
-              placeholder={t('dishIngredientQuantityPlaceholder')}
-              className="w-20 shrink-0 rounded border border-border px-2 py-1 text-[11px]"
-            />
-            <select
-              value={pickUnitId}
-              onChange={(e) => {
-                setPickUnitId(e.target.value);
-                setPickError(null);
-              }}
-              className="w-24 shrink-0 rounded border border-border px-2 py-1 text-[11px]"
-            >
-              <option value="">{ingredients.find((i) => i.id === pickIngredientId)?.unit ?? t('dishIngredientUnitPlaceholder')}</option>
-              {(ingredientUnitsMap?.get(pickIngredientId) ?? []).map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={addIngredient}
-              className="shrink-0 rounded bg-accent-soft px-2 py-1 text-[11px] font-medium text-accent hover:bg-accent hover:text-white"
-            >
-              {t('addIngredientToDish')}
-            </button>
-          </div>
-          {pickError && pickedIngredient && (
-            <p className="mt-1 flex items-start gap-1 text-[11px] text-danger">
-              <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
-              <span>
-                {t(pickError)
-                  .replace('{required}', String(requiredQuantityInStockUnit(Number(pickQuantity), pickUnitId, ingredientUnitsMap?.get(pickIngredientId) ?? [])))
-                  .replaceAll('{unit}', pickedIngredient.unit)
-                  .replace('{stock}', String(pickedIngredient.quantity_in_stock))
-                  .replace('{threshold}', String(pickedIngredient.threshold_quantity))}
-              </span>
-            </p>
-          )}
-        </div>
+      {pickError && pickedIngredient && (
+        <p className="ms-9 mt-1 flex items-start gap-1 text-[11px] text-danger">
+          <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+          <span>
+            {t(pickError)
+              .replace('{required}', String(requiredQuantityInStockUnit(Number(pickQuantity), pickUnitId, ingredientUnitsMap?.get(pickIngredientId) ?? [])))
+              .replaceAll('{unit}', pickedIngredient.unit)
+              .replace('{stock}', String(pickedIngredient.quantity_in_stock))
+              .replace('{threshold}', String(pickedIngredient.threshold_quantity))}
+          </span>
+        </p>
       )}
     </div>
   );
@@ -899,6 +908,14 @@ function DishForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [dishIngredients, setDishIngredients] = useState<DishIngredientRow[]>([]);
+  // Ingredient ids marked critical when this form loaded (2026-09-29) — a
+  // snapshot, not derived from the live dishIngredients state, so removing
+  // one of them entirely (not just un-checking "קריטי") can be caught at
+  // save time. Found via a real repro: a dish with 2 serving options and its
+  // critical "בשר בקר" link removed saved successfully with no warning at
+  // all — the critical-stock bullets/blocking this restaurant relies on
+  // would silently stop working for that dish.
+  const [existingCriticalIngredientIds, setExistingCriticalIngredientIds] = useState<Set<string>>(new Set());
   const [pickIngredientId, setPickIngredientId] = useState('');
   const [pickQuantity, setPickQuantity] = useState('');
   const [pickUnitId, setPickUnitId] = useState('');
@@ -945,6 +962,7 @@ function DishForm({
       .select('ingredient_id, quantity_required, unit_id, dish_size_option_id, is_critical')
       .eq('dish_id', dish.id)
       .then(({ data }) => {
+        setExistingCriticalIngredientIds(new Set((data ?? []).filter((r) => r.is_critical).map((r) => r.ingredient_id)));
         setDishIngredients(
           (data ?? []).map((r) => {
             // Resolved against existingSizeOptions (the props snapshot from
@@ -1040,14 +1058,24 @@ function DishForm({
   const discountValid = Number.isFinite(discountValue) && discountValue >= 0 && discountValue <= 100;
   const prepTimeValue = prepTimeMinutes.trim() === '' ? null : Number(prepTimeMinutes);
   const prepTimeValid = prepTimeValue === null || (Number.isInteger(prepTimeValue) && prepTimeValue > 0);
-  const manualPriceValid = servingOptionsEnabled || (price.trim() !== '' && !Number.isNaN(priceValue) && priceValue >= 0);
+  // Required + strictly > 0 (2026-09-29, per explicit request) — with
+  // serving options off, this is the dish's only price; 0 or empty is never
+  // a real, sellable value.
+  const manualPriceValid = servingOptionsEnabled || (price.trim() !== '' && !Number.isNaN(priceValue) && priceValue > 0);
   // Ingredient linking on an add-on is no longer optional (2026-09-23) — an
   // add-on with no linked ingredient at all was a real gap in the JIT
   // inventory story (choosing it deducted nothing), so every named add-on
   // row must now link at least one. Doneness options are unaffected: that
   // ModifierSection never passes ingredients/onAddIngredient at all (it's a
   // cooking instruction, not a material), so this only ever gates addons.
-  const addonsValid = !addonsEnabled || addonOptions.filter((r) => r.name.trim() !== '').every((r) => r.ingredients.length > 0);
+  // This blocked save silently until 2026-09-29 — canSave went false with no
+  // visible reason, so a forgotten link just looked like a broken Save
+  // button. addonsMissingIngredientNames now names the exact row(s) still
+  // missing a link, next to the addons section itself.
+  const addonsMissingIngredientNames = addonsEnabled
+    ? addonOptions.filter((r) => r.name.trim() !== '' && r.ingredients.length === 0).map((r) => r.name)
+    : [];
+  const addonsValid = addonsMissingIngredientNames.length === 0;
 
   // Turning serving sizes off collapses every row's dish_size_option_id to
   // null (see savedSizeOptionIds resolution in handleSave) — a real conflict
@@ -1064,6 +1092,26 @@ function DishForm({
         .filter(([, count]) => count > 1)
         .map(([ingredientId]) => ingredients.find((i) => i.id === ingredientId)?.name ?? '?');
 
+  // A critical ingredient link removed entirely (not just un-checked
+  // "קריטי") — real repro 2026-09-29: a dish with 2 serving options and its
+  // critical "בשר בקר" link removed saved successfully with zero warning,
+  // silently disabling that dish's critical-stock bullets/blocking on
+  // mobile. Compares against existingCriticalIngredientIds (the snapshot
+  // from when the form loaded), not the live is_critical flags, so this
+  // catches full removal specifically — merely un-marking "קריטי" on a kept
+  // link is a deliberate, allowed choice, not this.
+  const removedCriticalIngredientNames = Array.from(existingCriticalIngredientIds)
+    .filter((ingredientId) => !dishIngredients.some((r) => r.ingredient_id === ingredientId))
+    .map((ingredientId) => ingredients.find((i) => i.id === ingredientId)?.name ?? '?');
+
+  // A dish with linked ingredients but none marked "קריטי" can never trigger
+  // the mobile critical-stock bullets/sold-out state for this dish at all —
+  // the link exists only for inventory deduction, with nothing to actually
+  // gate availability on. A dish with zero linked ingredients is unaffected
+  // (nothing to mark critical in the first place, and not every dish needs
+  // stock tracking).
+  const noCriticalIngredientMarked = dishIngredients.length > 0 && !dishIngredients.some((r) => r.isCritical);
+
   const canSave =
     name.trim() !== '' &&
     manualPriceValid &&
@@ -1072,6 +1120,8 @@ function DishForm({
     prepTimeValid &&
     addonsValid &&
     sizesDisabledDuplicateIngredientNames.length === 0 &&
+    removedCriticalIngredientNames.length === 0 &&
+    !noCriticalIngredientMarked &&
     !saving;
 
   // Real double-deduction risk, not just a missed setup (2026-09-24): the
@@ -1268,8 +1318,20 @@ function DishForm({
     // order_items.dish_size_option_id references its row with no ON DELETE
     // clause (by design — a past order must keep pointing at a real row for
     // its own history) — so the old delete-everything approach failed there
-    // with a silent, unchecked 23503 foreign-key error. Reconciling by id
-    // keeps every referenced row's id stable.
+    // with a silent, unchecked 23503 foreign-key error.
+    //
+    // 2026-09-29: replaced the delete entirely with a soft-delete
+    // (is_active = false), per explicit user request — this recurring
+    // conflict kept resurfacing every time a real test order landed on a
+    // dish's size option, and the "named error" fix from earlier the same
+    // day was only ever a better message for a block that shouldn't have to
+    // exist. "Removing" a size option now just hides it (RLS already
+    // excludes is_active = false from the diner-facing read policy) and
+    // never touches the row, so it can never conflict with historical order
+    // data again — no retroactive changes, no risk to existing orders.
+    // dish_ingredients links tied to a deactivated size are deleted for real
+    // (nothing references dish_ingredients by id, so this is always safe) —
+    // they're meaningless once that size is retired.
     //
     // Runs before the ingredient links below (moved here 2026-09-24) so a
     // brand-new size option's real id exists in time to resolve each
@@ -1277,12 +1339,13 @@ function DishForm({
     const keptSizeOptionIds = new Set(effectiveSizeOptions.filter((s) => s.id).map((s) => s.id));
     const removedSizeOptionIds = existingSizeOptions.map((s) => s.id).filter((id) => !keptSizeOptionIds.has(id));
     if (removedSizeOptionIds.length > 0) {
-      const { error: removeError } = await supabase.from('dish_size_options').delete().in('id', removedSizeOptionIds);
-      if (removeError) {
+      const { error: deactivateError } = await supabase.from('dish_size_options').update({ is_active: false }).in('id', removedSizeOptionIds);
+      if (deactivateError) {
         setSaving(false);
-        setError(removeError.code === '23503' ? t('dishSizeOptionInUseError') : removeError.message);
+        setError(deactivateError.message);
         return;
       }
+      await supabase.from('dish_ingredients').delete().in('dish_size_option_id', removedSizeOptionIds);
     }
     for (const [i, s] of effectiveSizeOptions.entries()) {
       if (!s.id) continue;
@@ -1511,11 +1574,6 @@ function DishForm({
 
   return (
     <div className="mt-2 rounded border border-border bg-surface p-3">
-      {error && (
-        <p ref={errorRef} className="mb-2 rounded border border-danger/30 bg-danger-soft p-2 text-xs font-medium text-danger">
-          {error}
-        </p>
-      )}
       <label className="mb-1 block text-sm font-semibold text-ink">{t(isDrink ? 'dishNamePlaceholderDrink' : 'dishNamePlaceholder')}</label>
       <input
         type="text"
@@ -1532,14 +1590,19 @@ function DishForm({
           get a price from. */}
       {!servingOptionsEnabled && (
         <>
-          <label className="mb-1 block text-sm font-semibold text-ink">{t('dishPricePlaceholder')}</label>
-          <div className="relative mb-4 w-28">
+          {/* Required + must be > 0 (2026-09-29, per explicit request) —
+              with serving options off, this manual price is the dish's only
+              price at all, so 0/empty is never a real, sellable state. */}
+          <label className="mb-1 block text-sm font-semibold text-ink">
+            {t('dishPricePlaceholder')} <span className="text-danger">*</span>
+          </label>
+          <div className="relative mb-1 w-28">
             <span className="pointer-events-none absolute inset-y-0 start-2 flex items-center text-sm text-muted-foreground">
               ₪
             </span>
             <input
               type="number"
-              min="0"
+              min="0.1"
               step="0.1"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
@@ -1547,6 +1610,7 @@ function DishForm({
               className="w-full rounded border border-border py-1.5 ps-6 pe-2 text-sm"
             />
           </div>
+          <p className="mb-4 text-xs text-danger">{!manualPriceValid ? t('dishPriceRequiredError') : ' '}</p>
         </>
       )}
       <label className="mb-1 block text-sm font-semibold text-ink">{t('dishDescriptionLabel')}</label>
@@ -1747,6 +1811,14 @@ function DishForm({
         onPhotoChange={(index, file) => setModifierRowPhoto(setAddonOptions, index, file)}
         onAddIngredient={(index, ingredientId, quantity, unitId) => addModifierRowIngredient(setAddonOptions, index, ingredientId, quantity, unitId)}
         extraHeaderContent={<AddonSelectionTypeToggle value={addonSelectionType} onChange={setAddonSelectionType} />}
+        errorContent={
+          addonsMissingIngredientNames.length > 0 && (
+            <p className="mb-2 flex items-start gap-1 text-[11px] text-danger">
+              <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <span>{t('dishAddonMissingIngredientError').replace('{addons}', addonsMissingIngredientNames.join(', '))}</span>
+            </p>
+          )
+        }
       />
 
       <ModifierSection
@@ -1879,6 +1951,18 @@ function DishForm({
               <span>{t('dishIngredientSizesDisabledDuplicateWarning').replace('{ingredients}', sizesDisabledDuplicateIngredientNames.join(', '))}</span>
             </p>
           )}
+          {removedCriticalIngredientNames.length > 0 && (
+            <p className="mt-1 flex items-start gap-1 text-[11px] text-danger">
+              <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <span>{t('dishIngredientRemovedCriticalWarning').replace('{ingredients}', removedCriticalIngredientNames.join(', '))}</span>
+            </p>
+          )}
+          {noCriticalIngredientMarked && (
+            <p className="mt-1 flex items-start gap-1 text-[11px] text-danger">
+              <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <span>{t('dishNoCriticalIngredientError')}</span>
+            </p>
+          )}
         </div>
       )}
 
@@ -1984,6 +2068,15 @@ function DishForm({
           {t('cancel')}
         </button>
       </div>
+      {/* Moved below the save/cancel row (2026-09-29, per explicit request)
+          — was at the very top of this long form, requiring a scroll back up
+          to see why a save failed; now it's right where the admin's eyes
+          already are after clicking שמירה. */}
+      {error && (
+        <p ref={errorRef} className="mt-2 rounded border border-danger/30 bg-danger-soft p-2 text-xs font-medium text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

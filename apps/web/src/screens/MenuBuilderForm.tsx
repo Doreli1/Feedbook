@@ -25,6 +25,7 @@ interface Props {
   // CategoryCard too) — still an acceptable, ordinary discardable draft for
   // that narrower case, same as leaving any unsubmitted form.
   onStepClick?: (step: number) => void;
+  onExit?: () => void;
 }
 
 // AFD §3.7.1 screen 4: "בניית תפריט ראשוני" — at least one category and a
@@ -35,7 +36,7 @@ interface Props {
 // itself easy to raise in one place (MIN_DISHES) once decided.
 export const MIN_DISHES = 1;
 
-export function MenuBuilderForm({ session, restaurant, categories, dishes, dishSizeOptions, ingredients, onRefresh, onNext, onSeating, onStepClick }: Props) {
+export function MenuBuilderForm({ session, restaurant, categories, dishes, dishSizeOptions, ingredients, onRefresh, onNext, onSeating, onStepClick, onExit }: Props) {
   const { t } = useI18n();
   const canContinue = categories.length > 0 && dishes.length >= MIN_DISHES;
   const [hasDraft, setHasDraft] = useState(false);
@@ -53,6 +54,7 @@ export function MenuBuilderForm({ session, restaurant, categories, dishes, dishS
         if (subStep === 'seating') onSeating();
       }}
       onStepClick={onStepClick}
+      onExit={onExit}
     >
       <div className="card p-8">
         <h1 className="mb-1 text-xl font-bold text-ink">{t('menuSetupTitle')}</h1>

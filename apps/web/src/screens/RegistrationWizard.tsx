@@ -19,6 +19,11 @@ interface Props {
   // (relevant when adding an additional restaurant to an account that
   // already has one; irrelevant, and safe to omit, for a first-ever signup).
   onCreated?: (id: string) => void;
+  // Lets the Feedbook logo exit back to the Dashboard from any step — only
+  // passed by App.tsx when there's a real dashboard to return to (adding an
+  // additional restaurant), never for a first-ever signup or a draft
+  // restaurant with no completed sibling to fall back on.
+  onExit?: () => void;
 }
 
 // AFD §3.7.1 — screens 1 (פרטי מסעדה), 2 (כשרות), "הגדרת המסעדה" (תפריט +
@@ -54,7 +59,7 @@ function toStep(n: number): Step {
   return 5;
 }
 
-export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }: Props) {
+export function RegistrationWizard({ session, restaurant, onRefresh, onCreated, onExit }: Props) {
   const [step, setStep] = useState<Step>(1);
   const goToStep = (n: number) => setStep(toStep(n));
   const needsMenu = step === 3 || step === 4 || step === 5;
@@ -74,6 +79,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
         onSaved={onRefresh}
         onNext={() => setStep(2)}
         onStepClick={restaurant ? goToStep : undefined}
+        onExit={onExit}
       />
     );
   }
@@ -86,6 +92,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
         onUpdated={onRefresh}
         onNext={() => setStep(3)}
         onStepClick={goToStep}
+        onExit={onExit}
       />
     );
   }
@@ -103,6 +110,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
         onNext={() => setStep(4)}
         onSeating={() => setStep(4)}
         onStepClick={goToStep}
+        onExit={onExit}
       />
     );
   }
@@ -117,6 +125,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
         onBack={() => setStep(3)}
         onNext={() => setStep(5)}
         onStepClick={goToStep}
+        onExit={onExit}
       />
     );
   }
@@ -131,6 +140,7 @@ export function RegistrationWizard({ session, restaurant, onRefresh, onCreated }
       onBack={() => setStep(4)}
       onSubmitted={onRefresh}
       onStepClick={goToStep}
+      onExit={onExit}
     />
   );
 }

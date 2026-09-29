@@ -46,6 +46,10 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
           setActiveId(id);
           setStartingNew(false);
         }}
+        // Only a real "add another restaurant" click (not the zero-restaurant
+        // first-ever signup, which has no dashboard to exit to) gets a way
+        // out via the logo.
+        onExit={startingNew && restaurants.length > 0 ? () => setStartingNew(false) : undefined}
       />
     );
   }
