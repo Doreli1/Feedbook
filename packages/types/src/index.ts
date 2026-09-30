@@ -17,6 +17,7 @@ export type DishSizeOption = Tables<'dish_size_options'>;
 export type DishModifierGroup = Tables<'dish_modifier_groups'>;
 export type DishModifierOption = Tables<'dish_modifier_options'>;
 export type ModifierOptionIngredient = Tables<'modifier_option_ingredients'>;
+export type ModifierOptionServingVariant = Tables<'modifier_option_serving_variants'>;
 export type Ingredient = Tables<'ingredients'>;
 export type IngredientUnit = Tables<'ingredient_units'>;
 export type DishIngredient = Tables<'dish_ingredients'>;

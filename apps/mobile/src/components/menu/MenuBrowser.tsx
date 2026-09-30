@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, BackHandler, Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import type { Dish, DishModifierGroup, DishModifierOption, DishSizeOption, MenuCategory } from '@feedbook/types';
+import type { Dish, DishModifierGroup, DishModifierOption, DishSizeOption, MenuCategory, ModifierOptionServingVariant } from '@feedbook/types';
 import { ErrorModal } from '../ErrorModal';
 import { useI18n } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
@@ -23,6 +24,9 @@ interface MenuData {
   sizesByDish: Map<string, DishSizeOption[]>;
   groupsByDish: Map<string, DishModifierGroup[]>;
   optionsByGroup: Map<string, DishModifierOption[]>;
+  // Bottle/draft(+size) serving-format choice for a specific drink add-on
+  // option (2026-09-29) — empty for every option that doesn't offer one.
+  variantsByOption: Map<string, ModifierOptionServingVariant[]>;
 }
 
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
@@ -79,6 +83,10 @@ function useMenuData(restaurantId: string | null) {
       const { data: options } = groupIds.length
         ? await supabase.from('dish_modifier_options').select('*').in('group_id', groupIds).order('sort_order')
         : { data: [] as DishModifierOption[] };
+      const optionIds = (options ?? []).map((o) => o.id);
+      const { data: variants } = optionIds.length
+        ? await supabase.from('modifier_option_serving_variants').select('*').eq('is_active', true).in('modifier_option_id', optionIds).order('sort_order')
+        : { data: [] as ModifierOptionServingVariant[] };
 
       if (cancelled) return;
       setData({
@@ -87,6 +95,7 @@ function useMenuData(restaurantId: string | null) {
         sizesByDish: groupBy(sizes ?? [], (s) => s.dish_id),
         groupsByDish: groupBy(groups ?? [], (g) => g.dish_id),
         optionsByGroup: groupBy(options ?? [], (o) => o.group_id),
+        variantsByOption: groupBy(variants ?? [], (v) => v.modifier_option_id),
       });
       setLoading(false);
     }
@@ -100,6 +109,7 @@ function useMenuData(restaurantId: string | null) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dish_size_options' }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dish_modifier_groups' }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dish_modifier_options' }, () => void refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'modifier_option_serving_variants' }, () => void refresh())
       .subscribe();
 
     return () => {
@@ -109,6 +119,29 @@ function useMenuData(restaurantId: string | null) {
   }, [restaurantId]);
 
   return { data, loading };
+}
+
+// Restaurant-wide VAT rate (2026-10-01) — restaurants.vat_rate_percent
+// already exists and is editable via the Web Admin's own restaurant-details
+// screen (RestaurantDetailsForm.tsx, "vatRateLabel"). One-time fetch, no
+// realtime subscription: unlike order stats/presence/stock, this is a rarely
+// -changed setting, not something a diner needs to see update mid-session.
+function useRestaurantVatRate(restaurantId: string | null) {
+  const [vatRatePercent, setVatRatePercent] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('restaurants').select('vat_rate_percent').eq('id', restaurantId).single();
+      if (!cancelled) setVatRatePercent(data?.vat_rate_percent ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId]);
+
+  return vatRatePercent;
 }
 
 export interface DishOrderStats {
@@ -157,6 +190,81 @@ function useDishOrderStats(restaurantId: string | null) {
   }, [restaurantId]);
 
   return stats;
+}
+
+// Live "diners looking at this exact dish right now" count (2026-09-29,
+// explicit user decision after clarifying this is a genuinely different
+// feature from the cumulative "views today" counter above: a real-time
+// snapshot of who's actually on the dish's detail screen this instant, not a
+// running daily total). Built on Supabase Realtime Presence, not a DB table —
+// presence is inherently ephemeral (a client that closes the app, navigates
+// away, or loses connection is dropped automatically), which is exactly the
+// "always accurate right now" property this needs and a persisted-row
+// approach could never give without a fragile heartbeat/expiry scheme.
+// One shared channel per restaurant (matching the restaurant_inventory /
+// restaurant_dish_views topic convention) rather than one channel per dish.
+//
+// 2026-10-01 (real crash fix): DishDetailModal used to open its OWN second
+// channel on this exact same topic string to call track() on. That looked
+// like two independent RealtimeChannel instances sharing a topic server-
+// side, but supabase-js's own .channel(topic) dedupes by topic client-side
+// too (RealtimeClient.channel(), returns the existing instance if one's
+// already registered for that topic) — so the "second" channel was actually
+// THE SAME object this hook had already subscribed. Opening a dish modal
+// then closing it called removeChannel() on that shared object, killing
+// this hook's own subscription out from under it with no re-render to
+// notice; the exact crash this surfaced with ("cannot add presence
+// callbacks ... after subscribe()") happened when this hook's effect later
+// re-ran (Fast Refresh) while that shared channel was still alive and
+// already joined, and .on() was called on it a second time. Fix: this hook
+// is now the channel's ONLY owner, start to finish — it exposes trackDish/
+// untrackDish instead of letting the modal manage any channel of its own.
+function useDishPresence(restaurantId: string | null) {
+  const [counts, setCounts] = useState<Map<string, number>>(new Map());
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    const topic = `dish_presence:${restaurantId}`;
+    // Defense-in-depth for this hook's OWN Fast-Refresh remount race (not
+    // the cross-hook collision above, which the rewrite already removes):
+    // if this effect re-runs before its own previous cleanup's
+    // removeChannel finished, .channel() would otherwise hand back that
+    // still-subscribed instance and .on() would throw on it.
+    for (const existing of supabase.getChannels()) {
+      if (existing.topic === `realtime:${topic}`) void supabase.removeChannel(existing);
+    }
+    const channel = supabase.channel(topic, { config: { private: true } });
+    channelRef.current = channel;
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState<{ dish_id: string }>();
+      const next = new Map<string, number>();
+      for (const metas of Object.values(state)) {
+        for (const meta of metas) {
+          next.set(meta.dish_id, (next.get(meta.dish_id) ?? 0) + 1);
+        }
+      }
+      setCounts(next);
+    });
+    channel.subscribe((status, err) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') console.warn('dish_presence subscribe failed', status, err);
+    });
+    return () => {
+      channelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [restaurantId]);
+
+  const trackDish = useCallback((dishId: string) => {
+    void channelRef.current?.track({ dish_id: dishId }).then((res) => {
+      if (res !== 'ok') console.warn('dish_presence track failed', res);
+    });
+  }, []);
+  const untrackDish = useCallback(() => {
+    void channelRef.current?.untrack();
+  }, []);
+
+  return { counts, trackDish, untrackDish };
 }
 
 // Shared broadcast subscription for the three ingredient-derived hooks below
@@ -389,10 +497,15 @@ function useDishReviews(dishId: string) {
 function orderActivityLabel(stats: DishOrderStats | undefined, t: (key: TranslationKey) => string): string | null {
   if (!stats || stats.count === 0) return null;
   const minutesAgo = Math.max(0, Math.round((Date.now() - new Date(stats.lastOrderedAt).getTime()) / 60000));
-  const countOnly = t('dishOrdersTodayLabel').replace('{count}', String(stats.count));
+  // Singular wording (2026-10-01, per explicit request) — "סועד אחד הזמין
+  // היום" instead of the plural template's "{count} סועדים הזמינו היום"
+  // reading as "1 סועדים" when count is exactly 1. Applies to both the
+  // count-only and the with-last-order-time variants.
+  const countOnly = stats.count === 1 ? t('dishOrdersTodaySingularLabel') : t('dishOrdersTodayLabel').replace('{count}', String(stats.count));
   if (minutesAgo < 1 || minutesAgo > 180) return countOnly;
   const timeLabel = minutesAgo > 60 ? t('dishHoursAgo').replace('{hours}', String(Math.round(minutesAgo / 60))) : t('dishMinutesAgo').replace('{minutes}', String(minutesAgo));
-  return t('dishOrdersTodayWithLastLabel').replace('{count}', String(stats.count)).replace('{time}', timeLabel);
+  const withLastKey = stats.count === 1 ? 'dishOrdersTodayWithLastSingularLabel' : 'dishOrdersTodayWithLastLabel';
+  return t(withLastKey).replace('{count}', String(stats.count)).replace('{time}', timeLabel);
 }
 
 // Full stars only (2026-09-27, per explicit request) — a 3.7/5 rating shows
@@ -420,6 +533,46 @@ function ratingTierLabel(score: number, t: (key: TranslationKey) => string): Tra
   return 'ratingTierFair';
 }
 
+// Resolves a dish's discount against a specific already-resolved base price
+// (the flat dish.price, or one specific dish_size_options row) — shared by
+// PriceRow's own card-display math and DishDetailModal's unitPrice below, so
+// the cart/order total a diner is actually charged can never drift from what
+// the card showed (2026-10-01: found via real-device feedback that
+// DishDetailModal's unitPrice completely ignored the discount entirely —
+// the "הוסיפו להזמנה" total and the cart were charging the FULL price even
+// for a discounted dish, invisible until checkout, where the server's own
+// place_order_transaction silently applied the real discount anyway).
+//
+// Three sources, in the same priority order as place_order_transaction
+// itself: 1) the chosen size's OWN discount_fixed_price override (2026-10-01
+// follow-up, per explicit request — a dish with several differently-priced
+// sizes, e.g. the smoked entrecote at ₪90/₪130, can't use one dish-wide fixed
+// price, so each size gets its own optional one instead); 2) the dish-level
+// 'fixed_price' mode, only ever meaningful on a sizeless dish (size is null)
+// — enforced in the Web Admin form; 3) the dish-level percent, the uniform
+// fallback that still applies to any size with no override of its own.
+// `size` is null for a flat-price dish or before a size is chosen.
+// Returns the RAW (unrounded) discounted value — callers round for display/
+// charging, since PriceRow also needs the raw value to compute the badge's
+// exact-vs-"כ-" percent.
+function resolveDishDiscountRaw(dish: Dish, base: number, size: DishSizeOption | null): number {
+  if (size && size.discount_fixed_price != null) {
+    return size.discount_fixed_price;
+  }
+  if (!size && dish.discount_mode === 'fixed_price' && dish.discount_fixed_price != null) {
+    return dish.discount_fixed_price;
+  }
+  if (dish.discount_percent > 0) {
+    return base * (1 - dish.discount_percent / 100);
+  }
+  return base;
+}
+
+function hasAnyDishDiscount(dish: Dish, size: DishSizeOption | null): boolean {
+  if (size) return size.discount_fixed_price != null || dish.discount_percent > 0;
+  return dish.discount_mode === 'fixed_price' ? dish.discount_fixed_price != null : dish.discount_percent > 0;
+}
+
 // "החל מ-" only means something once the sizes actually span 2+ distinct
 // PRICES (2026-09-29, refined per explicit follow-up) — two serving sizes
 // that happen to cost the same are still just one real price to the diner.
@@ -435,18 +588,70 @@ function priceLabel(dish: Dish, sizes: DishSizeOption[], t: (key: TranslationKey
   return `${t('dishPriceFrom')} ₪${min}`;
 }
 
-// Discounted-price treatment: original price crossed out, discounted price
-// next to it, percentage as a small amber tag (#FEF3C7/#B45309) — not
+// Discounted-price treatment (2026-10-01, per explicit request, reworked
+// from the original single-row layout): now a 3-line stack —
+// 1) the price line itself (original price crossed out in red, discounted
+//    price beside it — or just the plain price when there's no discount),
+// 2) the "חסכו X%" discount-saved badge (green bg, white text), only when
+//    there's actually a discount,
+// 3) the VAT-included label, only when the restaurant has a vat_rate_percent
+//    to show (see useRestaurantVatRate below).
+// Original price uses colors.originalPriceRed, a dedicated token — not
 // colors.danger, which theme.ts explicitly reserves for sign-out/destructive
 // actions only. RTL row: original price comes first in source order so it
-// lands on the physical right (read first), discounted price and the
-// percentage tag follow to its left.
-function PriceRow({ dish, sizes, t }: { dish: Dish; sizes: DishSizeOption[]; t: (key: TranslationKey) => string }) {
-  if (dish.discount_percent <= 0) {
+// lands on the physical right (read first), discounted price follows to its
+// left.
+function PriceRow({
+  dish,
+  sizes,
+  t,
+  vatRatePercent,
+  almostOutLabel,
+}: {
+  dish: Dish;
+  sizes: DishSizeOption[];
+  t: (key: TranslationKey) => string;
+  vatRatePercent: number | null;
+  // "כמעט אזל" text (2026-10-01, reworked) — always rendered inside PriceRow
+  // now, right next to whichever line it's actually relevant beside (the
+  // price line itself when there's no discount, the discount badge when
+  // there is). It used to sit in DishRow's own wrapping row, beside the
+  // whole PriceRow column — which put it beside the VAT label's own line
+  // too whenever that line was the widest one, visibly detaching it from
+  // the price and letting the row overflow (real-device feedback, smoked
+  // entrecote steak).
+  almostOutLabel: string | null;
+}) {
+  const vatLabel = vatRatePercent != null && (
+    <Text className="text-[9px]" style={{ color: colors.textMuted }}>
+      {t('dishVatIncludedLabel').replace('{percent}', String(vatRatePercent))}
+    </Text>
+  );
+
+  // Cheapest size specifically (not just its price) — needed to check that
+  // exact size's own discount_fixed_price override (2026-10-01 follow-up).
+  // null for a sizeless dish, where the dish-level fields govern instead.
+  const cheapestSize = sizes.length > 0 ? sizes.reduce((min, s) => (s.price < min.price ? s : min), sizes[0]!) : null;
+  const hasDiscount = hasAnyDishDiscount(dish, cheapestSize);
+
+  if (!hasDiscount) {
     return (
-      <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
-        {priceLabel(dish, sizes, t)}
-      </Text>
+      <View style={{ alignItems: 'flex-end' }}>
+        <View className="flex-row items-center" style={{ gap: 6 }}>
+          {/* "כמעט אזל" first in source order so RTL puts it on the physical
+              right of the price, matching this row's own established
+              convention. */}
+          {almostOutLabel && (
+            <Text className="text-[10px] font-semibold" style={{ color: colors.brightRed }}>
+              {almostOutLabel}
+            </Text>
+          )}
+          <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
+            {priceLabel(dish, sizes, t)}
+          </Text>
+        </View>
+        {vatLabel}
+      </View>
     );
   }
   // "From" only once sizes span 2+ distinct prices (2026-09-29) — same rule
@@ -454,20 +659,56 @@ function PriceRow({ dish, sizes, t }: { dish: Dish; sizes: DishSizeOption[]; t: 
   const hasMultiplePrices = new Set(sizes.map((s) => s.price)).size > 1;
   const basePrice = sizes.length >= 1 ? Math.min(...sizes.map((s) => s.price)) : dish.price;
   const prefix = hasMultiplePrices ? `${t('dishPriceFrom')} ` : '';
-  const discounted = Math.round(basePrice * (1 - dish.discount_percent / 100) * 100) / 100;
+  // Always a whole price (2026-10-01, per explicit request) — a percentage
+  // discount can land on an agorot value (e.g. 15% off ₪45 = ₪38.25); either
+  // kind of fixed price is already meant to be a clean number but gets the
+  // same defensive rounding for display consistency. This matches
+  // place_order_transaction's own rounding, so what's shown is what's
+  // actually charged.
+  const discountedRaw = resolveDishDiscountRaw(dish, basePrice, cheapestSize);
+  const discounted = Math.round(discountedRaw);
+  // The badge always shows a whole percent, always rounded UP (2026-10-01,
+  // per explicit request) — exact when the discount is a direct percent,
+  // but DERIVED from two prices (and essentially never a whole number) when
+  // it comes from either kind of fixed price. Whenever ceiling actually
+  // changed the value, the badge switches to the "כ-" (approximately)
+  // wording instead of stating it as exact.
+  //
+  // Deliberately NOT computed as (1 - discountedRaw / basePrice) * 100 in
+  // the plain-percent case: that division reintroduces floating-point
+  // drift even for an exact configured value (e.g. 45 * (1 - 15/100) then
+  // back through (1 - 38.25/45) * 100 lands on 15.000000000000002, not 15),
+  // which would wrongly flag an exact 15% as needing "כ-".
+  const isFixedPriceSource = (cheapestSize?.discount_fixed_price ?? null) != null || (!cheapestSize && dish.discount_mode === 'fixed_price');
+  const truePercent = isFixedPriceSource ? (1 - discountedRaw / basePrice) * 100 : dish.discount_percent;
+  const displayPercent = Math.ceil(truePercent);
+  const isApprox = displayPercent !== truePercent;
   return (
-    <View className="flex-row items-center" style={{ gap: 5 }}>
-      <Text className="text-xs" style={{ color: '#9CA3AF', textDecorationLine: 'line-through' }}>
-        {prefix}₪{basePrice}
-      </Text>
-      <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
-        ₪{discounted}
-      </Text>
-      <View className="rounded px-1 py-0.5" style={{ backgroundColor: '#FEF3C7' }}>
-        <Text className="text-[10px] font-bold" style={{ color: '#B45309' }}>
-          -{dish.discount_percent}%
+    <View style={{ alignItems: 'flex-end' }}>
+      <View className="flex-row items-center" style={{ gap: 5 }}>
+        <Text className="text-xs" style={{ color: colors.originalPriceRed, textDecorationLine: 'line-through' }}>
+          {prefix}₪{basePrice}
+        </Text>
+        <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
+          ₪{discounted}
         </Text>
       </View>
+      <View className="mt-1 flex-row items-center" style={{ gap: 6 }}>
+        <View className="rounded px-1 py-0.5" style={{ backgroundColor: colors.discountGreenDark }}>
+          <Text className="text-[9px] font-bold text-white">
+            {t(isApprox ? 'dishDiscountSavedApproxBadge' : 'dishDiscountSavedBadge').replace('{percent}', String(displayPercent))}
+          </Text>
+        </View>
+        {/* "כמעט אזל" beside the discount badge (2026-10-01, per explicit
+            request) — badge first in source order so RTL puts it on the
+            physical right, with this label landing to its physical left. */}
+        {almostOutLabel && (
+          <Text className="text-[10px] font-semibold" style={{ color: colors.brightRed }}>
+            {almostOutLabel}
+          </Text>
+        )}
+      </View>
+      {vatLabel}
     </View>
   );
 }
@@ -489,10 +730,25 @@ function LikeButton({
   table,
   id,
   initialCount,
+  showCount = true,
+  positionStyle,
+  iconSize = 18,
+  hitSlop = 8,
 }: {
   table: 'dish_likes' | 'menu_category_likes';
   id: string | undefined;
   initialCount: number;
+  // 2026-10-01: DishRow wants the same toggle in the title's corner (where
+  // the score badge used to sit) with no count beside it — a plain icon,
+  // not the white pill this button was originally built for on top of a
+  // photo. `showCount=false` drops the count Text and the pill chrome;
+  // `positionStyle` lets that caller place it (absolute, top:0/end:0) since
+  // the pill's own hardcoded top:8/right:8 was tuned for CategoryCard's
+  // photo corner specifically.
+  showCount?: boolean;
+  positionStyle?: { position: 'absolute'; top: number; bottom?: number; end?: number; right?: number };
+  iconSize?: number;
+  hitSlop?: number;
 }) {
   // Supabase's generated query builder types .eq()'s column argument per
   // table — since `table` here is a runtime union, TS can't narrow which
@@ -555,35 +811,39 @@ function LikeButton({
     <Pressable
       onPress={() => void toggle()}
       disabled={!id || busy}
-      hitSlop={8}
-      className="flex-row items-center rounded-full bg-white px-2.5 py-1.5"
-      style={{
-        // 2026-09-14 (correction): this app already has an established,
-        // real-device-verified rule (BurgerSideMenu.tsx's own X-badge fix,
-        // 2026-09-11) that under this app's forced RTL, React Native
-        // mirrors absolute left/right the same way it mirrors flex-row —
-        // style `left` actually renders on the physical RIGHT, not the
-        // left. The previous version of this button used `left: 8`
-        // expecting it to stay physically left, which is exactly backwards
-        // per that rule — confirmed by real-device feedback showing it on
-        // the right. `right: 8` is what actually lands on the physical left
-        // in Hebrew, and correctly flips to the physical right once English
-        // switches this app to LTR (no mirroring applies there) — matching
-        // both "left in Hebrew" and "should flip with the language" in one
-        // property, with no isRTL branch needed.
-        position: 'absolute',
-        top: 8,
-        right: 8,
-        gap: 5,
-        shadowColor: '#000',
-        shadowOpacity: 0.18,
-        shadowRadius: 3,
-        shadowOffset: { width: 0, height: 1 },
-        elevation: 3,
-      }}
+      hitSlop={hitSlop}
+      className={showCount ? 'flex-row items-center rounded-full bg-white px-2.5 py-1.5' : 'items-center justify-center'}
+      style={
+        showCount
+          ? {
+              // 2026-09-14 (correction): this app already has an established,
+              // real-device-verified rule (BurgerSideMenu.tsx's own X-badge fix,
+              // 2026-09-11) that under this app's forced RTL, React Native
+              // mirrors absolute left/right the same way it mirrors flex-row —
+              // style `left` actually renders on the physical RIGHT, not the
+              // left. The previous version of this button used `left: 8`
+              // expecting it to stay physically left, which is exactly backwards
+              // per that rule — confirmed by real-device feedback showing it on
+              // the right. `right: 8` is what actually lands on the physical left
+              // in Hebrew, and correctly flips to the physical right once English
+              // switches this app to LTR (no mirroring applies there) — matching
+              // both "left in Hebrew" and "should flip with the language" in one
+              // property, with no isRTL branch needed.
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              gap: 5,
+              shadowColor: '#000',
+              shadowOpacity: 0.18,
+              shadowRadius: 3,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 3,
+            }
+          : positionStyle
+      }
     >
-      <Text className="text-sm font-semibold text-[#1B2430]">{count}</Text>
-      <Ionicons name={liked ? 'heart' : 'heart-outline'} size={18} color={liked ? '#DC2626' : '#1B2430'} />
+      {showCount && <Text className="text-sm font-semibold text-[#1B2430]">{count}</Text>}
+      <Ionicons name={liked ? 'heart' : 'heart-outline'} size={iconSize} color={liked ? '#DC2626' : '#1B2430'} />
     </Pressable>
   );
 }
@@ -682,16 +942,20 @@ function DishRow({
   onPress,
   t,
   orderStats,
+  presenceCount,
   categoryOrdersToday,
   criticalStockStatus,
+  vatRatePercent,
 }: {
   dish: Dish;
   sizes: DishSizeOption[];
   onPress: () => void;
   t: (key: TranslationKey) => string;
   orderStats: DishOrderStats | undefined;
+  presenceCount: number;
   categoryOrdersToday: number;
   criticalStockStatus: 'low' | 'out' | undefined;
+  vatRatePercent: number | null;
 }) {
   const image = dish.photo_urls[0];
   // Score-derived (2026-09-24): dishes.is_special_value turned out to be a
@@ -703,6 +967,7 @@ function DishRow({
   const isLowStock = criticalStockStatus === 'low';
   const isSoldOut = criticalStockStatus === 'out';
   const activityLabel = orderActivityLabel(orderStats, t);
+  const presenceLabel = presenceCount <= 0 ? null : presenceCount === 1 ? t('dishPresenceSingularLabel') : t('dishPresencePluralLabel').replace('{count}', String(presenceCount));
 
   return (
     // Image first, content second: under this app's forced RTL, the first
@@ -710,49 +975,65 @@ function DishRow({
     // proven in add-participants.tsx's contact rows — avatar first, name
     // second) — matching 7.1.1's layout (photo on the right, details on the
     // left), the reverse of what this row had before.
-    <Pressable onPress={onPress} className="flex-row bg-white p-3" style={{ gap: 10, borderBottomWidth: 1, borderColor: colors.border }}>
+    // Separated card, not a connected flat-list row (2026-10-01, per
+    // explicit request) — square corners (2026-10-01 follow-up: rounded
+    // corners were clipping the price/button area, which sits close to the
+    // card's bottom-left corner — squaring it off removes the clip instead
+    // of chasing padding to dodge the curve).
+    <Pressable
+      onPress={onPress}
+      className="mb-3 flex-row bg-white"
+      style={{ gap: 10, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}
+    >
+      {/* Image stretched flush to the card's own edges (2026-10-01, per
+          explicit request — "as it was before" the card padding started
+          insetting it) — no padding/rounding of its own; the card's own
+          overflow-hidden + rounded-xl already clips it to match. Only the
+          text content half keeps its own inner padding below. */}
       {image ? (
-        <Image source={{ uri: image }} style={{ width: 120, alignSelf: 'stretch', borderRadius: 10 }} resizeMode="cover" />
+        <Image source={{ uri: image }} style={{ width: 120, alignSelf: 'stretch' }} resizeMode="cover" />
       ) : (
-        <View style={{ width: 120, alignSelf: 'stretch', borderRadius: 10, backgroundColor: '#EFEBE2' }} />
+        <View style={{ width: 120, alignSelf: 'stretch', backgroundColor: '#EFEBE2' }} />
       )}
-      <View className="flex-1 justify-center">
+      <View className="flex-1 justify-center py-3 pe-4">
         {/* Title row (2026-09-24): the score badge moved up here, to the
             far corner opposite the name — same justify-between pattern
             CategoryCard's own title row already uses for its trophy+stars
             corner element, just with the score badge as the corner element
             here instead. */}
-        {/* Corner score badge switched to absolute positioning (2026-09-27)
-            — it used to be a flex-row sibling of the title, sharing the
-            row's height with it, which was fine while it was a compact
-            2-line box. Adding the review-count line made it 3 lines tall,
-            taller than a 1-line title, which stretched the whole row and
-            broke the stars/Feedstars row's fixed -4 pull-up below (tuned for
-            the old shorter corner). Absolute positioning removes the corner
-            from layout flow entirely, so the title's own height is the only
-            thing the stars row needs to sit tight against, regardless of how
-            tall the corner decoration gets. `end: 0` is RN's own logical
-            position property — physically the left edge under this app's
-            forced RTL, same corner the flex-row version sat in. */}
+        {/* Corner element switched to a like (heart) toggle (2026-10-01, per
+            explicit request) — the score badge that used to live here moved
+            down below the stars row instead, paired with the review count.
+            Absolute positioning kept from the score-badge era: it removes
+            the corner from layout flow, so the title's own height is the
+            only thing anything below needs to sit tight against. `end: 0`
+            is RN's own logical position property — physically the left edge
+            under this app's forced RTL, same corner the score badge sat in.
+            2026-10-01 (follow-up): top+bottom both 0 (instead of just top:0)
+            stretches the absolute box to the title Text's own full height —
+            1 or 2 lines — and the Pressable's own items-center/justify-center
+            (see its non-count className branch) then centers the icon inside
+            that box, so it lines up with the title regardless of whether the
+            name wraps, rather than sitting pinned to the top edge.
+            2026-10-01 (follow-up): sized up again (21→26) and given a wider
+            hitSlop (8→14) per explicit request — needs to actually read as
+            tappable and be comfortable to hit with a finger, not just a
+            small decorative icon. `paddingEnd` on the title bumped to match
+            the bigger icon so the two-line title text still can't run under
+            it. */}
         <View style={{ position: 'relative' }}>
-          <Text className="text-base font-semibold text-[#1B2430]" style={{ paddingEnd: 56 }} numberOfLines={2}>
+          <Text className="text-base font-semibold text-[#1B2430]" style={{ paddingEnd: 32 }} numberOfLines={2}>
             {dish.name}
           </Text>
-          {dish.rating_count > 0 && (
-            <View className="items-center" style={{ position: 'absolute', top: 0, end: 0 }}>
-              <View className="items-center rounded px-1.5 py-0.5" style={{ backgroundColor: colors.royalBlue }}>
-                <Text className="text-xs font-bold text-white">{(dish.guest_rating_score ?? 0).toFixed(1)}</Text>
-                <Text className="text-[8px] font-medium text-white">{t(ratingTierLabel(dish.guest_rating_score ?? 0, t))}</Text>
-              </View>
-              {/* Review count below the score (2026-09-27, per explicit
-                  request) — real dish.rating_count, same field the score
-                  itself is derived from. Sized up slightly per follow-up
-                  request. */}
-              <Text className="mt-0.5 text-[9px]" style={{ color: colors.textMuted }}>
-                {t('dishReviewCountLabel').replace('{count}', String(dish.rating_count))}
-              </Text>
-            </View>
-          )}
+          <LikeButton
+            table="dish_likes"
+            id={dish.id}
+            initialCount={dish.likes_count}
+            showCount={false}
+            iconSize={22}
+            hitSlop={14}
+            positionStyle={{ position: 'absolute', top: 0, bottom: 0, end: 0 }}
+          />
         </View>
         {/* Stars + trophy + Feedstars, tight under the title (2026-09-27) —
             now that the corner score badge is absolutely positioned (out of
@@ -763,8 +1044,10 @@ function DishRow({
             widths this still fits on one line. */}
         {(dish.rating_count > 0 || dish.feedstars_eligible) && (
           <View className="flex-row flex-wrap items-center" style={{ gap: 4, marginTop: 2 }}>
-            {dish.rating_count > 0 && <StarRow value={dish.rating_avg ?? 0} />}
-            {dish.rating_count > 0 && isTopRated && <Ionicons name="trophy" size={13} color="#F5A623" />}
+            {/* Stars + trophy sized up slightly (2026-10-01, per explicit
+                request, gentle increase) — was 12/13. */}
+            {dish.rating_count > 0 && <StarRow value={dish.rating_avg ?? 0} size={14} />}
+            {dish.rating_count > 0 && isTopRated && <Ionicons name="trophy" size={15} color="#F5A623" />}
             {dish.feedstars_eligible && (
               // Same "Genius"-style badge as the Web Admin's dish list (gold
               // background, white Baloo 2 wordmark, sparkles-outline icon).
@@ -777,6 +1060,41 @@ function DishRow({
                 <Text style={{ fontFamily: 'Baloo2_700Bold', fontSize: 8.5, color: '#FFFFFF' }}>{t('dishFeedstarsBadge')}</Text>
               </View>
             )}
+          </View>
+        )}
+        {/* Score badge + review count, moved down here below the stars row
+            (2026-10-01, per explicit request) — previously an absolutely
+            positioned corner element beside the title, now flowing inline
+            with everything else. Score first in source order so RTL's flip
+            (see the file's own "image first" convention above) puts it on
+            the physical right, with the tier label and review count landing
+            physically to its left, per the explicit request.
+            2026-10-01 (follow-up): the tier label ("מעולה" etc.) pulled out
+            of the badge itself (which now holds only the numeric score) and
+            placed as its own text between the badge and the review count,
+            sized/colored to match the review count exactly (same textMuted
+            gray, same font size) rather than the badge's white/8px text —
+            joined to the review count with a "·" separator. */}
+        {dish.rating_count > 0 && (
+          <View className="flex-row items-center" style={{ gap: 6, marginTop: 3 }}>
+            {/* Score number sized up slightly (2026-10-01, gentle increase, per
+                explicit request) — was text-xs (12px). */}
+            <View className="items-center rounded px-1.5 py-0.5" style={{ backgroundColor: colors.royalBlue }}>
+              <Text className="text-[13px] font-bold text-white">{(dish.guest_rating_score ?? 0).toFixed(1)}</Text>
+            </View>
+            <Text className="text-[11px] font-medium" style={{ color: colors.textMuted }}>
+              {t(ratingTierLabel(dish.guest_rating_score ?? 0, t))}
+            </Text>
+            {/* Separator dot given its own Text, bolder and darker than the
+                muted review text around it (2026-10-01, per explicit
+                request — "תדגיש יותר את הנקודה"), instead of sitting inline
+                at the same weight/color as the review count. */}
+            <Text className="text-[13px] font-bold" style={{ color: colors.ink }}>
+              ·
+            </Text>
+            <Text className="text-[11px]" style={{ color: colors.textMuted }}>
+              {t('dishReviewCountLabel').replace('{count}', String(dish.rating_count))}
+            </Text>
           </View>
         )}
         {/* Serving-size options (2026-09-24), per the mockup: only renders
@@ -794,9 +1112,35 @@ function DishRow({
             when get_dish_order_stats() actually returned data for today;
             never a fixed/fabricated urgency claim (see the migration's own
             comment for why this had to be an RPC in the first place). */}
+        {/* Sized down slightly (2026-10-01, per explicit request) — the
+            "with last-order-time" variant's longer text was wrapping to a
+            second line at the card's width.
+            2026-10-01 (follow-up): a fixed font size still truncated with an
+            ellipsis once the minutes count reached double digits (a longer
+            string than what the size was tuned against) — adjustsFontSizeToFit
+            lets RN shrink the text just enough to keep fitting on its one
+            line instead of cutting it off, for any digit count. */}
         {activityLabel && (
-          <Text className="mt-1 text-[12px] font-medium" style={{ color: colors.bottleGreen }}>
+          <Text
+            className="mt-1 text-[10.5px] font-medium"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
+            style={{ color: colors.bottleGreen }}
+          >
             {activityLabel}
+          </Text>
+        )}
+        {/* Live "viewing right now" line (2026-09-29) — real-time Presence
+            count, not a cumulative daily total (see useDishPresence). Same
+            real-data-only rule as the order-activity line above: only ever
+            renders when someone is actually on this dish's detail screen at
+            this instant. Deliberately muted (not bottleGreen): a view is a
+            softer signal than an actual order, and the two shouldn't read as
+            the same weight of claim. */}
+        {presenceLabel && (
+          <Text className="mt-0.5 text-[12px] font-medium" style={{ color: colors.textMuted }}>
+            {presenceLabel}
           </Text>
         )}
         {/* High demand (≥25% of the category's orders today) — real-data
@@ -815,8 +1159,8 @@ function DishRow({
             it. */}
         {isTopRated && (
           <View className="mt-1 flex-row items-center" style={{ gap: 4 }}>
-            <View className="rounded px-2 py-0.5" style={{ borderWidth: 1.5, borderColor: colors.valueOrange, backgroundColor: '#FFFFFF' }}>
-              <Text className="text-[10px] font-semibold" style={{ color: colors.valueOrange }}>
+            <View className="rounded px-2.5 py-1" style={{ borderWidth: 1.5, borderColor: colors.valueOrange, backgroundColor: '#FFFFFF' }}>
+              <Text className="text-[11px] font-semibold" style={{ color: colors.valueOrange }}>
                 {t('dishBadgeSpecialValue')}
               </Text>
             </View>
@@ -825,23 +1169,18 @@ function DishRow({
         {/* alignItems: 'flex-end' — under this app's real I18nManager RTL
             (not a CSS `dir`), flex-end on the cross axis is the physical
             left, the same way a flex-row's child order already flips
-            physically elsewhere in this file. */}
-        <View className="mt-1.5 flex-row items-center" style={{ alignSelf: 'flex-end', gap: 6 }}>
-          {/* "כמעט אזל" sits beside the price, physical right of it — first
-              in source order so RTL's flip puts it there (2026-09-27, per
-              explicit request, moved down from the badges row above). No
-              filled background this time, just the dark-red text itself. */}
-          {!isSoldOut && isLowStock && (
-            <Text className="text-[10px] font-semibold" style={{ color: colors.brightRed }}>
-              {t('dishAlmostOutBadge')}
-            </Text>
-          )}
-          {isSoldOut ? (
-            <Text className="text-sm font-semibold" style={{ color: '#9CA3AF', textDecorationLine: 'line-through' }}>
-              {priceLabel(dish, sizes, t)}
-            </Text>
-          ) : (
-            <PriceRow dish={dish} sizes={sizes} t={t} />
+            physically elsewhere in this file.
+            2026-10-01 (reworked): "כמעט אזל" used to live here, beside the
+            whole PriceRow column — which put it beside the VAT label's own
+            (much wider) line whenever that was the widest line in the
+            column, visibly detaching it from the price and overflowing the
+            row (real-device feedback, smoked entrecote steak). It's now
+            entirely PriceRow's own responsibility, rendered inline next to
+            whichever specific line it belongs beside — see PriceRow's
+            almostOutLabel prop. */}
+        <View className="mt-1.5" style={{ alignSelf: 'flex-end' }}>
+          {!isSoldOut && (
+            <PriceRow dish={dish} sizes={sizes} t={t} vatRatePercent={vatRatePercent} almostOutLabel={isLowStock ? t('dishAlmostOutBadge') : null} />
           )}
           {isSoldOut && (
             <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: colors.darkRed }}>
@@ -858,7 +1197,7 @@ function DishRow({
         <Pressable
           onPress={isSoldOut ? undefined : onPress}
           disabled={isSoldOut}
-          className="mt-1.5 items-center justify-center rounded-lg"
+          className="mx-1 mt-1.5 items-center justify-center rounded-lg"
           style={{ backgroundColor: isSoldOut ? '#9CA3AF' : colors.royalBlue, paddingVertical: 8 }}
         >
           <Text className="text-sm font-semibold text-white">{isSoldOut ? t('dishSoldOutButton') : t('dishOrderNowButton')}</Text>
@@ -887,21 +1226,31 @@ function DishDetailModal({
   sizes,
   groups,
   optionsByGroup,
+  variantsByOption,
   soldOut,
   missingIngredientNames,
   unavailableOptionIds,
   onClose,
   onAdded,
+  trackDish,
+  untrackDish,
 }: {
   dish: Dish;
   sizes: DishSizeOption[];
   groups: DishModifierGroup[];
   optionsByGroup: Map<string, DishModifierOption[]>;
+  variantsByOption: Map<string, ModifierOptionServingVariant[]>;
   soldOut: boolean;
   missingIngredientNames: string[];
   unavailableOptionIds: Set<string>;
   onClose: () => void;
   onAdded: () => void;
+  // Owned by useDishPresence in the parent (2026-10-01) — this modal no
+  // longer opens its own RealtimeChannel for presence (see that hook's own
+  // comment for the real crash this used to cause by sharing one topic
+  // across two independently-managed channel instances).
+  trackDish: (dishId: string) => void;
+  untrackDish: () => void;
 }) {
   const { t } = useI18n();
   const addItem = useCartStore((s) => s.addItem);
@@ -911,48 +1260,163 @@ function DishDetailModal({
   // they do, the same way a required modifier group already does.
   const [sizeOptionId, setSizeOptionId] = useState<string | null>(null);
   const [selections, setSelections] = useState<Map<string, Set<string>>>(new Map());
+  // Bottle/draft(+size) serving-format choice (2026-09-29, refined per
+  // explicit follow-up into a real two-axis choice): optionId -> chosen
+  // container type, only asked when an option actually offers BOTH (a
+  // single-container option never shows this step at all — see
+  // resolvedVariant below). optionId -> chosen size variantId within
+  // whichever container ends up in play — only asked when that container has
+  // more than one size defined. Both cleared for an option the diner just
+  // deselected, in toggleOption below, so a stale pick from an earlier
+  // selection can't silently ride along.
+  const [containerTypeSelections, setContainerTypeSelections] = useState<Map<string, 'bottle' | 'draft'>>(new Map());
+  const [variantSelections, setVariantSelections] = useState<Map<string, string>>(new Map());
+
+  // Resolves an option's final chosen variant — auto-resolving every step
+  // that isn't a real choice (one container type only, or one size only
+  // within the container in play), per the exact rules requested: a
+  // bottle-only option with one size shows nothing at all; a
+  // bottle-and-draft option always asks container type first; a chosen
+  // container with 2+ sizes always asks size. Returns undefined only when a
+  // real, still-unmade choice blocks resolution (used by canAdd/handleAdd to
+  // require it).
+  function resolveVariant(optionId: string): { variant: ModifierOptionServingVariant | undefined; needsContainerChoice: boolean; needsSizeChoice: boolean } {
+    const variants = variantsByOption.get(optionId) ?? [];
+    const bottleVariants = variants.filter((v) => v.container_type === 'bottle');
+    const draftVariants = variants.filter((v) => v.container_type === 'draft');
+    const hasBothTypes = bottleVariants.length > 0 && draftVariants.length > 0;
+    const chosenType = hasBothTypes ? containerTypeSelections.get(optionId) : bottleVariants.length > 0 ? 'bottle' : draftVariants.length > 0 ? 'draft' : undefined;
+    if (!chosenType) return { variant: undefined, needsContainerChoice: hasBothTypes, needsSizeChoice: false };
+    const sizesForType = chosenType === 'bottle' ? bottleVariants : draftVariants;
+    if (sizesForType.length === 1) return { variant: sizesForType[0], needsContainerChoice: false, needsSizeChoice: false };
+    const chosenVariantId = variantSelections.get(optionId);
+    const variant = chosenVariantId ? sizesForType.find((v) => v.id === chosenVariantId) : undefined;
+    // Bug found 2026-09-30: this used to be unconditionally
+    // `sizesForType.length > 1`, meaning ANY multi-size format permanently
+    // read as "still needs a choice" even after one was actually picked —
+    // "הוסיפו להזמנה" stayed disabled forever once a draft/bottle with 2+
+    // sizes was selected, no matter what the diner did next.
+    return { variant, needsContainerChoice: false, needsSizeChoice: sizesForType.length > 1 && !variant };
+  }
   const [quantity, setQuantity] = useState(1);
   const [validationErrorKey, setValidationErrorKey] = useState<TranslationKey | null>(null);
   // Same score-derived signal as DishRow's own trophy/badge (2026-09-24).
   const isTopRated = (dish.guest_rating_score ?? 0) > 9;
   const { reviews: dishReviews, positiveReviewCount } = useDishReviews(dish.id);
+  // Log a real "view" of this dish's detail screen (2026-09-29) — fires once
+  // per modal mount (this component unmounts/remounts on every open, see
+  // MenuBrowser's `{selectedDish && <DishDetailModal .../>}`, so effect deps
+  // don't need dish.id to re-trigger on reopen). Deduped server-side by the
+  // dish_views primary key (participant_id, dish_id) — ignoreDuplicates means
+  // reopening the same dish again this table visit is a harmless no-op, not
+  // an error, and ordering doesn't retry on failure (a missed view log is not
+  // worth a broken order flow over).
+  const participantId = useTableSessionStore((s) => s.participantId);
+  useEffect(() => {
+    if (!participantId) return;
+    // Logged (not swallowed) so a future RLS/grant regression here surfaces
+    // in the console instead of silently never counting a single view again
+    // — exactly what happened 2026-09-29: a missing SELECT policy on
+    // dish_views made every one of these upserts fail with nothing visible
+    // anywhere until a real device test caught the bullet just never showing.
+    supabase
+      .from('dish_views')
+      .upsert({ participant_id: participantId, dish_id: dish.id }, { onConflict: 'participant_id,dish_id', ignoreDuplicates: true })
+      .then(({ error }) => {
+        if (error) console.warn('dish_views upsert failed', error);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Live presence: tag this diner as "looking at this dish right now" on the
+  // restaurant's shared presence channel — owned entirely by useDishPresence
+  // in MenuBrowser (2026-10-01 rewrite; see that hook's own comment for why
+  // this modal used to open a second channel on the same topic and the real
+  // crash that caused). Untracking on unmount is what makes this accurate:
+  // closing the modal, backgrounding the app, or losing connection all drop
+  // this diner from the count with no explicit "I'm leaving" call needed.
+  useEffect(() => {
+    trackDish(dish.id);
+    return () => untrackDish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dish.id]);
 
   function toggleOption(group: DishModifierGroup, optionId: string) {
     if (unavailableOptionIds.has(optionId)) return;
     setSelections((prev) => {
       const next = new Map(prev);
       const current = new Set(next.get(group.id) ?? []);
+      let deselected: string | null = null;
       if (group.selection_type === 'single') {
+        const previouslySelected = [...current][0];
+        if (previouslySelected && previouslySelected !== optionId) deselected = previouslySelected;
         next.set(group.id, new Set([optionId]));
       } else if (current.has(optionId)) {
         current.delete(optionId);
         next.set(group.id, current);
+        deselected = optionId;
       } else {
         current.add(optionId);
         next.set(group.id, current);
+      }
+      if (deselected) {
+        setVariantSelections((v) => {
+          if (!v.has(deselected!)) return v;
+          const nextV = new Map(v);
+          nextV.delete(deselected!);
+          return nextV;
+        });
+        setContainerTypeSelections((c) => {
+          if (!c.has(deselected!)) return c;
+          const nextC = new Map(c);
+          nextC.delete(deselected!);
+          return nextC;
+        });
       }
       return next;
     });
   }
 
   const unitPrice = useMemo(() => {
-    const base = sizeOptionId ? (sizes.find((s) => s.id === sizeOptionId)?.price ?? dish.price) : dish.price;
+    const chosenSize = sizeOptionId ? (sizes.find((s) => s.id === sizeOptionId) ?? null) : null;
+    const base = chosenSize ? chosenSize.price : dish.price;
+    // Discount applies to the dish's own base price component only, never to
+    // modifiers — same split place_order_transaction itself makes server-
+    // side (see resolveDishDiscountRaw's own comment). Rounded here (unlike
+    // PriceRow, which also needs the raw value for its badge's percent math).
+    const discountedBase = Math.round(resolveDishDiscountRaw(dish, base, chosenSize));
     let modifiersTotal = 0;
     for (const group of groups) {
       const selected = selections.get(group.id) ?? new Set();
       for (const optionId of selected) {
         const option = (optionsByGroup.get(group.id) ?? []).find((o) => o.id === optionId);
-        if (option) modifiersTotal += option.price_delta;
+        if (!option) continue;
+        // A chosen serving format's own price REPLACES the option's own
+        // price_delta entirely (never added to it) — same "sizes replace the
+        // dish's own flat price" convention dish_size_options already uses.
+        const { variant } = resolveVariant(optionId);
+        modifiersTotal += variant ? variant.price_delta : option.price_delta;
       }
     }
-    return base + modifiersTotal;
-  }, [sizeOptionId, selections, groups, optionsByGroup, sizes, dish.price]);
+    return discountedBase + modifiersTotal;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sizeOptionId, selections, containerTypeSelections, variantSelections, groups, optionsByGroup, variantsByOption, sizes, dish]);
 
   // Order button disabled up front (2026-09-24, per the user's explicit
   // request) rather than only validating on press — a diner sees at a
   // glance that a required choice is still missing, instead of tapping a
-  // live-looking button and getting an error modal back.
-  const canAdd = !soldOut && (sizes.length === 0 || sizeOptionId !== null) && groups.filter((g) => g.is_required).every((g) => (selections.get(g.id)?.size ?? 0) > 0);
+  // live-looking button and getting an error modal back. Extended
+  // 2026-09-29: a selected option that offers a serving-format choice needs
+  // that choice fully resolved too (container type and/or size, whichever is
+  // still a real choice), same required-ness as a required modifier group.
+  const allSelectedOptionIds = [...selections.values()].flatMap((s) => [...s]);
+  const canAdd =
+    !soldOut &&
+    (sizes.length === 0 || sizeOptionId !== null) &&
+    groups.filter((g) => g.is_required).every((g) => (selections.get(g.id)?.size ?? 0) > 0) &&
+    allSelectedOptionIds.every((optionId) => {
+      const { variant, needsContainerChoice, needsSizeChoice } = resolveVariant(optionId);
+      return !needsContainerChoice && !needsSizeChoice && ((variantsByOption.get(optionId) ?? []).length === 0 || variant !== undefined);
+    });
 
   function handleAdd() {
     if (soldOut) return;
@@ -967,12 +1431,24 @@ function DishDetailModal({
         return;
       }
     }
-    const allOptionIds = [...selections.values()].flatMap((s) => [...s]);
+    const allOptionIds = allSelectedOptionIds;
+    if (
+      allOptionIds.some((id) => {
+        const { variant, needsContainerChoice, needsSizeChoice } = resolveVariant(id);
+        return needsContainerChoice || needsSizeChoice || ((variantsByOption.get(id) ?? []).length > 0 && !variant);
+      })
+    ) {
+      setValidationErrorKey('missingRequiredServingVariantMessage');
+      return;
+    }
     const summary = allOptionIds
       .map((id) => {
         for (const opts of optionsByGroup.values()) {
           const found = opts.find((o) => o.id === id);
-          if (found) return found.name;
+          if (found) {
+            const { variant } = resolveVariant(id);
+            return variant ? `${found.name} (${variant.name})` : found.name;
+          }
         }
         return null;
       })
@@ -985,7 +1461,7 @@ function DishDetailModal({
       quantity,
       sizeOptionId,
       sizeOptionName: sizeOptionId ? (sizes.find((s) => s.id === sizeOptionId)?.name ?? null) : null,
-      modifierOptionIds: allOptionIds,
+      modifierSelections: allOptionIds.map((id) => ({ modifierOptionId: id, servingVariantId: resolveVariant(id).variant?.id ?? null })),
       modifierSummary: summary,
       unitPrice,
     });
@@ -1216,6 +1692,123 @@ function DishDetailModal({
                       );
                     })}
                   </ScrollView>
+                  {/* Serving-format sub-picker (2026-09-29, refined per
+                      explicit follow-up into a real two-axis choice) — only
+                      ever shows a step that's a REAL choice: container type
+                      only asked when the option offers both bottle and
+                      draft; size only asked when the container in play (the
+                      only one defined, or the one just chosen) has more than
+                      one. An option with exactly one container and one size
+                      shows nothing at all, per the exact rule requested. */}
+                  {[...(selections.get(group.id) ?? new Set<string>())].map((optionId) => {
+                    const variants = variantsByOption.get(optionId) ?? [];
+                    if (variants.length === 0) return null;
+                    const option = (optionsByGroup.get(group.id) ?? []).find((o) => o.id === optionId);
+                    const bottleVariants = variants.filter((v) => v.container_type === 'bottle');
+                    const draftVariants = variants.filter((v) => v.container_type === 'draft');
+                    const hasBothTypes = bottleVariants.length > 0 && draftVariants.length > 0;
+                    const chosenType = hasBothTypes ? containerTypeSelections.get(optionId) : bottleVariants.length > 0 ? 'bottle' : 'draft';
+                    const sizesForType = chosenType === 'bottle' ? bottleVariants : chosenType === 'draft' ? draftVariants : [];
+                    const chosenVariantId = sizesForType.length === 1 ? sizesForType[0]!.id : variantSelections.get(optionId);
+                    // Fully auto-resolved (one container, one size) shows no
+                    // interactive choice per the exact rule requested — but
+                    // per the follow-up complaint, the diner still can't
+                    // otherwise tell bottle from draft anywhere, so this
+                    // stays as a plain info line instead of vanishing
+                    // entirely.
+                    if (!hasBothTypes && sizesForType.length <= 1) {
+                      const only = sizesForType[0];
+                      if (!only) return null;
+                      return (
+                        <Text key={optionId} className="mt-1.5 text-xs" style={{ color: colors.textMuted }}>
+                          {t('dishServingResolvedPrefix').replace('{option}', option?.name ?? '')}
+                          <Text className="font-bold" style={{ color: colors.ink }}>
+                            {t(only.container_type === 'bottle' ? 'dishServingResolvedBoldBottle' : 'dishServingResolvedBoldDraft')}
+                          </Text>
+                          {t('dishServingResolvedSuffix').replace('{size}', only.name)}
+                        </Text>
+                      );
+                    }
+                    return (
+                      <View key={optionId} className="mt-2">
+                        {hasBothTypes && (
+                          <>
+                            <Text className="text-xs font-medium" style={{ color: colors.textMuted }}>
+                              {t('dishServingContainerSectionTitle').replace('{option}', option?.name ?? '')}
+                            </Text>
+                            <View className="mt-1.5 flex-row flex-wrap" style={{ gap: 8 }}>
+                              {(['bottle', 'draft'] as const).map((type) => (
+                                <Pressable
+                                  key={type}
+                                  onPress={() => {
+                                    setContainerTypeSelections((prev) => new Map(prev).set(optionId, type));
+                                    setVariantSelections((prev) => {
+                                      if (!prev.has(optionId)) return prev;
+                                      const next = new Map(prev);
+                                      next.delete(optionId);
+                                      return next;
+                                    });
+                                  }}
+                                  className="rounded-lg border px-3 py-2"
+                                  style={{ borderColor: colors.royalBlue, backgroundColor: chosenType === type ? colors.royalBlue : '#FFFFFF' }}
+                                >
+                                  <Text style={{ color: chosenType === type ? '#FFFFFF' : colors.royalBlue }} className="text-sm font-medium">
+                                    {t(type === 'bottle' ? 'dishServingContainerBottleLabel' : 'dishServingContainerDraftLabel')}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </>
+                        )}
+                        {chosenType && sizesForType.length > 1 && (
+                          <>
+                            {/* Container type named in the title even when
+                                it was never an interactive choice (per the
+                                follow-up complaint: a size-only picker with
+                                no type step gave the diner zero way to know
+                                whether "חצי"/"שליש" meant bottle or draft).
+                                Bottle and draft get genuinely different
+                                phrasing (2026-09-29, per explicit correction)
+                                — a bottle is never "poured" — and the bold
+                                segment is the FULL attached word ("מהחבית",
+                                not just "חבית"), per the explicit request to
+                                emphasize every letter fused to it. */}
+                            <Text className="mt-2 text-xs font-medium" style={{ color: colors.textMuted }}>
+                              {t(chosenType === 'bottle' ? 'dishServingSizeTitlePrefixBottle' : 'dishServingSizeTitlePrefixDraft')}
+                              <Text className="font-bold" style={{ color: colors.ink }}>
+                                {t(chosenType === 'bottle' ? 'dishServingSizeTitleBoldBottle' : 'dishServingSizeTitleBoldDraft')}
+                              </Text>
+                              {t(chosenType === 'bottle' ? 'dishServingSizeTitleSuffixBottle' : 'dishServingSizeTitleSuffixDraft').replace('{option}', option?.name ?? '')}
+                            </Text>
+                            <View className="mt-1.5 flex-row flex-wrap" style={{ gap: 8 }}>
+                              {sizesForType.map((variant) => (
+                                <Pressable
+                                  key={variant.id}
+                                  onPress={() => setVariantSelections((prev) => new Map(prev).set(optionId, variant.id))}
+                                  className="rounded-lg border px-3 py-2"
+                                  style={{ borderColor: colors.royalBlue, backgroundColor: chosenVariantId === variant.id ? colors.royalBlue : '#FFFFFF' }}
+                                >
+                                  <Text style={{ color: chosenVariantId === variant.id ? '#FFFFFF' : colors.royalBlue }} className="text-sm font-medium">
+                                    {variant.name}
+                                    {variant.price_delta > 0 ? ` · ₪${variant.price_delta}` : ''}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </>
+                        )}
+                        {chosenType && sizesForType.length === 1 && (
+                          <Text className="mt-2 text-xs" style={{ color: colors.textMuted }}>
+                            {t('dishServingResolvedPrefix').replace('{option}', option?.name ?? '')}
+                            <Text className="font-bold" style={{ color: colors.ink }}>
+                              {t(chosenType === 'bottle' ? 'dishServingResolvedBoldBottle' : 'dishServingResolvedBoldDraft')}
+                            </Text>
+                            {t('dishServingResolvedSuffix').replace('{size}', sizesForType[0]!.name)}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
                   {/* Addon hint moved to the card's bottom (2026-09-24, per
                       the user's explicit request) — was beside the group
                       title before. alignSelf: 'flex-start' is the physical
@@ -1310,7 +1903,10 @@ function CartModal({ visible, onClose, onPlaced }: { visible: boolean; onClose: 
           dish_id: item.dishId,
           quantity: item.quantity,
           dish_size_option_id: item.sizeOptionId,
-          modifier_option_ids: item.modifierOptionIds,
+          modifier_selections: item.modifierSelections.map((m) => ({
+            modifier_option_id: m.modifierOptionId,
+            serving_variant_id: m.servingVariantId,
+          })),
         })),
       },
     });
@@ -1390,17 +1986,48 @@ function CartModal({ visible, onClose, onPlaced }: { visible: boolean; onClose: 
 export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   const { t, isRTL } = useI18n();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
   const { data, loading } = useMenuData(restaurantId);
   const orderStats = useDishOrderStats(restaurantId);
+  const { counts: presence, trackDish, untrackDish } = useDishPresence(restaurantId);
   const criticalStock = useDishCriticalStock(restaurantId);
   const missingIngredients = useDishMissingIngredients(restaurantId);
   const unavailableOptions = useUnavailableModifierOptions(restaurantId);
+  const vatRatePercent = useRestaurantVatRate(restaurantId);
   const [section, setSection] = useState<MenuSection>('food');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const items = useCartStore((s) => s.items);
+
+  // Same LIFO device-back convention already established for internal stage
+  // machines elsewhere (add-participants.tsx, 2026-09-10) — being inside a
+  // category's dish list is its own "stage" on top of the category grid, and
+  // the device's own back control (hardware button on Android, edge-swipe on
+  // iOS) has no idea this screen has that internal state. Left unhandled,
+  // either would pop straight past the category view to whatever real route
+  // sits behind this screen (2026-10-01, per explicit request).
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (categoryId !== null) {
+        setCategoryId(null);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [categoryId]);
+
+  // iOS equivalent (BackHandler is Android-only) — same reasoning as
+  // add-participants.tsx's own gestureEnabled toggle: iOS's edge-swipe can't
+  // be intercepted and redirected to an internal state the way Android's
+  // hardwareBackPress can, so it's disabled entirely while inside a
+  // category, forcing the explicit in-screen back link below instead of
+  // letting the swipe skip past it.
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: categoryId === null });
+  }, [navigation, categoryId]);
 
   if (loading || !data) {
     return (
@@ -1448,12 +2075,17 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
 
       {activeCategory ? (
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-          <Pressable onPress={() => setCategoryId(null)} className="flex-row items-center gap-1 p-3">
+          {/* Only the category name text itself is tappable (2026-10-01, per
+              explicit request) — the chevron icon is now purely decorative,
+              not part of the touch target. */}
+          <View className="flex-row items-center gap-1 p-3">
             <Ionicons name={isRTL ? 'chevron-forward' : 'chevron-back'} size={16} color={colors.royalBlue} />
-            <Text className="text-sm font-medium" style={{ color: colors.royalBlue }}>
-              {activeCategory.name}
-            </Text>
-          </Pressable>
+            <Pressable onPress={() => setCategoryId(null)} hitSlop={8}>
+              <Text className="text-sm font-medium" style={{ color: colors.royalBlue }}>
+                {activeCategory.name}
+              </Text>
+            </Pressable>
+          </View>
           {dishesInActiveCategory.length === 0 ? (
             <Text className="px-6 py-8 text-center text-sm text-[#9CA3AF]">{t('menuCategoryEmpty')}</Text>
           ) : (
@@ -1470,8 +2102,10 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
                   onPress={() => setSelectedDish(dish)}
                   t={t}
                   orderStats={orderStats.get(dish.id)}
+                  presenceCount={presence.get(dish.id) ?? 0}
                   categoryOrdersToday={categoryOrdersToday}
                   criticalStockStatus={criticalStock.get(dish.id)}
+                  vatRatePercent={vatRatePercent}
                 />
               ));
             })()
@@ -1504,11 +2138,14 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
           sizes={data.sizesByDish.get(selectedDish.id) ?? []}
           groups={data.groupsByDish.get(selectedDish.id) ?? []}
           optionsByGroup={data.optionsByGroup}
+          variantsByOption={data.variantsByOption}
           soldOut={criticalStock.get(selectedDish.id) === 'out'}
           missingIngredientNames={missingIngredients.get(selectedDish.id) ?? []}
           unavailableOptionIds={unavailableOptions}
           onClose={() => setSelectedDish(null)}
           onAdded={() => setSelectedDish(null)}
+          trackDish={trackDish}
+          untrackDish={untrackDish}
         />
       )}
 

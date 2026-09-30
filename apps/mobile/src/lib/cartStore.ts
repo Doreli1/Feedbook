@@ -7,6 +7,15 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 // tableSessionStore.ts) so a mid-order app background/reload — including
 // the language-switch native reload documented on that store — never
 // silently drops what someone was about to order.
+// Bare id replaced by a {modifierOptionId, servingVariantId} pair
+// (2026-09-29) — a selected modifier option can optionally carry which
+// bottle/draft(+size) format the diner chose for it (null when the option
+// has no such choice at all).
+export interface CartModifierSelection {
+  modifierOptionId: string;
+  servingVariantId: string | null;
+}
+
 export interface CartLineItem {
   id: string;
   dishId: string;
@@ -14,7 +23,7 @@ export interface CartLineItem {
   quantity: number;
   sizeOptionId: string | null;
   sizeOptionName: string | null;
-  modifierOptionIds: string[];
+  modifierSelections: CartModifierSelection[];
   modifierSummary: string;
   unitPrice: number;
 }

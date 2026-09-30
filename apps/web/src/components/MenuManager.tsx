@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Dish, DishModifierGroup, DishModifierOption, DishSizeOption, Ingredient, IngredientUnit, MenuCategory, ModifierOptionIngredient } from '@feedbook/types';
+import type {
+  Dish,
+  DishModifierGroup,
+  DishModifierOption,
+  DishSizeOption,
+  Ingredient,
+  IngredientUnit,
+  MenuCategory,
+  ModifierOptionIngredient,
+  ModifierOptionServingVariant,
+} from '@feedbook/types';
 import { TrashIcon, PencilIcon, SparklesIcon, InfoIcon, CloseIcon } from './Icons';
 import { Tooltip } from './Tooltip';
 import { useI18n } from '../lib/i18n';
@@ -365,10 +375,38 @@ function DishRow({
   // once a dish has size options, its flat `price` column stops being what
   // a diner actually pays, so admin's own list view shouldn't show it as if
   // it still were.
-  const basePrice = sizeOptions.length > 0 ? Math.min(...sizeOptions.map((s) => s.price)) : dish.price;
+  // Cheapest size specifically (not just its price) — needed to check that
+  // exact size's own discount_fixed_price override (2026-10-01).
+  const cheapestSize = sizeOptions.length > 0 ? sizeOptions.reduce((min, s) => (s.price < min.price ? s : min), sizeOptions[0]!) : null;
+  const basePrice = cheapestSize ? cheapestSize.price : dish.price;
   const pricePrefix = sizeOptions.length > 0 ? `${t('dishPriceFrom')} ` : '';
-  const hasDiscount = dish.discount_percent > 0;
-  const discountedPrice = hasDiscount ? Math.round(basePrice * (1 - dish.discount_percent / 100) * 100) / 100 : basePrice;
+  // Mirrors the mobile app's own PriceRow exactly (MenuBrowser.tsx,
+  // 2026-10-01): three discount sources in priority order — a size's own
+  // fixed-price override (only meaningful when the dish has sizes), the
+  // dish-level 'fixed_price' mode (only meaningful when it doesn't), and the
+  // dish-level percent (the uniform fallback either way). Always a whole
+  // displayed price, and a discount percentage that's exact for a direct
+  // percent but derived (and rounded up) when it comes from either kind of
+  // fixed price.
+  const hasDiscount = cheapestSize
+    ? cheapestSize.discount_fixed_price != null || dish.discount_percent > 0
+    : dish.discount_mode === 'fixed_price'
+      ? dish.discount_fixed_price != null
+      : dish.discount_percent > 0;
+  const discountedPriceRaw = cheapestSize?.discount_fixed_price != null
+    ? cheapestSize.discount_fixed_price
+    : !cheapestSize && dish.discount_mode === 'fixed_price' && dish.discount_fixed_price != null
+      ? dish.discount_fixed_price
+      : basePrice * (1 - dish.discount_percent / 100);
+  const discountedPrice = hasDiscount ? Math.round(discountedPriceRaw) : basePrice;
+  // Exact for a direct percent, derived only when the source is a fixed
+  // price — NOT computed as (1 - discountedPriceRaw / basePrice) * 100
+  // unconditionally: that division reintroduces floating-point drift even
+  // for an exact configured percent (e.g. 45 * (1 - 15/100) then back
+  // through (1 - 38.25/45) * 100 lands on 15.000000000000002, not 15),
+  // which would wrongly show "16%" for an exact 15% discount.
+  const isFixedPriceSource = (cheapestSize?.discount_fixed_price ?? null) != null || (!cheapestSize && dish.discount_mode === 'fixed_price');
+  const discountPercentDisplay = hasDiscount ? Math.ceil(isFixedPriceSource ? (1 - discountedPriceRaw / basePrice) * 100 : dish.discount_percent) : 0;
 
   return (
     <div className="flex items-center gap-3 rounded bg-surface p-2">
@@ -407,7 +445,7 @@ function DishRow({
             {pricePrefix}₪{basePrice}
           </p>
         )}
-        {hasDiscount && <p className="text-[10px] font-semibold text-danger">-{dish.discount_percent}%</p>}
+        {hasDiscount && <p className="text-[10px] font-semibold text-danger">-{discountPercentDisplay}%</p>}
       </div>
       <Tooltip content={t(isDrink ? 'editDishDrink' : 'editDish')}>
         <button
@@ -464,10 +502,22 @@ interface SizeOptionRow {
   id?: string;
   name: string;
   price: string;
+  // Per-size fixed-price discount override (2026-10-01, per explicit
+  // request) — empty = no override, falls back to the dish's own
+  // discount_percent (which already applies uniformly across every size).
+  // This is the "per size separately" answer to a dish like the smoked
+  // entrecote (350g at ₪90, 700g at ₪130), where the dish-level fixed_price
+  // mode can't apply — a single fixed price can't fit two different sizes.
+  discountFixedPrice: string;
 }
 
 function buildInitialSizeOptions(existingSizeOptions: DishSizeOption[]): SizeOptionRow[] {
-  return existingSizeOptions.map((s) => ({ id: s.id, name: s.name, price: String(s.price) }));
+  return existingSizeOptions.map((s) => ({
+    id: s.id,
+    name: s.name,
+    price: String(s.price),
+    discountFixedPrice: s.discount_fixed_price != null ? String(s.discount_fixed_price) : '',
+  }));
 }
 
 // dish_modifier_groups (built 2026-09-12 for mobile ordering, never had a
@@ -478,12 +528,33 @@ function buildInitialSizeOptions(existingSizeOptions: DishSizeOption[]): SizeOpt
 // could in principle rename them by other means, but nothing here does
 // that, so the identity holds in practice.
 const ADDON_GROUP_NAME = 'תוספות למנה';
+const DRINK_ADDON_GROUP_NAME = 'תוספות שתייה';
 const DONENESS_GROUP_NAME = 'מידת עשייה';
 
 interface ModifierOptionIngredientRow {
   ingredient_id: string;
   quantity_required: string;
   unit_id?: string;
+  // Index into the same row's servingVariants array — undefined = this
+  // requirement applies regardless of which format was chosen (or the option
+  // has no variants at all), mirroring dishIngredients' sizeOptionIndex
+  // convention exactly.
+  servingVariantIndex?: number;
+}
+
+// A drink add-on's serving-format choice (2026-09-29) — bottle vs. draft
+// (+ size), each its own price. Opt-in per option (servingVariantsEnabled on
+// the owning ModifierOptionRow), not every drink add-on has this.
+// containerType is the structured "which container" field (2026-09-29,
+// follow-up) — name is just the size label within that container ("שליש",
+// "חצי ליטר"), not a free-text description of the whole format anymore, so
+// the mobile client can branch its picker on containerType directly instead
+// of parsing a string.
+interface ModifierOptionServingVariantRow {
+  id?: string;
+  containerType: 'bottle' | 'draft';
+  name: string;
+  price: string;
 }
 
 interface ModifierOptionRow {
@@ -492,16 +563,43 @@ interface ModifierOptionRow {
   price: string;
   photo: PhotoSlot | null;
   ingredients: ModifierOptionIngredientRow[];
+  servingVariantsEnabled: boolean;
+  servingVariants: ModifierOptionServingVariantRow[];
 }
 
-function buildInitialModifierOptions(options: (DishModifierOption & { modifier_option_ingredients: ModifierOptionIngredient[] })[]): ModifierOptionRow[] {
-  return options.map((o) => ({
-    id: o.id,
-    name: o.name,
-    price: o.price_delta > 0 ? String(o.price_delta) : '',
-    photo: o.photo_url ? { kind: 'existing', url: o.photo_url } : null,
-    ingredients: o.modifier_option_ingredients.map((i) => ({ ingredient_id: i.ingredient_id, quantity_required: String(i.quantity_required), unit_id: i.unit_id ?? undefined })),
-  }));
+function buildInitialModifierOptions(
+  options: (DishModifierOption & {
+    modifier_option_ingredients: ModifierOptionIngredient[];
+    modifier_option_serving_variants: ModifierOptionServingVariant[];
+  })[],
+): ModifierOptionRow[] {
+  return options.map((o) => {
+    const variants = (o.modifier_option_serving_variants ?? [])
+      .filter((v) => v.is_active)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    return {
+      id: o.id,
+      name: o.name,
+      price: o.price_delta > 0 ? String(o.price_delta) : '',
+      photo: o.photo_url ? { kind: 'existing', url: o.photo_url } : null,
+      servingVariantsEnabled: variants.length > 0,
+      servingVariants: variants.map((v) => ({
+        id: v.id,
+        containerType: v.container_type === 'draft' ? 'draft' : 'bottle',
+        name: v.name,
+        price: v.price_delta > 0 ? String(v.price_delta) : '',
+      })),
+      ingredients: o.modifier_option_ingredients.map((i) => {
+        const variantIndex = i.serving_variant_id ? variants.findIndex((v) => v.id === i.serving_variant_id) : -1;
+        return {
+          ingredient_id: i.ingredient_id,
+          quantity_required: String(i.quantity_required),
+          unit_id: i.unit_id ?? undefined,
+          servingVariantIndex: variantIndex === -1 ? undefined : variantIndex,
+        };
+      }),
+    };
+  });
 }
 
 // Restaurant-configurable per-addon-group choice mode (2026-09-24) — same
@@ -558,6 +656,11 @@ function ModifierSection({
   onAddIngredient,
   extraHeaderContent,
   errorContent,
+  enableServingVariants,
+  onToggleServingVariants,
+  onAddServingVariant,
+  onUpdateServingVariant,
+  onRemoveServingVariant,
 }: {
   enabled: boolean;
   onToggle: (v: boolean) => void;
@@ -575,7 +678,7 @@ function ModifierSection({
   onUpdate: (index: number, patch: Partial<ModifierOptionRow>) => void;
   onRemove: (index: number) => void;
   onPhotoChange: (index: number, file: File | null) => void;
-  onAddIngredient?: (index: number, ingredientId: string, quantity: string, unitId: string) => void;
+  onAddIngredient?: (index: number, ingredientId: string, quantity: string, unitId: string, servingVariantIndex?: number) => void;
   // Rendered right after the hint — only the add-ons call site uses this
   // today (the single/multiple-choice segmented control), doneness passes
   // nothing and is unaffected.
@@ -585,6 +688,13 @@ function ModifierSection({
   // link), kept next to the button a restaurant would use to fix it rather
   // than floating below the whole section.
   errorContent?: ReactNode;
+  // Bottle/draft(+size) serving-format choice (2026-09-29) — only the drink
+  // add-ons call site passes these.
+  enableServingVariants?: boolean;
+  onToggleServingVariants?: (index: number, enabled: boolean) => void;
+  onAddServingVariant?: (index: number, containerType: 'bottle' | 'draft') => void;
+  onUpdateServingVariant?: (index: number, variantIndex: number, patch: Partial<ModifierOptionServingVariantRow>) => void;
+  onRemoveServingVariant?: (index: number, variantIndex: number) => void;
 }) {
   const { t } = useI18n();
 
@@ -616,7 +726,16 @@ function ModifierSection({
                   onUpdate={(patch) => onUpdate(index, patch)}
                   onRemove={() => onRemove(index)}
                   onPhotoChange={(file) => onPhotoChange(index, file)}
-                  onAddIngredient={onAddIngredient ? (ingredientId, quantity, unitId) => onAddIngredient(index, ingredientId, quantity, unitId) : undefined}
+                  onAddIngredient={
+                    onAddIngredient
+                      ? (ingredientId, quantity, unitId, servingVariantIndex) => onAddIngredient(index, ingredientId, quantity, unitId, servingVariantIndex)
+                      : undefined
+                  }
+                  enableServingVariants={enableServingVariants}
+                  onToggleServingVariants={onToggleServingVariants ? (v) => onToggleServingVariants(index, v) : undefined}
+                  onAddServingVariant={onAddServingVariant ? (containerType) => onAddServingVariant(index, containerType) : undefined}
+                  onUpdateServingVariant={onUpdateServingVariant ? (variantIndex, patch) => onUpdateServingVariant(index, variantIndex, patch) : undefined}
+                  onRemoveServingVariant={onRemoveServingVariant ? (variantIndex) => onRemoveServingVariant(index, variantIndex) : undefined}
                 />
               ))}
             </div>
@@ -655,6 +774,11 @@ function ModifierOptionRowEditor({
   onRemove,
   onPhotoChange,
   onAddIngredient,
+  enableServingVariants,
+  onToggleServingVariants,
+  onAddServingVariant,
+  onUpdateServingVariant,
+  onRemoveServingVariant,
 }: {
   row: ModifierOptionRow;
   namePlaceholder: string;
@@ -666,7 +790,14 @@ function ModifierOptionRowEditor({
   onUpdate: (patch: Partial<ModifierOptionRow>) => void;
   onRemove: () => void;
   onPhotoChange: (file: File | null) => void;
-  onAddIngredient?: (ingredientId: string, quantity: string, unitId: string) => void;
+  onAddIngredient?: (ingredientId: string, quantity: string, unitId: string, servingVariantIndex?: number) => void;
+  // Bottle/draft(+size) serving-format choice (2026-09-29) — only the drink
+  // add-ons call site passes these; regular add-ons and doneness never do.
+  enableServingVariants?: boolean;
+  onToggleServingVariants?: (enabled: boolean) => void;
+  onAddServingVariant?: (containerType: 'bottle' | 'draft') => void;
+  onUpdateServingVariant?: (variantIndex: number, patch: Partial<ModifierOptionServingVariantRow>) => void;
+  onRemoveServingVariant?: (variantIndex: number) => void;
 }) {
   const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -675,6 +806,9 @@ function ModifierOptionRowEditor({
   const [pickQuantity, setPickQuantity] = useState('');
   const [pickUnitId, setPickUnitId] = useState('');
   const [pickError, setPickError] = useState<TranslationKey | null>(null);
+  // '' = applies regardless of which format was ordered — only ever shown/
+  // settable when this option actually has serving variants defined.
+  const [pickServingVariantIndex, setPickServingVariantIndex] = useState('');
   const pickedIngredient = ingredients?.find((i) => i.id === pickIngredientId);
 
   function addIngredient() {
@@ -689,10 +823,11 @@ function ModifierOptionRowEditor({
       }
     }
     setPickError(null);
-    onAddIngredient(pickIngredientId, pickQuantity, pickUnitId);
+    onAddIngredient(pickIngredientId, pickQuantity, pickUnitId, pickServingVariantIndex === '' ? undefined : Number(pickServingVariantIndex));
     setPickIngredientId('');
     setPickQuantity('');
     setPickUnitId('');
+    setPickServingVariantIndex('');
   }
 
   return (
@@ -784,6 +919,20 @@ function ModifierOptionRowEditor({
                 </option>
               ))}
             </select>
+            {row.servingVariantsEnabled && row.servingVariants.length > 0 && (
+              <select
+                value={pickServingVariantIndex}
+                onChange={(e) => setPickServingVariantIndex(e.target.value)}
+                className="w-32 shrink-0 rounded border border-border px-2 py-1.5 text-xs"
+              >
+                <option value="">{t('dishServingVariantAllOption')}</option>
+                {row.servingVariants.map((v, vi) => (
+                  <option key={vi} value={vi}>
+                    {t(v.containerType === 'bottle' ? 'dishServingVariantBottleLabel' : 'dishServingVariantDraftLabel')} - {v.name.trim() || t('dishServingVariantNamePlaceholder')}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               type="button"
               onClick={addIngredient}
@@ -809,11 +958,12 @@ function ModifierOptionRowEditor({
         // Flagged as a topic for deeper review in the Implementation Plan
         // (a `requires_photo` flag + DB-level enforcement was the harder
         // alternative discussed and deferred): every option row here
-        // belongs to one of exactly two groups (ADDON_GROUP_NAME /
-        // DONENESS_GROUP_NAME — see ModifierSection's two call sites), both
-        // of which are visually distinguishing choices for the diner (rice
-        // vs. fries, medium vs. well-done), so this can fire unconditionally
-        // whenever a named option has no photo, with no extra flag needed.
+        // belongs to one of exactly three groups (ADDON_GROUP_NAME /
+        // DRINK_ADDON_GROUP_NAME / DONENESS_GROUP_NAME — see ModifierSection's
+        // three call sites), all of which are visually distinguishing choices
+        // for the diner (rice vs. fries, coke vs. water, medium vs.
+        // well-done), so this can fire unconditionally whenever a named
+        // option has no photo, with no extra flag needed.
         <p className="ms-9 mt-1 flex items-start gap-1 text-[11px] text-warning">
           <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
           <span>{t('dishOptionPhotoMissingWarning')}</span>
@@ -831,6 +981,107 @@ function ModifierOptionRowEditor({
           </span>
         </p>
       )}
+      {enableServingVariants && (
+        <div className="ms-9 mt-2 rounded border border-border bg-gray-100 p-2">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium text-ink">{t('dishServingVariantsToggleLabel')}</span>
+            <Toggle checked={row.servingVariantsEnabled} onChange={(v) => onToggleServingVariants?.(v)} label={t('dishServingVariantsToggleLabel')} />
+          </div>
+          {row.servingVariantsEnabled && (
+            <div className="space-y-3">
+              <ServingVariantContainerList
+                containerType="bottle"
+                label={t('dishServingVariantBottleLabel')}
+                variants={row.servingVariants}
+                onUpdate={(vi, patch) => onUpdateServingVariant?.(vi, patch)}
+                onRemove={(vi) => onRemoveServingVariant?.(vi)}
+                onAdd={() => onAddServingVariant?.('bottle')}
+              />
+              <ServingVariantContainerList
+                containerType="draft"
+                label={t('dishServingVariantDraftLabel')}
+                variants={row.servingVariants}
+                onUpdate={(vi, patch) => onUpdateServingVariant?.(vi, patch)}
+                onRemove={(vi) => onRemoveServingVariant?.(vi)}
+                onAdd={() => onAddServingVariant?.('draft')}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One container type's (בקבוק or חבית) size+price rows, filtered out of the
+// option's own flat servingVariants array (2026-09-29, follow-up) — kept as
+// one flat array with a containerType discriminator rather than two
+// separate arrays, so removing/re-indexing stays a single well-tested code
+// path (removeServingVariantRow), while the admin still sees two clearly
+// separate lists. Real position in the flat array is threaded through
+// (not the filtered list's own index) since that's what every callback
+// (update/remove/the ingredient picker's servingVariantIndex) actually
+// keys on.
+function ServingVariantContainerList({
+  containerType,
+  label,
+  variants,
+  onUpdate,
+  onRemove,
+  onAdd,
+}: {
+  containerType: 'bottle' | 'draft';
+  label: string;
+  variants: ModifierOptionServingVariantRow[];
+  onUpdate: (variantIndex: number, patch: Partial<ModifierOptionServingVariantRow>) => void;
+  onRemove: (variantIndex: number) => void;
+  onAdd: () => void;
+}) {
+  const { t } = useI18n();
+  const rows = variants.map((v, vi) => ({ v, vi })).filter(({ v }) => v.containerType === containerType);
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold text-ink">{label}</p>
+      {rows.length > 0 && (
+        <div className="mb-1.5 space-y-1">
+          {rows.map(({ v, vi }) => (
+            <div key={vi} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={v.name}
+                onChange={(e) => onUpdate(vi, { name: e.target.value })}
+                placeholder={t('dishServingVariantNamePlaceholder')}
+                className="w-32 shrink-0 rounded border border-border px-2 py-1 text-[11px]"
+              />
+              <div className="relative w-32 shrink-0">
+                <span className="pointer-events-none absolute inset-y-0 start-2 flex items-center text-[11px] text-muted-foreground">₪</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={v.price}
+                  onChange={(e) => onUpdate(vi, { price: e.target.value })}
+                  placeholder={t('dishServingVariantPricePlaceholder')}
+                  className="w-full rounded border border-border py-1 ps-5 pe-1 text-[11px]"
+                />
+              </div>
+              <Tooltip content={t('dishServingVariantRemove')}>
+                <button
+                  type="button"
+                  onClick={() => onRemove(vi)}
+                  aria-label={t('dishServingVariantRemove')}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-danger-soft hover:text-danger"
+                >
+                  <TrashIcon className="h-3 w-3" />
+                </button>
+              </Tooltip>
+            </div>
+          ))}
+        </div>
+      )}
+      <button type="button" onClick={onAdd} className="rounded border border-dashed border-border-strong px-2 py-1 text-[11px] text-accent hover:bg-accent-soft">
+        {t('dishServingVariantAdd')}
+      </button>
     </div>
   );
 }
@@ -861,6 +1112,14 @@ function DishForm({
   const [description, setDescription] = useState(dish?.description ?? '');
   const [feedstarsEligible, setFeedstarsEligible] = useState(dish?.feedstars_eligible ?? false);
   const [discountPercent, setDiscountPercent] = useState(dish && dish.discount_percent > 0 ? String(dish.discount_percent) : '');
+  // Discount mechanism choice (2026-10-01, per explicit request): 'percent'
+  // (existing flat-percentage-off) or 'fixed_price' — staff types the final
+  // discounted price directly instead of a percentage. Only offered when the
+  // dish has no size options (see fixedPriceModeAllowed below) — a single
+  // fixed price can't sensibly apply to several differently-priced sizes the
+  // way a flat percentage already does.
+  const [discountMode, setDiscountMode] = useState<'percent' | 'fixed_price'>(dish?.discount_mode === 'fixed_price' ? 'fixed_price' : 'percent');
+  const [discountFixedPrice, setDiscountFixedPrice] = useState(dish?.discount_fixed_price != null ? String(dish.discount_fixed_price) : '');
   const [prepTimeMinutes, setPrepTimeMinutes] = useState(dish && dish.prep_time_minutes ? String(dish.prep_time_minutes) : '');
   const [photos, setPhotos] = useState<PhotoSlot[]>(() => (dish?.photo_urls ?? []).map((url) => ({ kind: 'existing', url }) as PhotoSlot));
   const [sizeOptions, setSizeOptions] = useState<SizeOptionRow[]>(() => buildInitialSizeOptions(existingSizeOptions));
@@ -877,6 +1136,15 @@ function DishForm({
   // hardcoded 'multiple' before. Doneness stays hardcoded 'single' (that's
   // inherently a single choice, not something a restaurant should toggle).
   const [addonSelectionType, setAddonSelectionType] = useState<'single' | 'multiple'>('multiple');
+  // Drink add-ons (2026-09-29) — an exact duplicate of the food add-ons
+  // section above (same template, same ingredient-linking validation), just
+  // its own separate dish_modifier_groups row (DRINK_ADDON_GROUP_NAME) so a
+  // dish can offer both independently (e.g. "תוספות למנה" for a side, "תוספות
+  // שתייה" for a drink pairing).
+  const [drinkAddonsEnabled, setDrinkAddonsEnabled] = useState(false);
+  const [drinkAddonOptions, setDrinkAddonOptions] = useState<ModifierOptionRow[]>([]);
+  const [drinkAddonGroupId, setDrinkAddonGroupId] = useState<string | undefined>(undefined);
+  const [drinkAddonSelectionType, setDrinkAddonSelectionType] = useState<'single' | 'multiple'>('multiple');
   const [donenessEnabled, setDonenessEnabled] = useState(false);
   const [donenessOptions, setDonenessOptions] = useState<ModifierOptionRow[]>([]);
   const [donenessGroupId, setDonenessGroupId] = useState<string | undefined>(undefined);
@@ -892,7 +1160,9 @@ function DishForm({
   // single/multiple-choice toggle exposed it (the save silently failed on
   // the FK violation, so the toggle never actually persisted).
   const [existingAddonOptionIds, setExistingAddonOptionIds] = useState<Set<string>>(new Set());
+  const [existingDrinkAddonOptionIds, setExistingDrinkAddonOptionIds] = useState<Set<string>>(new Set());
   const [existingDonenessOptionIds, setExistingDonenessOptionIds] = useState<Set<string>>(new Set());
+  const [existingServingVariantIdsByOptionId, setExistingServingVariantIdsByOptionId] = useState<Map<string, Set<string>>>(new Map());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -928,20 +1198,44 @@ function DishForm({
     if (!dish) return;
     void supabase
       .from('dish_modifier_groups')
-      .select('id, name, selection_type, dish_modifier_options(*, modifier_option_ingredients(*))')
+      .select('id, name, selection_type, dish_modifier_options(*, modifier_option_ingredients(*), modifier_option_serving_variants(*))')
       .eq('dish_id', dish.id)
       .then(({ data }) => {
         const groups = (data ?? []) as (DishModifierGroup & {
-          dish_modifier_options: (DishModifierOption & { modifier_option_ingredients: ModifierOptionIngredient[] })[];
+          dish_modifier_options: (DishModifierOption & {
+            modifier_option_ingredients: ModifierOptionIngredient[];
+            modifier_option_serving_variants: ModifierOptionServingVariant[];
+          })[];
         })[];
         const addonGroup = groups.find((g) => g.name === ADDON_GROUP_NAME);
+        const drinkAddonGroup = groups.find((g) => g.name === DRINK_ADDON_GROUP_NAME);
         const donenessGroup = groups.find((g) => g.name === DONENESS_GROUP_NAME);
+        // Snapshot of which serving-variant ids existed at load time, across
+        // every option in every group — used at save time to soft-delete
+        // only what was actually removed (same reconciliation reason as
+        // existingAddonOptionIds), never a delete-the-whole-set-then-
+        // recreate replace, since order_item_modifiers.serving_variant_id can
+        // reference one with no ON DELETE clause once actually ordered.
+        const variantIdsByOption = new Map<string, Set<string>>();
+        for (const group of groups) {
+          for (const option of group.dish_modifier_options) {
+            variantIdsByOption.set(option.id, new Set(option.modifier_option_serving_variants.filter((v) => v.is_active).map((v) => v.id)));
+          }
+        }
+        setExistingServingVariantIdsByOptionId(variantIdsByOption);
         if (addonGroup) {
           setAddonGroupId(addonGroup.id);
           setAddonsEnabled(true);
           setAddonSelectionType(addonGroup.selection_type === 'single' ? 'single' : 'multiple');
           setAddonOptions(buildInitialModifierOptions(addonGroup.dish_modifier_options.sort((a, b) => a.sort_order - b.sort_order)));
           setExistingAddonOptionIds(new Set(addonGroup.dish_modifier_options.map((o) => o.id)));
+        }
+        if (drinkAddonGroup) {
+          setDrinkAddonGroupId(drinkAddonGroup.id);
+          setDrinkAddonsEnabled(true);
+          setDrinkAddonSelectionType(drinkAddonGroup.selection_type === 'single' ? 'single' : 'multiple');
+          setDrinkAddonOptions(buildInitialModifierOptions(drinkAddonGroup.dish_modifier_options.sort((a, b) => a.sort_order - b.sort_order)));
+          setExistingDrinkAddonOptionIds(new Set(drinkAddonGroup.dish_modifier_options.map((o) => o.id)));
         }
         if (donenessGroup) {
           setDonenessGroupId(donenessGroup.id);
@@ -1022,6 +1316,8 @@ function DishForm({
   photosRef.current = photos;
   const addonOptionsRef = useRef(addonOptions);
   addonOptionsRef.current = addonOptions;
+  const drinkAddonOptionsRef = useRef(drinkAddonOptions);
+  drinkAddonOptionsRef.current = drinkAddonOptions;
   const donenessOptionsRef = useRef(donenessOptions);
   donenessOptionsRef.current = donenessOptions;
   useEffect(() => {
@@ -1029,7 +1325,7 @@ function DishForm({
       for (const slot of photosRef.current) {
         if (slot.kind === 'new') URL.revokeObjectURL(slot.previewUrl);
       }
-      for (const row of [...addonOptionsRef.current, ...donenessOptionsRef.current]) {
+      for (const row of [...addonOptionsRef.current, ...drinkAddonOptionsRef.current, ...donenessOptionsRef.current]) {
         if (row.photo?.kind === 'new') URL.revokeObjectURL(row.photo.previewUrl);
       }
     };
@@ -1039,6 +1335,18 @@ function DishForm({
   const sizeOptionsValid =
     effectiveSizeOptions.length === 0 ||
     effectiveSizeOptions.every((s) => s.name.trim() !== '' && s.price.trim() !== '' && Number.isFinite(Number(s.price)) && Number(s.price) >= 0);
+  // Per-size fixed-price discount override validation (2026-10-01) — same
+  // range rule as the dish-level fixed_price field (discountFixedPriceValid
+  // above), just per row and only when that row actually has a value typed.
+  const sizeOptionsInvalidDiscountNames = effectiveSizeOptions
+    .filter((s) => {
+      if (s.discountFixedPrice.trim() === '') return false;
+      const discountValueForSize = Number(s.discountFixedPrice);
+      const priceValueForSize = Number(s.price);
+      return !(Number.isFinite(discountValueForSize) && discountValueForSize > 0 && Number.isFinite(priceValueForSize) && discountValueForSize < priceValueForSize);
+    })
+    .map((s) => s.name.trim() || t('dishSizeOptionNamePlaceholder'));
+  const sizeOptionsDiscountValid = sizeOptionsInvalidDiscountNames.length === 0;
   // dishes.price is a NOT NULL column that place_order_transaction only
   // falls back to when a dish has zero size options at all — once serving
   // options are on, the manual price field is redundant (and confusing:
@@ -1056,6 +1364,18 @@ function DishForm({
   const priceValue = servingOptionsEnabled ? (validSizePrices.length > 0 ? Math.min(...validSizePrices) : 0) : Number(price);
   const discountValue = discountPercent.trim() === '' ? 0 : Number(discountPercent);
   const discountValid = Number.isFinite(discountValue) && discountValue >= 0 && discountValue <= 100;
+  // fixed_price mode requires the dish to have no size options at all (see
+  // discountMode's own comment above) — a single fixed price can't apply to
+  // several differently-priced sizes the way a flat percentage already does.
+  const fixedPriceModeBlockedBySizes = discountMode === 'fixed_price' && effectiveSizeOptions.length > 0;
+  const discountFixedPriceValue = discountFixedPrice.trim() === '' ? null : Number(discountFixedPrice);
+  const discountFixedPriceValid =
+    discountMode !== 'fixed_price' ||
+    (!fixedPriceModeBlockedBySizes &&
+      discountFixedPriceValue !== null &&
+      Number.isFinite(discountFixedPriceValue) &&
+      discountFixedPriceValue > 0 &&
+      discountFixedPriceValue < priceValue);
   const prepTimeValue = prepTimeMinutes.trim() === '' ? null : Number(prepTimeMinutes);
   const prepTimeValid = prepTimeValue === null || (Number.isInteger(prepTimeValue) && prepTimeValue > 0);
   // Required + strictly > 0 (2026-09-29, per explicit request) — with
@@ -1076,6 +1396,35 @@ function DishForm({
     ? addonOptions.filter((r) => r.name.trim() !== '' && r.ingredients.length === 0).map((r) => r.name)
     : [];
   const addonsValid = addonsMissingIngredientNames.length === 0;
+  // Drink add-ons (2026-09-29) — exact duplicate of the addons validation
+  // above, same rule, its own separate group.
+  const drinkAddonsMissingIngredientNames = drinkAddonsEnabled
+    ? drinkAddonOptions.filter((r) => r.name.trim() !== '' && r.ingredients.length === 0).map((r) => r.name)
+    : [];
+  const drinkAddonsValid = drinkAddonsMissingIngredientNames.length === 0;
+  // Real gap found (2026-09-29): adding a new serving-format row (e.g. a
+  // "1/2 ליטר" bottle) saved successfully with no ingredient requirement
+  // scoped to it at all — the option-level check above only asks "does THIS
+  // OPTION have any ingredient link anywhere", which an unrelated variant's
+  // link (or an "all variants" link on a different ingredient) already
+  // satisfies, so a brand-new variant with zero coverage of its own slipped
+  // through silently. Ordering it would deduct nothing from stock. A link
+  // scoped to "all variants" (servingVariantIndex undefined) covers every
+  // variant including this one, so it's checked first before flagging any
+  // specific variant as uncovered.
+  const drinkAddonsMissingVariantIngredientLabels: string[] = [];
+  for (const row of drinkAddonOptions) {
+    if (!row.servingVariantsEnabled || row.servingVariants.length === 0) continue;
+    if (row.ingredients.some((r) => r.servingVariantIndex === undefined)) continue;
+    row.servingVariants.forEach((v, vi) => {
+      if (row.ingredients.some((r) => r.servingVariantIndex === vi)) return;
+      const optionName = row.name.trim() || t('dishDrinkAddonNamePlaceholder');
+      const containerLabel = t(v.containerType === 'bottle' ? 'dishServingVariantBottleLabel' : 'dishServingVariantDraftLabel');
+      const sizeName = v.name.trim() || t('dishServingVariantNamePlaceholder');
+      drinkAddonsMissingVariantIngredientLabels.push(`${optionName} (${containerLabel} - ${sizeName})`);
+    });
+  }
+  const drinkAddonServingVariantsValid = drinkAddonsMissingVariantIngredientLabels.length === 0;
 
   // Turning serving sizes off collapses every row's dish_size_option_id to
   // null (see savedSizeOptionIds resolution in handleSave) — a real conflict
@@ -1104,21 +1453,27 @@ function DishForm({
     .filter((ingredientId) => !dishIngredients.some((r) => r.ingredient_id === ingredientId))
     .map((ingredientId) => ingredients.find((i) => i.id === ingredientId)?.name ?? '?');
 
-  // A dish with linked ingredients but none marked "קריטי" can never trigger
-  // the mobile critical-stock bullets/sold-out state for this dish at all —
-  // the link exists only for inventory deduction, with nothing to actually
-  // gate availability on. A dish with zero linked ingredients is unaffected
-  // (nothing to mark critical in the first place, and not every dish needs
-  // stock tracking).
-  const noCriticalIngredientMarked = dishIngredients.length > 0 && !dishIngredients.some((r) => r.isCritical);
+  // A dish with no critical ingredient at all — whether because none are
+  // linked yet, or some are linked but none marked "קריטי" — can never
+  // trigger the mobile critical-stock bullets/sold-out state for this dish.
+  // Tightened 2026-09-29 (real gap found: a brand-new dish with zero
+  // ingredients saved successfully) to require at least one, not just "if
+  // any are linked, at least one must be critical" — every dish needs real
+  // stock-based availability tracking, matching the same unconditional rule
+  // already enforced for add-ons (addonsValid above).
+  const noCriticalIngredientMarked = !dishIngredients.some((r) => r.isCritical);
 
   const canSave =
     name.trim() !== '' &&
     manualPriceValid &&
     sizeOptionsValid &&
+    sizeOptionsDiscountValid &&
     discountValid &&
+    discountFixedPriceValid &&
     prepTimeValid &&
     addonsValid &&
+    drinkAddonsValid &&
+    drinkAddonServingVariantsValid &&
     sizesDisabledDuplicateIngredientNames.length === 0 &&
     removedCriticalIngredientNames.length === 0 &&
     !noCriticalIngredientMarked &&
@@ -1209,7 +1564,7 @@ function DishForm({
   }
 
   function addSizeOptionRow() {
-    setSizeOptions((prev) => [...prev, { name: '', price: '' }]);
+    setSizeOptions((prev) => [...prev, { name: '', price: '', discountFixedPrice: '' }]);
   }
 
   function updateSizeOption(index: number, patch: Partial<SizeOptionRow>) {
@@ -1221,7 +1576,47 @@ function DishForm({
   }
 
   function addModifierRow(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>) {
-    setRows((prev) => [...prev, { name: '', price: '', photo: null, ingredients: [] }]);
+    setRows((prev) => [...prev, { name: '', price: '', photo: null, ingredients: [], servingVariantsEnabled: false, servingVariants: [] }]);
+  }
+
+  function setServingVariantsEnabled(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>, index: number, enabled: boolean) {
+    setRows((prev) => prev.map((row, i) => (i === index ? { ...row, servingVariantsEnabled: enabled } : row)));
+  }
+
+  function addServingVariantRow(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>, index: number, containerType: 'bottle' | 'draft') {
+    setRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, servingVariants: [...row.servingVariants, { containerType, name: '', price: '' }] } : row)),
+    );
+  }
+
+  function updateServingVariantRow(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>, index: number, variantIndex: number, patch: Partial<ModifierOptionServingVariantRow>) {
+    setRows((prev) =>
+      prev.map((row, i) =>
+        i === index ? { ...row, servingVariants: row.servingVariants.map((v, vi) => (vi === variantIndex ? { ...v, ...patch } : v)) } : row,
+      ),
+    );
+  }
+
+  // Removing a variant also clears any ingredient row scoped to it (dropping
+  // servingVariantIndex back to "all variants" would silently change what
+  // that ingredient requirement means) and re-indexes every other
+  // ingredient row's servingVariantIndex to match the shifted array —
+  // mirrors how removing a dish size option would need the same care, just
+  // not yet needed there since sizeOptionIndex resolution happens against a
+  // stable props snapshot instead of live-edited local indices.
+  function removeServingVariantRow(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>, index: number, variantIndex: number) {
+    setRows((prev) =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+        return {
+          ...row,
+          servingVariants: row.servingVariants.filter((_, vi) => vi !== variantIndex),
+          ingredients: row.ingredients
+            .filter((r) => r.servingVariantIndex !== variantIndex)
+            .map((r) => (r.servingVariantIndex !== undefined && r.servingVariantIndex > variantIndex ? { ...r, servingVariantIndex: r.servingVariantIndex - 1 } : r)),
+        };
+      }),
+    );
   }
 
   function updateModifierRow(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>, index: number, patch: Partial<ModifierOptionRow>) {
@@ -1250,19 +1645,32 @@ function DishForm({
   // deducts stock the same way ordering the dish itself already does
   // (see modifier_option_ingredients / deduct_inventory_for_order) — the
   // real gap the user asked about after seeing the add-ons editor.
-  function addModifierRowIngredient(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>, index: number, ingredientId: string, quantity: string, unitId: string) {
+  function addModifierRowIngredient(
+    setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>,
+    index: number,
+    ingredientId: string,
+    quantity: string,
+    unitId: string,
+    servingVariantIndex?: number,
+  ) {
     setRows((prev) =>
       prev.map((row, i) => {
         if (i !== index) return row;
-        const withoutExisting = row.ingredients.filter((r) => r.ingredient_id !== ingredientId);
-        return { ...row, ingredients: [...withoutExisting, { ingredient_id: ingredientId, quantity_required: quantity, unit_id: unitId || undefined }] };
+        // Scoped to the same (ingredient, variant) pair — not just the
+        // ingredient — so linking a quantity to "בקבוק" doesn't silently
+        // overwrite an already-linked "חבית - ליטר" row for the same
+        // ingredient (same reasoning as the dish-level size scoping).
+        const withoutExisting = row.ingredients.filter((r) => !(r.ingredient_id === ingredientId && r.servingVariantIndex === servingVariantIndex));
+        return { ...row, ingredients: [...withoutExisting, { ingredient_id: ingredientId, quantity_required: quantity, unit_id: unitId || undefined, servingVariantIndex }] };
       }),
     );
   }
 
-  function removeModifierRowIngredient(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>, index: number, ingredientId: string) {
+  function removeModifierRowIngredient(setRows: Dispatch<SetStateAction<ModifierOptionRow[]>>, index: number, ingredientId: string, servingVariantIndex?: number) {
     setRows((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, ingredients: row.ingredients.filter((r) => r.ingredient_id !== ingredientId) } : row)),
+      prev.map((row, i) =>
+        i === index ? { ...row, ingredients: row.ingredients.filter((r) => !(r.ingredient_id === ingredientId && r.servingVariantIndex === servingVariantIndex)) } : row,
+      ),
     );
   }
 
@@ -1299,7 +1707,13 @@ function DishForm({
       price: priceValue,
       photo_urls: photoUrls,
       feedstars_eligible: feedstarsEligible,
-      discount_percent: discountValue,
+      // Mode-exclusive (2026-10-01): only the active mode's field is ever
+      // sent as non-default — a percent-mode dish always saves with
+      // discount_fixed_price null, a fixed_price-mode dish always saves with
+      // discount_percent 0, so the two can never disagree in storage.
+      discount_mode: discountMode,
+      discount_percent: discountMode === 'percent' ? discountValue : 0,
+      discount_fixed_price: discountMode === 'fixed_price' ? discountFixedPriceValue : null,
       prep_time_minutes: prepTimeValue,
     };
 
@@ -1351,7 +1765,12 @@ function DishForm({
       if (!s.id) continue;
       const { error: updateError } = await supabase
         .from('dish_size_options')
-        .update({ name: s.name.trim(), price: Number(s.price), sort_order: i })
+        .update({
+          name: s.name.trim(),
+          price: Number(s.price),
+          sort_order: i,
+          discount_fixed_price: s.discountFixedPrice.trim() === '' ? null : Number(s.discountFixedPrice),
+        })
         .eq('id', s.id);
       if (updateError) {
         setSaving(false);
@@ -1370,7 +1789,13 @@ function DishForm({
         .insert(
           newSizeOptionPositions.map((i) => {
             const s = effectiveSizeOptions[i]!;
-            return { dish_id: savedDish.id, name: s.name.trim(), price: Number(s.price), sort_order: i };
+            return {
+              dish_id: savedDish.id,
+              name: s.name.trim(),
+              price: Number(s.price),
+              sort_order: i,
+              discount_fixed_price: s.discountFixedPrice.trim() === '' ? null : Number(s.discountFixedPrice),
+            };
           }),
         )
         .select();
@@ -1412,9 +1837,10 @@ function DishForm({
       return;
     }
 
-    // Add-ons and doneness levels: both are dish_modifier_groups rows under
-    // a fixed name (see ADDON_GROUP_NAME/DONENESS_GROUP_NAME) — the same
-    // generic mechanism the mobile ordering flow already reads from.
+    // Add-ons, drink add-ons, and doneness levels: all three are
+    // dish_modifier_groups rows under a fixed name (see ADDON_GROUP_NAME/
+    // DRINK_ADDON_GROUP_NAME/DONENESS_GROUP_NAME) — the same generic
+    // mechanism the mobile ordering flow already reads from.
     // Reconciled in place by id (see saveModifierGroup below), not a
     // delete-then-recreate replace.
     const addonsError = await saveModifierGroup(
@@ -1431,6 +1857,22 @@ function DishForm({
     if (addonsError) {
       setSaving(false);
       setError(addonsError);
+      return;
+    }
+    const drinkAddonsError = await saveModifierGroup(
+      savedDish.id,
+      DRINK_ADDON_GROUP_NAME,
+      drinkAddonGroupId,
+      existingDrinkAddonOptionIds,
+      drinkAddonsEnabled,
+      drinkAddonOptions,
+      drinkAddonSelectionType,
+      false,
+      true,
+    );
+    if (drinkAddonsError) {
+      setSaving(false);
+      setError(drinkAddonsError);
       return;
     }
     const donenessError = await saveModifierGroup(
@@ -1551,6 +1993,55 @@ function DishForm({
         optionId = newOption.id;
       }
 
+      // Serving variants (bottle/draft+size, 2026-09-29) — soft-deleted via
+      // is_active, mirroring dish_size_options exactly: order_item_modifiers.
+      // serving_variant_id references a variant row with no ON DELETE clause
+      // once actually ordered. Runs before the ingredient links below so a
+      // brand-new variant's real id exists in time to resolve each
+      // ingredient row's local servingVariantIndex against — same ordering
+      // reason dish size options are saved before dishIngredients.
+      const effectiveVariants = row.servingVariantsEnabled ? row.servingVariants : [];
+      const keptVariantIds = new Set(effectiveVariants.filter((v) => v.id).map((v) => v.id));
+      const existingVariantIds = existingServingVariantIdsByOptionId.get(optionId) ?? new Set<string>();
+      const removedVariantIds = Array.from(existingVariantIds).filter((id) => !keptVariantIds.has(id));
+      if (removedVariantIds.length > 0) {
+        const { error: deactivateVariantsError } = await supabase.from('modifier_option_serving_variants').update({ is_active: false }).in('id', removedVariantIds);
+        if (deactivateVariantsError) return deactivateVariantsError.message;
+        await supabase.from('modifier_option_ingredients').delete().in('serving_variant_id', removedVariantIds);
+      }
+      const savedVariantIds: (string | undefined)[] = effectiveVariants.map((v) => v.id);
+      for (let vi = 0; vi < effectiveVariants.length; vi++) {
+        const v = effectiveVariants[vi]!;
+        if (!v.id) continue;
+        const { error: updateVariantError } = await supabase
+          .from('modifier_option_serving_variants')
+          .update({ container_type: v.containerType, name: v.name.trim(), price_delta: v.price.trim() !== '' ? Number(v.price) : 0, sort_order: vi })
+          .eq('id', v.id);
+        if (updateVariantError) return updateVariantError.message;
+      }
+      const newVariantPositions = effectiveVariants.reduce<number[]>((acc, v, vi) => (v.id ? acc : [...acc, vi]), []);
+      if (newVariantPositions.length > 0) {
+        const { data: insertedVariants, error: insertVariantsError } = await supabase
+          .from('modifier_option_serving_variants')
+          .insert(
+            newVariantPositions.map((vi) => {
+              const v = effectiveVariants[vi]!;
+              return {
+                modifier_option_id: optionId,
+                container_type: v.containerType,
+                name: v.name.trim(),
+                price_delta: v.price.trim() !== '' ? Number(v.price) : 0,
+                sort_order: vi,
+              };
+            }),
+          )
+          .select();
+        if (insertVariantsError || !insertedVariants) return insertVariantsError?.message ?? t('genericError');
+        newVariantPositions.forEach((position, j) => {
+          savedVariantIds[position] = insertedVariants[j]?.id;
+        });
+      }
+
       // Ingredient links per option: still a plain full replace — nothing
       // references a modifier_option_ingredients row by id (only cascading
       // FKs both directions), unlike the option row itself.
@@ -1564,6 +2055,7 @@ function DishForm({
             ingredient_id: r.ingredient_id,
             quantity_required: Number(r.quantity_required),
             unit_id: r.unit_id ?? null,
+            serving_variant_id: r.servingVariantIndex !== undefined ? (savedVariantIds[r.servingVariantIndex] ?? null) : null,
           })),
         );
         if (ingredientLinkError) return ingredientLinkError.message;
@@ -1635,23 +2127,70 @@ function DishForm({
       </label>
       <div className="mb-3">
         <label className="mb-1 block text-sm font-semibold text-ink">{t('dishDiscountLabel')}</label>
-        <div className="relative w-24">
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="1"
-            value={discountPercent}
-            onChange={(e) => setDiscountPercent(e.target.value)}
-            placeholder="0"
-            className="w-full rounded border border-border py-1.5 ps-2 pe-6 text-sm"
-          />
-          <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-sm text-muted-foreground">%</span>
+        {/* Mode toggle (2026-10-01, per explicit request) — same segmented-
+            button pattern as AddonSelectionTypeToggle above. Fixed-price mode
+            is disabled (not hidden — staff should see why) once the dish has
+            size options, since one fixed price can't apply to several
+            differently-priced sizes. */}
+        <div className="mb-2 inline-flex shrink-0 rounded border border-border p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setDiscountMode('percent')}
+            className={`rounded px-2.5 py-1 font-medium transition-colors ${discountMode === 'percent' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-accent-soft'}`}
+          >
+            {t('dishDiscountModePercent')}
+          </button>
+          <button
+            type="button"
+            disabled={effectiveSizeOptions.length > 0}
+            onClick={() => setDiscountMode('fixed_price')}
+            className={`rounded px-2.5 py-1 font-medium transition-colors ${
+              discountMode === 'fixed_price'
+                ? 'bg-accent text-white'
+                : effectiveSizeOptions.length > 0
+                  ? 'cursor-not-allowed text-muted-foreground opacity-50'
+                  : 'text-muted-foreground hover:bg-accent-soft'
+            }`}
+          >
+            {t('dishDiscountModeFixedPrice')}
+          </button>
         </div>
+        {discountMode === 'percent' ? (
+          <div className="relative w-24">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              value={discountPercent}
+              onChange={(e) => setDiscountPercent(e.target.value)}
+              placeholder="0"
+              className="w-full rounded border border-border py-1.5 ps-2 pe-6 text-sm"
+            />
+            <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-sm text-muted-foreground">%</span>
+          </div>
+        ) : (
+          <div className="relative w-24">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={discountFixedPrice}
+              onChange={(e) => setDiscountFixedPrice(e.target.value)}
+              placeholder="0"
+              className="w-full rounded border border-border py-1.5 ps-2 pe-6 text-sm"
+            />
+            <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-sm text-muted-foreground">₪</span>
+          </div>
+        )}
         <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
           <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600" />
-          <span>{t('dishDiscountHint')}</span>
+          <span>{t(discountMode === 'percent' ? 'dishDiscountHint' : 'dishDiscountFixedPriceHint')}</span>
         </p>
+        {fixedPriceModeBlockedBySizes && <p className="mt-1 text-[11px] font-medium text-danger">{t('dishDiscountFixedPriceBlockedBySizesError')}</p>}
+        {discountMode === 'fixed_price' && !fixedPriceModeBlockedBySizes && discountFixedPrice.trim() !== '' && !discountFixedPriceValid && (
+          <p className="mt-1 text-[11px] font-medium text-danger">{t('dishDiscountFixedPriceRangeError')}</p>
+        )}
       </div>
       <div className="mb-3">
         <label className="mb-1 block text-sm font-semibold text-ink">{t('dishPrepTimeLabel')}</label>
@@ -1744,6 +2283,7 @@ function DishForm({
                 <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
                   <span className="w-32 shrink-0">{t('dishSizeOptionNameColumnLabel')}</span>
                   <span className="w-20 shrink-0">{t('dishSizeOptionPriceColumnLabel')}</span>
+                  <span className="w-24 shrink-0">{t('dishSizeOptionDiscountColumnLabel')}</span>
                   <span className="h-6 w-6 shrink-0" />
                 </div>
                 {sizeOptions.map((row, index) => (
@@ -1767,6 +2307,24 @@ function DishForm({
                         className="w-full rounded border border-border py-1.5 ps-5 pe-1 text-xs"
                       />
                     </div>
+                    {/* Per-size fixed-price discount override (2026-10-01,
+                        per explicit request) — optional; empty means this
+                        size just follows the dish's own discount_percent
+                        (unchanged, uniform-across-sizes behavior). */}
+                    <Tooltip content={t('dishSizeOptionDiscountHint')}>
+                      <div className="relative w-24 shrink-0">
+                        <span className="pointer-events-none absolute inset-y-0 start-2 flex items-center text-xs text-muted-foreground">₪</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={row.discountFixedPrice}
+                          onChange={(e) => updateSizeOption(index, { discountFixedPrice: e.target.value })}
+                          placeholder={t('dishSizeOptionDiscountPlaceholder')}
+                          className="w-full rounded border border-border py-1.5 ps-5 pe-1 text-xs"
+                        />
+                      </div>
+                    </Tooltip>
                     <Tooltip content={t('dishSizeOptionRemove')}>
                       <button
                         type="button"
@@ -1780,6 +2338,12 @@ function DishForm({
                   </div>
                 ))}
               </div>
+            )}
+            {!sizeOptionsDiscountValid && (
+              <p className="mb-2 flex items-start gap-1 text-[11px] text-danger">
+                <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                <span>{t('dishSizeOptionDiscountRangeError').replace('{sizes}', sizeOptionsInvalidDiscountNames.join(', '))}</span>
+              </p>
             )}
             <button
               type="button"
@@ -1819,6 +2383,50 @@ function DishForm({
             </p>
           )
         }
+      />
+
+      <ModifierSection
+        enabled={drinkAddonsEnabled}
+        onToggle={setDrinkAddonsEnabled}
+        label={t('dishDrinkAddonsLabel')}
+        hint={t('dishDrinkAddonsHint')}
+        namePlaceholder={t('dishDrinkAddonNamePlaceholder')}
+        pricePlaceholder={t('dishDrinkAddonPricePlaceholder')}
+        addLabel={t('dishDrinkAddonAdd')}
+        removeLabel={t('dishDrinkAddonRemove')}
+        includePrice
+        ingredients={ingredients}
+        ingredientUnitsMap={ingredientUnitsMap}
+        rows={drinkAddonOptions}
+        onAdd={() => addModifierRow(setDrinkAddonOptions)}
+        onUpdate={(index, patch) => updateModifierRow(setDrinkAddonOptions, index, patch)}
+        onRemove={(index) => removeModifierRow(setDrinkAddonOptions, index)}
+        onPhotoChange={(index, file) => setModifierRowPhoto(setDrinkAddonOptions, index, file)}
+        onAddIngredient={(index, ingredientId, quantity, unitId, servingVariantIndex) =>
+          addModifierRowIngredient(setDrinkAddonOptions, index, ingredientId, quantity, unitId, servingVariantIndex)
+        }
+        extraHeaderContent={<AddonSelectionTypeToggle value={drinkAddonSelectionType} onChange={setDrinkAddonSelectionType} />}
+        errorContent={
+          <>
+            {drinkAddonsMissingIngredientNames.length > 0 && (
+              <p className="mb-2 flex items-start gap-1 text-[11px] text-danger">
+                <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                <span>{t('dishAddonMissingIngredientError').replace('{addons}', drinkAddonsMissingIngredientNames.join(', '))}</span>
+              </p>
+            )}
+            {drinkAddonsMissingVariantIngredientLabels.length > 0 && (
+              <p className="mb-2 flex items-start gap-1 text-[11px] text-danger">
+                <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                <span>{t('dishServingVariantMissingIngredientError').replace('{variants}', drinkAddonsMissingVariantIngredientLabels.join(', '))}</span>
+              </p>
+            )}
+          </>
+        }
+        enableServingVariants
+        onToggleServingVariants={(index, enabled) => setServingVariantsEnabled(setDrinkAddonOptions, index, enabled)}
+        onAddServingVariant={(index, containerType) => addServingVariantRow(setDrinkAddonOptions, index, containerType)}
+        onUpdateServingVariant={(index, variantIndex, patch) => updateServingVariantRow(setDrinkAddonOptions, index, variantIndex, patch)}
+        onRemoveServingVariant={(index, variantIndex) => removeServingVariantRow(setDrinkAddonOptions, index, variantIndex)}
       />
 
       <ModifierSection
@@ -1957,16 +2565,26 @@ function DishForm({
               <span>{t('dishIngredientRemovedCriticalWarning').replace('{ingredients}', removedCriticalIngredientNames.join(', '))}</span>
             </p>
           )}
-          {noCriticalIngredientMarked && (
-            <p className="mt-1 flex items-start gap-1 text-[11px] text-danger">
-              <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
-              <span>{t('dishNoCriticalIngredientError')}</span>
-            </p>
-          )}
         </div>
       )}
 
-      {(dishIngredients.length > 0 || addonOptions.some((row) => row.ingredients.length > 0)) && (
+      {/* Rendered unconditionally (2026-09-29, real gap found: a brand-new
+          dish with zero ingredients — and this restaurant's inventory list
+          itself possibly empty too — saved with no error shown at all,
+          because this used to live inside the `ingredients.length > 0`
+          block above and simply never rendered when that block was hidden,
+          even though canSave was already correctly blocking the save). This
+          is the one save-blocking condition here that can be true even when
+          the restaurant has no ingredients defined anywhere yet, so it can't
+          depend on that block being visible. */}
+      {noCriticalIngredientMarked && (
+        <p className="mb-3 -mt-2 flex items-start gap-1 text-[11px] text-danger">
+          <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+          <span>{t('dishNoCriticalIngredientError')}</span>
+        </p>
+      )}
+
+      {(dishIngredients.length > 0 || addonOptions.some((row) => row.ingredients.length > 0) || drinkAddonOptions.some((row) => row.ingredients.length > 0)) && (
         <div className="mb-3">
           <p className="mb-1.5 text-xs font-medium text-ink">{t('dishIngredientTagsConsolidatedLabel')}</p>
           <div className="flex flex-wrap gap-1.5">
@@ -2038,6 +2656,37 @@ function DishForm({
                     <button
                       type="button"
                       onClick={() => removeModifierRowIngredient(setAddonOptions, optIndex, r.ingredient_id)}
+                      aria-label={t('dishSizeOptionRemove')}
+                      className="flex h-4 w-4 items-center justify-center rounded-full bg-black/10 hover:bg-black/20"
+                    >
+                      <CloseIcon className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                );
+              }),
+            )}
+            {drinkAddonOptions.flatMap((row, optIndex) =>
+              row.ingredients.map((r) => {
+                const ing = ingredients.find((i) => i.id === r.ingredient_id);
+                const altUnit = r.unit_id ? (ingredientUnitsMap.get(r.ingredient_id) ?? []).find((u) => u.id === r.unit_id) : undefined;
+                const status = ing ? ingredientStockStatus(ing) : null;
+                const variant = r.servingVariantIndex !== undefined ? row.servingVariants[r.servingVariantIndex] : undefined;
+                return (
+                  <span
+                    key={`drink-addon-${optIndex}-${r.ingredient_id}-${r.servingVariantIndex ?? 'all'}`}
+                    className={`flex items-center gap-1.5 rounded-full py-1 ps-2.5 pe-1.5 text-[11px] font-medium ${status ? status.cls : 'bg-accent-soft text-accent'}`}
+                  >
+                    {row.name.trim() || t('dishDrinkAddonNamePlaceholder')}
+                    {variant &&
+                      ` (${t(variant.containerType === 'bottle' ? 'dishServingVariantBottleLabel' : 'dishServingVariantDraftLabel')} - ${variant.name.trim() || t('dishServingVariantNamePlaceholder')})`}
+                    : {ing?.name ?? '?'} — {r.quantity_required} {altUnit?.name ?? ing?.unit}
+                    {ing &&
+                      ` (${t('dishIngredientStockDeductionLabel')}: ${formatQuantity(
+                        requiredQuantityInStockUnit(Number(r.quantity_required), r.unit_id ?? '', ingredientUnitsMap.get(r.ingredient_id) ?? []),
+                      )} ${ing.unit})`}
+                    <button
+                      type="button"
+                      onClick={() => removeModifierRowIngredient(setDrinkAddonOptions, optIndex, r.ingredient_id, r.servingVariantIndex)}
                       aria-label={t('dishSizeOptionRemove')}
                       className="flex h-4 w-4 items-center justify-center rounded-full bg-black/10 hover:bg-black/20"
                     >

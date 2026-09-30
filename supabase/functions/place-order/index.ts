@@ -13,10 +13,17 @@
 // { "session_id": "uuid", "participant_id": "uuid",
 //   "items": [{ "dish_id": "uuid", "quantity": 2,
 //               "dish_size_option_id": "uuid | null",
-//               "modifier_option_ids": ["uuid", ...] }] }
+//               "modifier_selections": [{ "modifier_option_id": "uuid",
+//                                          "serving_variant_id": "uuid | null" }] }] }
 // Supersedes the API Specification's earlier free-form jsonb `modifiers`
 // placeholder (marked "טרם ממוגרר" in the doc) now that dish_modifier_groups/
 // dish_modifier_options/order_item_modifiers actually exist (2026-09-12).
+// modifier_option_ids (a bare string array) was replaced by
+// modifier_selections (2026-09-29) to carry an optional serving_variant_id
+// per selected option — a drink add-on can offer a bottle/draft(+size)
+// choice (modifier_option_serving_variants), and the chosen one's own price
+// is looked up server-side inside place_order_transaction, never trusted
+// from the client, same as every other price in this function.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.4";
 
@@ -37,11 +44,16 @@ function errorResponse(code: string, message: string, status: number) {
   return jsonResponse({ error: { code, message } }, status);
 }
 
+interface ModifierSelection {
+  modifier_option_id: string;
+  serving_variant_id: string | null;
+}
+
 interface RequestItem {
   dish_id: string;
   quantity: number;
   dish_size_option_id: string | null;
-  modifier_option_ids: string[];
+  modifier_selections: ModifierSelection[];
 }
 
 Deno.serve(async (req) => {
@@ -106,15 +118,30 @@ Deno.serve(async (req) => {
     if (sizeOptionId !== undefined && sizeOptionId !== null && typeof sizeOptionId !== "string") {
       return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: dish_size_option_id", 400);
     }
-    const modifierIds = item.modifier_option_ids;
-    if (modifierIds !== undefined && !Array.isArray(modifierIds)) {
-      return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: modifier_option_ids", 400);
+    const rawSelections = item.modifier_selections;
+    if (rawSelections !== undefined && !Array.isArray(rawSelections)) {
+      return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: modifier_selections", 400);
+    }
+    const modifierSelections: ModifierSelection[] = [];
+    for (const rawSelection of (rawSelections as unknown[] | undefined) ?? []) {
+      const selection = rawSelection as Record<string, unknown>;
+      if (typeof selection?.modifier_option_id !== "string" || selection.modifier_option_id === "") {
+        return errorResponse("MISSING_REQUIRED_FIELD", "Each modifier selection requires a modifier_option_id", 400);
+      }
+      const variantId = selection.serving_variant_id;
+      if (variantId !== undefined && variantId !== null && typeof variantId !== "string") {
+        return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: serving_variant_id", 400);
+      }
+      modifierSelections.push({
+        modifier_option_id: selection.modifier_option_id,
+        serving_variant_id: (variantId as string | null) ?? null,
+      });
     }
     items.push({
       dish_id: item.dish_id,
       quantity,
       dish_size_option_id: (sizeOptionId as string | null) ?? null,
-      modifier_option_ids: (modifierIds as string[] | undefined) ?? [],
+      modifier_selections: modifierSelections,
     });
   }
 
@@ -149,7 +176,7 @@ Deno.serve(async (req) => {
     const optionToGroup = new Map((options ?? []).map((o) => [o.id, o.group_id]));
 
     for (const group of groups) {
-      const selectedInGroup = item.modifier_option_ids.filter((id) => optionToGroup.get(id) === group.id);
+      const selectedInGroup = item.modifier_selections.filter((s) => optionToGroup.get(s.modifier_option_id) === group.id);
       if (selectedInGroup.length === 0) {
         return errorResponse("MISSING_REQUIRED_MODIFIER", `Dish ${item.dish_id} requires a selection for a required modifier group`, 422);
       }
@@ -164,7 +191,7 @@ Deno.serve(async (req) => {
         dish_id: i.dish_id,
         quantity: i.quantity,
         dish_size_option_id: i.dish_size_option_id,
-        modifier_option_ids: i.modifier_option_ids,
+        modifier_selections: i.modifier_selections,
       })),
     })
     .single();

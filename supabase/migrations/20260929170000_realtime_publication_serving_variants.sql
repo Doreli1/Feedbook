@@ -1,0 +1,13 @@
+-- Fix "serving variant updates only show after a manual app refresh" on
+-- mobile (2026-09-29) — the exact same bug class already hit twice this
+-- project (20260919125443_realtime_publication_tables.sql for notifications,
+-- 20260924163239_realtime_publication_menu_tables.sql for
+-- menu_categories/dishes/dish_size_options/dish_modifier_groups/
+-- dish_modifier_options): a table must be explicitly added to the
+-- supabase_realtime publication for postgres_changes to fire at all, fully
+-- independent of RLS — modifier_option_serving_variants' own public-read
+-- policy was correct, the table was just never published for logical
+-- replication in the first place, so useMenuData's postgres_changes
+-- subscription on it could never receive anything no matter how healthy the
+-- connection was.
+alter publication supabase_realtime add table modifier_option_serving_variants;

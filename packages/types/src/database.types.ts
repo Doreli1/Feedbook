@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -266,6 +266,7 @@ export type Database = {
       }
       dish_size_options: {
         Row: {
+          discount_fixed_price: number | null
           dish_id: string
           id: string
           is_active: boolean
@@ -274,6 +275,7 @@ export type Database = {
           sort_order: number
         }
         Insert: {
+          discount_fixed_price?: number | null
           dish_id: string
           id?: string
           is_active?: boolean
@@ -282,6 +284,7 @@ export type Database = {
           sort_order?: number
         }
         Update: {
+          discount_fixed_price?: number | null
           dish_id?: string
           id?: string
           is_active?: boolean
@@ -299,12 +302,47 @@ export type Database = {
           },
         ]
       }
+      dish_views: {
+        Row: {
+          dish_id: string
+          participant_id: string
+          viewed_at: string
+        }
+        Insert: {
+          dish_id: string
+          participant_id: string
+          viewed_at?: string
+        }
+        Update: {
+          dish_id?: string
+          participant_id?: string
+          viewed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dish_views_dish_id_fkey"
+            columns: ["dish_id"]
+            isOneToOne: false
+            referencedRelation: "dishes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dish_views_participant_id_fkey"
+            columns: ["participant_id"]
+            isOneToOne: false
+            referencedRelation: "session_participants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dishes: {
         Row: {
           allergens: string[]
           category_id: string
           created_at: string
           description: string | null
+          discount_fixed_price: number | null
+          discount_mode: string
           discount_percent: number
           feedstars_eligible: boolean
           guest_rating_score: number | null
@@ -326,6 +364,8 @@ export type Database = {
           category_id: string
           created_at?: string
           description?: string | null
+          discount_fixed_price?: number | null
+          discount_mode?: string
           discount_percent?: number
           feedstars_eligible?: boolean
           guest_rating_score?: number | null
@@ -347,6 +387,8 @@ export type Database = {
           category_id?: string
           created_at?: string
           description?: string | null
+          discount_fixed_price?: number | null
+          discount_mode?: string
           discount_percent?: number
           feedstars_eligible?: boolean
           guest_rating_score?: number | null
@@ -578,21 +620,27 @@ export type Database = {
       }
       modifier_option_ingredients: {
         Row: {
+          id: string
           ingredient_id: string
           modifier_option_id: string
           quantity_required: number
+          serving_variant_id: string | null
           unit_id: string | null
         }
         Insert: {
+          id?: string
           ingredient_id: string
           modifier_option_id: string
           quantity_required: number
+          serving_variant_id?: string | null
           unit_id?: string | null
         }
         Update: {
+          id?: string
           ingredient_id?: string
           modifier_option_id?: string
           quantity_required?: number
+          serving_variant_id?: string | null
           unit_id?: string | null
         }
         Relationships: [
@@ -611,10 +659,55 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "modifier_option_ingredients_serving_variant_id_fkey"
+            columns: ["serving_variant_id"]
+            isOneToOne: false
+            referencedRelation: "modifier_option_serving_variants"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "modifier_option_ingredients_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "ingredient_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modifier_option_serving_variants: {
+        Row: {
+          container_type: string
+          id: string
+          is_active: boolean
+          modifier_option_id: string
+          name: string
+          price_delta: number
+          sort_order: number
+        }
+        Insert: {
+          container_type?: string
+          id?: string
+          is_active?: boolean
+          modifier_option_id: string
+          name: string
+          price_delta?: number
+          sort_order?: number
+        }
+        Update: {
+          container_type?: string
+          id?: string
+          is_active?: boolean
+          modifier_option_id?: string
+          name?: string
+          price_delta?: number
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modifier_option_serving_variants_modifier_option_id_fkey"
+            columns: ["modifier_option_id"]
+            isOneToOne: false
+            referencedRelation: "dish_modifier_options"
             referencedColumns: ["id"]
           },
         ]
@@ -797,16 +890,19 @@ export type Database = {
           modifier_option_id: string
           order_item_id: string
           price_delta_at_order: number
+          serving_variant_id: string | null
         }
         Insert: {
           modifier_option_id: string
           order_item_id: string
           price_delta_at_order: number
+          serving_variant_id?: string | null
         }
         Update: {
           modifier_option_id?: string
           order_item_id?: string
           price_delta_at_order?: number
+          serving_variant_id?: string | null
         }
         Relationships: [
           {
@@ -821,6 +917,13 @@ export type Database = {
             columns: ["order_item_id"]
             isOneToOne: false
             referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_item_modifiers_serving_variant_id_fkey"
+            columns: ["serving_variant_id"]
+            isOneToOne: false
+            referencedRelation: "modifier_option_serving_variants"
             referencedColumns: ["id"]
           },
         ]
@@ -1626,6 +1729,13 @@ export type Database = {
           dish_id: string
           last_ordered_at: string
           orders_today: number
+        }[]
+      }
+      get_dish_view_stats: {
+        Args: { p_restaurant_id: string }
+        Returns: {
+          dish_id: string
+          views_today: number
         }[]
       }
       get_reviewer_public_info: {

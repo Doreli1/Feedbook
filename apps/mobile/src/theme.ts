@@ -27,6 +27,15 @@ export const colors = {
   darkRed: '#8B1E1E', // high-demand / sold-out filled badges (white text on top)
   brightRed: '#E11D2A', // "כמעט אזל" text-only label (2026-09-27) — darkRed read as too muted with no fill behind it, this one's meant to pop on its own
   valueOrange: '#EA580C', // "משתלם במיוחד" badge frame, per the 7.1.1 mockup
+  // Crossed-out original price (2026-10-01, per explicit request) — a
+  // separate token from `danger` (#DC2626) on purpose: that one is reserved
+  // for sign-out/destructive actions only (spec rule #5 above), and this is
+  // neither.
+  originalPriceRed: '#B91C1C',
+  // "חסכו X%" discount-saved badge background (2026-10-01 follow-up, per
+  // explicit request — "ירוק כהה יותר") — darker than `success` (#22C55E),
+  // which stays as-is for its own existing uses (available table).
+  discountGreenDark: '#15803D',
 } as const;
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
