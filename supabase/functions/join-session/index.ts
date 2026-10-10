@@ -182,8 +182,31 @@ Deno.serve(async (req) => {
       })
       .select("id, sub_account_number, review_verification_code, is_host, joined_at")
       .single();
-    if (!error) participant = data;
-    else if (!error.message.includes("duplicate")) break;
+    if (!error) {
+      participant = data;
+      break;
+    }
+    if (error.message.includes("session_id_user_id")) {
+      // Lost the race to a concurrent join-session call for the same
+      // (session, user) — the idempotency check above ran before either
+      // insert committed (real bug found 2026-10-10: a double-tap on
+      // add-participants.tsx's "המשך" button with no disabled state hit
+      // this exact window). The UNIQUE constraint on
+      // (session_id, user_id) is what actually stops the duplicate row;
+      // fall back to the same existing-row lookup the check above does, so
+      // this call still returns the real participant instead of a 500.
+      const { data: existing } = await admin
+        .from("session_participants")
+        .select("id, sub_account_number, review_verification_code, is_host, joined_at")
+        .eq("session_id", sessionId)
+        .eq("user_id", callerId)
+        .order("joined_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      participant = existing ?? null;
+      break;
+    }
+    if (!error.message.includes("duplicate")) break;
   }
 
   if (!participant) {

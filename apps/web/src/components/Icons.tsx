@@ -33,6 +33,14 @@ export function QrCodeIcon({ className = 'h-4 w-4' }: { className?: string }) {
   );
 }
 
+export function ChevronDownIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M5 7.5 10 13l5-5.5" />
+    </svg>
+  );
+}
+
 export function PencilIcon({ className = 'h-4 w-4' }: { className?: string }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>

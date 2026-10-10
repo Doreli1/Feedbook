@@ -2,12 +2,14 @@
 
 # apps/mobile — Feedbook (diner app)
 
-React Native app: QR entry, table session, ordering, split payment, reviews, Genius
-tier. Screen inventory and flows: `../../../2.Feedbook_App_Flow v2.docx` Part A (§2).
-Feature specs: `../../../1.PRD_restaurant_system_v5.docx` §5.2.
+React Native app: QR entry, table session, ordering, split payment, reviews, Feedstars
+tier (renamed from "Genius" 2026-09-01, see PRD §13.3). Screen inventory and flows:
+`../../../2.Feedbook_App_Flow v8.docx` Part A (§2). Feature specs:
+`../../../1.PRD_restaurant_system_v12.docx` §5.2.
 
 Stage 4 (mobile core) build started 2026-09-07, Week 1 of the 4-week plan in
-`Feedbook_UI_Milestone4_Mobile_Spec.docx` — see that doc for the full M-01..M-10 screen
+`../../../פיתוחים/מסכי אפליקציה UI/Feedbook_UI_Milestone4_Mobile_Spec.docx` — see that
+doc for the full M-01..M-10 screen
 map, copy, and week-by-week order; don't re-derive it from scratch. Real screens so far:
 `app/index.tsx` (M-01 Splash, real), `app/sign-in.tsx` / `app/profile.tsx` (placeholder
 stubs only — real M-02/M-03/M-04 land in Weeks 2–3). Shared components already real:

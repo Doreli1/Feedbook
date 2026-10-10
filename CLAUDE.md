@@ -2,7 +2,7 @@
 
 Feedbook is a two-sided platform for the restaurant industry: a Web Admin app for
 restaurant owners/staff, and a mobile app for diners (QR-based table entry, ordering,
-split payment, reviews). Vision, features, and roadmap: `../1.PRD_restaurant_system_v5.docx`.
+split payment, reviews). Vision, features, and roadmap: `../1.PRD_restaurant_system_v12.docx`.
 
 ## Repo status (updated 2026-08-31)
 
@@ -10,11 +10,17 @@ Monorepo is scaffolded and working: `apps/web` (React + Vite + Tailwind), `apps/
 (Expo + NativeWind), `packages/types` (Supabase-generated DB types — Zod validation
 schemas not yet added, see "Known gaps" below). CI is green on GitHub Actions
 (`.github/workflows/ci.yml`: typecheck, lint, build, `pnpm audit`). The Supabase schema
-is fully built and validated — 26 tables, 45+ RLS policies, 3 PL/pgSQL functions — both
-locally (Docker) and on the real Frankfurt Cloud project. No Edge Functions exist yet.
+is fully built and validated — both locally (Docker) and on the real Frankfurt Cloud
+project. No Edge Functions exist yet.
 No real UI screens exist yet — both apps still show placeholder text. Auth + MFA for
 Web Admin staff is the next blocking piece before real UI work starts (Implementation
 Plan §5, Stage 1 gate).
+
+> **Note (2026-10-08):** the line above ("no real UI, no Edge Functions") and the dates
+> in this file are stale — substantial real implementation has landed since 2026-08-31
+> (orders/kitchen tracking, payments, reviews, and more — see Implementation Plan for
+> actual stage-completion status). Only the document path references below were
+> refreshed in this pass; a full content rewrite of this file is still pending.
 
 ## Tech stack (facts you can't guess from the code)
 
@@ -27,7 +33,7 @@ Plan §5, Stage 1 gate).
 | Critical business logic | PL/pgSQL functions (JIT stock deduction, bill split) — never reimplement these in app code |
 | Payments | Tranzila, Hosted Fields — card data never touches our servers |
 | Hosting | Vercel (Web — project `feedbook-web`, root `apps/web`, deployed at https://feedbook-web.vercel.app), EAS (Mobile, not yet configured), Supabase Cloud — region **Frankfurt (EU)**, not negotiable |
-| Full rationale | `../3.Feedbook_Tech_Stack_Document_v4.docx` |
+| Full rationale | `../3.Feedbook_Tech_Stack_Document_v5.docx` |
 
 ## Actual directory layout
 
@@ -45,13 +51,15 @@ packages/config/        Empty placeholder — shared eslint/tailwind config, not
 
 | Need | Source |
 |---|---|
-| Full feature list, MVP scope, out-of-scope | `../1.PRD_restaurant_system_v5.docx` §5, §9 |
-| Screen-by-screen flows, wireframes, sitemap | `../2.Feedbook_App_Flow v2.docx` |
-| Every table, column, constraint, RLS pattern | `../5.Feedbook_Backend_Schema.docx` |
-| Visual ERDs + relationship cardinality | `../5.1.Feedbook_ER_Diagrams.docx` |
-| Every API endpoint, request/response shape | `../7.Feedbook_API_Specification_v1.docx` |
-| Voice, tone, terminology, moderation rules | `../4.Feedbook_Content_Guidelines v2.docx` |
-| Build order, security gates, test types per phase | `../6.Feedbook_Implementation_Plan.docx` |
+| Full feature list, MVP scope, out-of-scope | `../1.PRD_restaurant_system_v12.docx` §5, §9 |
+| Screen-by-screen flows, wireframes, sitemap | `../2.Feedbook_App_Flow v8.docx` |
+| Every table, column, constraint, RLS pattern | `../5.Feedbook_Backend_Schema vr8.docx` |
+| Visual ERDs + relationship cardinality | `../5.1.Feedbook_ER_Diagrams v2.docx` |
+| Every API endpoint, request/response shape | `../7.Feedbook_API_Specification_v7.docx` |
+| Voice, tone, terminology, moderation rules | `../4.Feedbook_Content_Guidelines v3.docx` |
+| Build order, security gates, test types per phase | `../6.Feedbook_Implementation_Plan v5.docx` |
+| Payments/payout settlement model | `../9.Feedbook_Settlement_Architecture vr5.docx` |
+| Known gaps / open decisions log | `../10.Feedbook_Gap_Register v4.docx` |
 
 Read the relevant section before implementing a feature — don't guess field names or
 endpoint shapes; they're already fully specified.

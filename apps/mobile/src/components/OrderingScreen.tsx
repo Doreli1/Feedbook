@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Animated, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { AccountScreen } from './account/AccountScreen';
 import { BurgerSideMenuPanel } from './BurgerSideMenu';
-import { CallWaiterButton } from './CallWaiterButton';
+import { CallWaiterInlineTrigger } from './CallWaiterButton';
 import { MenuBrowser } from './menu/MenuBrowser';
 import { OrderTracker } from './orders/OrderTracker';
 import { OrderingHeader } from './OrderingHeader';
 import { OrderingTabBar, type OrderingTabKey } from './OrderingTabBar';
-import { useI18n } from '../lib/i18n';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
@@ -26,90 +26,9 @@ import { colors } from '../theme';
 // file's former comment, preserved below). Both only ever had one caller,
 // so the extra indirection no longer earned its keep once there was only
 // one screen.
-function StripCell({ label, value, icon }: { label: string; value: string; icon?: keyof typeof Ionicons.glyphMap }) {
-  return (
-    <View className="flex-1 items-center py-3">
-      <Text className="text-[11px] text-[#9CA3AF]" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center' }}>
-        {label}
-      </Text>
-      <View className="mt-1 flex-row items-center gap-1">
-        <Text className="text-base font-semibold text-[#1B2430]">{value}</Text>
-        {icon && <Ionicons name={icon} size={12} color="#9CA3AF" />}
-      </View>
-    </View>
-  );
-}
-
-function AccountTabBody() {
-  const { t } = useI18n();
-  const [infoOpen, setInfoOpen] = useState(false);
-  const tableNumber = useTableSessionStore((s) => s.tableNumber);
-  const sessionAccountNumber = useTableSessionStore((s) => s.sessionAccountNumber);
-  const subAccountNumber = useTableSessionStore((s) => s.subAccountNumber);
-  const reviewVerificationCode = useTableSessionStore((s) => s.reviewVerificationCode);
-
-  const infoRows: {
-    labelKey: 'accountStripTableLabel' | 'accountStripGeneralLabel' | 'personalAccountNumberLabel' | 'lockedReviewCodeLabel';
-    explanationKey: 'accountInfoTableExplanation' | 'accountInfoGeneralExplanation' | 'personalAccountNumberExplanation' | 'lockedReviewCodeExplanation';
-  }[] = [
-    { labelKey: 'accountStripTableLabel', explanationKey: 'accountInfoTableExplanation' },
-    { labelKey: 'accountStripGeneralLabel', explanationKey: 'accountInfoGeneralExplanation' },
-    { labelKey: 'personalAccountNumberLabel', explanationKey: 'personalAccountNumberExplanation' },
-    { labelKey: 'lockedReviewCodeLabel', explanationKey: 'lockedReviewCodeExplanation' },
-  ];
-
-  return (
-    <View className="flex-1 px-4 pt-5">
-      <View className="overflow-hidden rounded-xl bg-white" style={{ borderColor: colors.border, borderWidth: 1 }}>
-        <View className="flex-row items-center justify-end px-3 pt-2">
-          <Pressable
-            onPress={() => setInfoOpen(true)}
-            hitSlop={10}
-            className="h-6 w-6 items-center justify-center rounded-full"
-            style={{ backgroundColor: '#38BDF8' }}
-          >
-            <Ionicons name="information-outline" size={14} color="#FFFFFF" />
-          </Pressable>
-        </View>
-        <View className="flex-row items-stretch px-1 pb-3">
-          <StripCell label={t('accountStripTableLabel')} value={tableNumber ?? '—'} />
-          <View className="w-px" style={{ backgroundColor: colors.border }} />
-          <StripCell label={t('accountStripGeneralLabel')} value={sessionAccountNumber ?? '—'} />
-          <View className="w-px" style={{ backgroundColor: colors.border }} />
-          <StripCell label={t('accountStripPersonalLabel')} value={subAccountNumber ?? '—'} />
-          <View className="w-px" style={{ backgroundColor: colors.border }} />
-          <StripCell label={t('accountStripCodeLabel')} value={reviewVerificationCode ?? '—'} icon="lock-closed" />
-        </View>
-      </View>
-
-      <Text className="mt-6 text-center text-sm leading-6 text-[#6E6A61]">{t('accountComingSoon')}</Text>
-
-      <Modal visible={infoOpen} transparent animationType="fade" onRequestClose={() => setInfoOpen(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <Text className="mb-4 text-lg font-bold text-[#1B2430]">{t('accountInfoModalTitle')}</Text>
-            {infoRows.map((row, i) => (
-              <View key={row.labelKey} className={i > 0 ? 'mt-3.5' : ''}>
-                <Text className="text-sm font-semibold text-[#1B2430]">{t(row.labelKey)}</Text>
-                <Text className="mt-0.5 text-xs leading-5 text-[#6E6A61]">{t(row.explanationKey)}</Text>
-              </View>
-            ))}
-            <Pressable
-              onPress={() => setInfoOpen(false)}
-              className="mt-5 items-center rounded-lg py-3"
-              style={{ backgroundColor: colors.royalBlue }}
-            >
-              <Text className="font-semibold text-white">{t('closeModal')}</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
-
 export function OrderingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const wrapperRef = useRef<View>(null);
   const [chromeBottom, setChromeBottom] = useState(0);
   const [activeTab, setActiveTab] = useState<OrderingTabKey>('menu');
@@ -177,11 +96,30 @@ export function OrderingScreen() {
       <Animated.View style={{ flex: 1, opacity: bodyOpacity }}>
         {activeTab === 'menu' && <MenuBrowser onOrderPlaced={() => selectTab('orders')} />}
         {activeTab === 'orders' && <OrderTracker focusRequest={orderFocus} onFocusHandled={() => setOrderFocus(null)} />}
-        {activeTab === 'account' && <AccountTabBody />}
+        {activeTab === 'account' && <AccountScreen />}
       </Animated.View>
 
       <BurgerSideMenuPanel topOffset={chromeBottom} />
-      <CallWaiterButton />
+
+      {/* Call-waiter trigger (2026-10-10, user request) — styled and placed
+          like AccountScreen's own embedded one (icon+label, no floating
+          pill), inside a real (not absolutely-positioned) bottom strip, so
+          every tab now gets the same treatment instead of a screen-wide
+          floating button. Account tab keeps its own version, built into its
+          bottom panel alongside the total/disclaimer/bill button, so it's
+          excluded here. Being a normal-flow sibling of the Animated.View
+          above (not absolute) means MenuBrowser's own cart bar — positioned
+          absolutely *within its own container* — automatically clears this
+          strip too: this strip's real height shrinks that container, so the
+          cart bar's `bottom: insets.bottom + 16` still resolves above this
+          strip, not overlapping it, with no manual coordination needed. */}
+      {activeTab !== 'account' && (
+        <View className="px-4 pt-3" style={{ backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }}>
+          <View className="flex-row justify-end">
+            <CallWaiterInlineTrigger />
+          </View>
+        </View>
+      )}
     </View>
   );
 }

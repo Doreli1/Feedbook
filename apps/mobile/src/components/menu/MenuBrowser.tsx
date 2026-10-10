@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Dimensions, Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import type { GestureResponderEvent } from 'react-native';
 import { useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -142,6 +143,45 @@ function useRestaurantVatRate(restaurantId: string | null) {
   }, [restaurantId]);
 
   return vatRatePercent;
+}
+
+// Which dishes/categories THIS diner has already liked (2026-10-01) — fetched
+// once here at the MenuBrowser level, not per-row inside LikeButton. Real bug
+// found via real-device feedback: LikeButton used to start every instance at
+// liked=false and only flip to true once its own async "did I already like
+// this" query resolved — harmless on a long-lived mount, but DishRow/
+// CategoryCard genuinely unmount and remount every time a diner leaves a
+// category's dish list and comes back (MenuBrowser's own categoryId toggle),
+// so the diner saw their already-liked heart visibly reset to empty and then
+// "re-fill" red every single time, reading as "it re-activates the like"
+// rather than staying permanently marked. MenuBrowser itself never unmounts
+// across that same navigation, so fetching here once and handing each row its
+// already-correct initial state removes the flash entirely.
+function useMyLikes() {
+  const [likedDishIds, setLikedDishIds] = useState<Set<string>>(new Set());
+  const [likedCategoryIds, setLikedCategoryIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const [{ data: dishLikes }, { data: categoryLikes }] = await Promise.all([
+        supabase.from('dish_likes').select('dish_id').eq('user_id', user.id),
+        supabase.from('menu_category_likes').select('category_id').eq('user_id', user.id),
+      ]);
+      if (cancelled) return;
+      setLikedDishIds(new Set((dishLikes ?? []).map((r) => r.dish_id)));
+      setLikedCategoryIds(new Set((categoryLikes ?? []).map((r) => r.category_id)));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { likedDishIds, likedCategoryIds };
 }
 
 export interface DishOrderStats {
@@ -573,6 +613,462 @@ function hasAnyDishDiscount(dish: Dish, size: DishSizeOption | null): boolean {
   return dish.discount_mode === 'fixed_price' ? dish.discount_fixed_price != null : dish.discount_percent > 0;
 }
 
+// Effective price a diner actually pays for a dish — the cheapest size's
+// discounted price when a discount applies, otherwise the plain base price.
+// Shared by the price-range filter and the price-sort options below
+// (2026-10-01, per explicit request), so both use the exact same number
+// already shown on the card.
+function effectiveDishPrice(dish: Dish, sizes: DishSizeOption[]): number {
+  const cheapestSize = sizes.length > 0 ? sizes.reduce((min, s) => (s.price < min.price ? s : min), sizes[0]!) : null;
+  const basePrice = cheapestSize ? cheapestSize.price : dish.price;
+  if (!hasAnyDishDiscount(dish, cheapestSize)) return basePrice;
+  return Math.round(resolveDishDiscountRaw(dish, basePrice, cheapestSize));
+}
+
+// Price-range buckets (2026-10-01, matching mockup
+// 7.1.1.2-Meats menus filter.JPG exactly: ₪0-30, ₪30-50, ₪50-80, ₪80-120,
+// ₪120+).
+type PriceBucket = '0-30' | '30-50' | '50-80' | '80-120' | '120+';
+const PRICE_BUCKETS: PriceBucket[] = ['0-30', '30-50', '50-80', '80-120', '120+'];
+
+function priceBucketLabel(bucket: PriceBucket): string {
+  switch (bucket) {
+    case '0-30':
+      return '₪0 - ₪30';
+    case '30-50':
+      return '₪30 - ₪50';
+    case '50-80':
+      return '₪50 - ₪80';
+    case '80-120':
+      return '₪80 - ₪120';
+    case '120+':
+      return '₪120+';
+  }
+}
+
+function matchesPriceBucket(price: number, bucket: PriceBucket): boolean {
+  switch (bucket) {
+    case '0-30':
+      return price <= 30;
+    case '30-50':
+      return price > 30 && price <= 50;
+    case '50-80':
+      return price > 50 && price <= 80;
+    case '80-120':
+      return price > 80 && price <= 120;
+    case '120+':
+      return price > 120;
+  }
+}
+
+// Sort options offered on the dish-list-within-category screen (2026-10-01,
+// per explicit request) — null means the list's own default order.
+type DishSortOption = 'popularity' | 'rating' | 'price_asc' | 'price_desc' | 'feedstars' | null;
+
+// All filter groups the user asked for: the three shown in mockup 7.1.1.2
+// (budget/stars/guest-rating) plus two described verbally, not pictured
+// there (allergen exclusion, availability-only). priceBucket/starRating/
+// guestRatingMin are single-select within their own group (tapping the same
+// chip again clears it); excludedAllergens is the one multi-select group,
+// since excluding more than one allergen at once is the whole point of it.
+interface DishFilterState {
+  priceBucket: PriceBucket | null;
+  starRating: number | null; // 0 = "ללא דירוג" (rating_count === 0), 2-5 = exact rounded star count
+  guestRatingMin: number | null; // 0 = "ללא דירוג", 5-9 = minimum guest_rating_score
+  excludedAllergens: Set<string>;
+  availableOnly: boolean;
+}
+
+const DEFAULT_DISH_FILTERS: DishFilterState = {
+  priceBucket: null,
+  starRating: null,
+  guestRatingMin: null,
+  excludedAllergens: new Set(),
+  availableOnly: false,
+};
+
+function dishFilterIsEmpty(filters: DishFilterState): boolean {
+  return (
+    filters.priceBucket === null &&
+    filters.starRating === null &&
+    filters.guestRatingMin === null &&
+    filters.excludedAllergens.size === 0 &&
+    !filters.availableOnly
+  );
+}
+
+// One dish's pass/fail against the full filter state. Shared by the actual
+// dish-list rendering and by the filter screen's own live per-chip counts —
+// `skipGroup` lets a chip's count reflect every OTHER active group without
+// also being gated by its own group's current selection (2026-10-01).
+function dishMatchesFilters(
+  dish: Dish,
+  price: number,
+  criticalStockStatus: 'low' | 'out' | undefined,
+  filters: DishFilterState,
+  skipGroup?: keyof DishFilterState,
+): boolean {
+  if (skipGroup !== 'priceBucket' && filters.priceBucket && !matchesPriceBucket(price, filters.priceBucket)) return false;
+  if (skipGroup !== 'starRating' && filters.starRating !== null) {
+    const rounded = dish.rating_count > 0 ? Math.round(dish.rating_avg ?? 0) : 0;
+    if (rounded !== filters.starRating) return false;
+  }
+  if (skipGroup !== 'guestRatingMin' && filters.guestRatingMin !== null) {
+    if (filters.guestRatingMin === 0) {
+      if (dish.rating_count > 0) return false;
+    } else if (dish.rating_count === 0 || (dish.guest_rating_score ?? 0) < filters.guestRatingMin) {
+      return false;
+    }
+  }
+  if (skipGroup !== 'excludedAllergens' && filters.excludedAllergens.size > 0 && dish.allergens.some((a) => filters.excludedAllergens.has(a))) {
+    return false;
+  }
+  if (skipGroup !== 'availableOnly' && filters.availableOnly && criticalStockStatus === 'out') return false;
+  return true;
+}
+
+function sortDishesForDisplay(
+  dishes: Dish[],
+  sortOption: DishSortOption,
+  orderStats: Map<string, DishOrderStats>,
+  sizesByDish: Map<string, DishSizeOption[]>,
+): Dish[] {
+  if (!sortOption) return dishes;
+  const sorted = [...dishes];
+  switch (sortOption) {
+    case 'popularity':
+      sorted.sort((a, b) => (orderStats.get(b.id)?.count ?? 0) - (orderStats.get(a.id)?.count ?? 0));
+      break;
+    case 'rating':
+      sorted.sort((a, b) => (b.guest_rating_score ?? 0) - (a.guest_rating_score ?? 0));
+      break;
+    case 'price_asc':
+      sorted.sort((a, b) => effectiveDishPrice(a, sizesByDish.get(a.id) ?? []) - effectiveDishPrice(b, sizesByDish.get(b.id) ?? []));
+      break;
+    case 'price_desc':
+      sorted.sort((a, b) => effectiveDishPrice(b, sizesByDish.get(b.id) ?? []) - effectiveDishPrice(a, sizesByDish.get(a.id) ?? []));
+      break;
+    case 'feedstars':
+      sorted.sort((a, b) => Number(b.feedstars_eligible) - Number(a.feedstars_eligible));
+      break;
+  }
+  return sorted;
+}
+
+// Chip used across every filter-screen section below (2026-10-01) — label
+// first in source order so RTL puts it physically right (read first), the
+// live count second (physically left), matching the mockup's own
+// "<range> (<count>)" reading order. `tone` lets the allergen section (an
+// EXCLUDE action) read visually differently from the other three sections
+// (an INCLUDE/narrow-to action) even though the selected/unselected mechanic
+// is identical.
+function FilterChip({
+  label,
+  count,
+  selected,
+  onPress,
+  tone = 'include',
+}: {
+  label: string;
+  count: number;
+  selected: boolean;
+  onPress: () => void;
+  tone?: 'include' | 'exclude';
+}) {
+  const activeColor = tone === 'exclude' ? colors.brightRed : colors.royalBlue;
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-row items-center rounded-lg border px-3 py-2"
+      style={{ gap: 4, borderColor: selected ? activeColor : colors.border, backgroundColor: selected ? activeColor : '#FFFFFF' }}
+    >
+      <Text className="text-sm font-medium" style={{ color: selected ? '#FFFFFF' : colors.ink }}>
+        {label}
+      </Text>
+      <Text className="text-xs" style={{ color: selected ? '#FFFFFF' : colors.textMuted }}>
+        ({count})
+      </Text>
+    </Pressable>
+  );
+}
+
+// Replaces the food/drink section toggle once inside a specific category's
+// dish list (2026-10-01, per explicit request + mockup
+// 7.1.1.2-Meats menus filter.JPG) — that section choice no longer applies
+// once a diner has already drilled into one category's own dishes. Filter
+// first in source order so RTL puts it physically right (matching the
+// mockup's own funnel-on-the-right / sort-arrows-on-the-left layout); the
+// small dot marks an active filter so it's visible even once the sheet/
+// screen themselves are closed.
+function FilterSortBar({
+  onOpenFilter,
+  onOpenSort,
+  hasActiveFilters,
+  t,
+}: {
+  onOpenFilter: () => void;
+  onOpenSort: () => void;
+  hasActiveFilters: boolean;
+  t: (key: TranslationKey) => string;
+}) {
+  return (
+    <View className="flex-row border-b bg-white" style={{ borderColor: colors.border }}>
+      <Pressable onPress={onOpenSort} className="flex-1 flex-row items-center justify-center py-3" style={{ gap: 6 }}>
+        <Ionicons name="swap-vertical-outline" size={18} color={colors.royalBlue} />
+        <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
+          {t('dishSortButton')}
+        </Text>
+      </Pressable>
+      <Pressable onPress={onOpenFilter} className="flex-1 flex-row items-center justify-center py-3" style={{ gap: 6 }}>
+        <Ionicons name="funnel-outline" size={16} color={colors.royalBlue} />
+        <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
+          {t('dishFilterButton')}
+        </Text>
+        {hasActiveFilters && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.brightRed }} />}
+      </Pressable>
+    </View>
+  );
+}
+
+// Bottom sheet, standard single-select list (2026-10-01) — tapping the
+// already-active option clears the sort back to the list's own default
+// order, same "tap again to deselect" convention the filter chips use.
+function SortSheet({
+  visible,
+  onClose,
+  value,
+  onChange,
+  t,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  value: DishSortOption;
+  onChange: (next: DishSortOption) => void;
+  t: (key: TranslationKey) => string;
+}) {
+  const options: { key: Exclude<DishSortOption, null>; labelKey: TranslationKey }[] = [
+    { key: 'popularity', labelKey: 'dishSortPopularity' },
+    { key: 'rating', labelKey: 'dishSortRatingHigh' },
+    { key: 'price_asc', labelKey: 'dishSortPriceAsc' },
+    { key: 'price_desc', labelKey: 'dishSortPriceDesc' },
+    { key: 'feedstars', labelKey: 'dishSortFeedstars' },
+  ];
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={onClose} />
+        <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 24 }}>
+          <Text className="p-4 text-base font-bold" style={{ color: colors.ink }}>
+            {t('dishSortSheetTitle')}
+          </Text>
+          {options.map((opt) => {
+            const selected = value === opt.key;
+            return (
+              <Pressable
+                key={opt.key}
+                onPress={() => {
+                  onChange(selected ? null : opt.key);
+                  onClose();
+                }}
+                className="flex-row items-center px-4 py-3"
+                style={{ gap: 10 }}
+              >
+                <Ionicons
+                  name={selected ? 'radio-button-on' : 'radio-button-off'}
+                  size={20}
+                  color={selected ? colors.royalBlue : '#9CA3AF'}
+                />
+                <Text className="text-base" style={{ color: selected ? colors.royalBlue : colors.ink, fontWeight: selected ? '700' : '400' }}>
+                  {t(opt.labelKey)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Full-screen filter modal (2026-10-01) — matches mockup
+// 7.1.1.2-Meats menus filter.JPG's three sections (budget/stars/guest
+// rating) exactly, plus two more sections described verbally but not
+// pictured there (allergens to exclude, availability-only). Every chip's
+// count is computed against the category's full dish list with every OTHER
+// group's filter still applied, but ignoring its OWN group's current
+// selection (dishMatchesFilters' skipGroup) — so a chip's own count doesn't
+// collapse to itself once chosen, while still reacting to the other active
+// filters.
+function FilterScreen({
+  visible,
+  onClose,
+  filters,
+  onChange,
+  dishes,
+  sizesByDish,
+  criticalStock,
+  t,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  filters: DishFilterState;
+  onChange: (next: DishFilterState) => void;
+  dishes: Dish[];
+  sizesByDish: Map<string, DishSizeOption[]>;
+  criticalStock: Map<string, 'low' | 'out' | undefined>;
+  t: (key: TranslationKey) => string;
+}) {
+  const priced = dishes.map((d) => ({ dish: d, price: effectiveDishPrice(d, sizesByDish.get(d.id) ?? []) }));
+
+  function countFor(skipGroup: keyof DishFilterState, predicate: (dish: Dish, price: number) => boolean): number {
+    return priced.filter(
+      ({ dish, price }) => predicate(dish, price) && dishMatchesFilters(dish, price, criticalStock.get(dish.id), filters, skipGroup),
+    ).length;
+  }
+
+  const totalMatching = priced.filter(({ dish, price }) => dishMatchesFilters(dish, price, criticalStock.get(dish.id), filters)).length;
+
+  const allergenCounts = new Map<string, number>();
+  for (const dish of dishes) {
+    for (const a of dish.allergens) allergenCounts.set(a, (allergenCounts.get(a) ?? 0) + 1);
+  }
+  const allAllergens = [...allergenCounts.keys()].sort();
+
+  const guestRatingOptions: { value: number; labelKey: TranslationKey }[] = [
+    { value: 5, labelKey: 'dishFilterGuestRating5' },
+    { value: 6, labelKey: 'dishFilterGuestRating6' },
+    { value: 7, labelKey: 'dishFilterGuestRating7' },
+    { value: 8, labelKey: 'dishFilterGuestRating8' },
+    { value: 9, labelKey: 'dishFilterGuestRating9' },
+  ];
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View className="flex-row items-center justify-between border-b px-4 py-3" style={{ borderColor: colors.border }}>
+          <Pressable onPress={onClose} hitSlop={8}>
+            <Ionicons name="close" size={22} color={colors.ink} />
+          </Pressable>
+          <Pressable onPress={() => onChange(DEFAULT_DISH_FILTERS)} hitSlop={8}>
+            <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
+              {t('dishFilterReset')}
+            </Text>
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+          <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
+            {t('dishFilterBudgetSection')}
+          </Text>
+          <View className="mb-5 flex-row flex-wrap" style={{ gap: 8 }}>
+            {PRICE_BUCKETS.map((bucket) => (
+              <FilterChip
+                key={bucket}
+                label={priceBucketLabel(bucket)}
+                count={countFor('priceBucket', (_dish, price) => matchesPriceBucket(price, bucket))}
+                selected={filters.priceBucket === bucket}
+                onPress={() => onChange({ ...filters, priceBucket: filters.priceBucket === bucket ? null : bucket })}
+              />
+            ))}
+          </View>
+
+          <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
+            {t('dishFilterStarsSection')}
+          </Text>
+          <View className="mb-5 flex-row flex-wrap" style={{ gap: 8 }}>
+            <FilterChip
+              label={t('dishFilterNoRating')}
+              count={countFor('starRating', (dish) => dish.rating_count === 0)}
+              selected={filters.starRating === 0}
+              onPress={() => onChange({ ...filters, starRating: filters.starRating === 0 ? null : 0 })}
+            />
+            {[2, 3, 4, 5].map((stars) => (
+              <FilterChip
+                key={stars}
+                label={t('dishFilterStars').replace('{count}', String(stars))}
+                count={countFor('starRating', (dish) => dish.rating_count > 0 && Math.round(dish.rating_avg ?? 0) === stars)}
+                selected={filters.starRating === stars}
+                onPress={() => onChange({ ...filters, starRating: filters.starRating === stars ? null : stars })}
+              />
+            ))}
+          </View>
+
+          <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
+            {t('dishFilterGuestRatingSection')}
+          </Text>
+          <View className="mb-5 flex-row flex-wrap" style={{ gap: 8 }}>
+            <FilterChip
+              label={t('dishFilterNoRating')}
+              count={countFor('guestRatingMin', (dish) => dish.rating_count === 0)}
+              selected={filters.guestRatingMin === 0}
+              onPress={() => onChange({ ...filters, guestRatingMin: filters.guestRatingMin === 0 ? null : 0 })}
+            />
+            {guestRatingOptions.map((opt) => (
+              <FilterChip
+                key={opt.value}
+                label={t(opt.labelKey)}
+                count={countFor('guestRatingMin', (dish) => dish.rating_count > 0 && (dish.guest_rating_score ?? 0) >= opt.value)}
+                selected={filters.guestRatingMin === opt.value}
+                onPress={() => onChange({ ...filters, guestRatingMin: filters.guestRatingMin === opt.value ? null : opt.value })}
+              />
+            ))}
+          </View>
+
+          {allAllergens.length > 0 && (
+            <>
+              <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
+                {t('dishFilterAllergensSection')}
+              </Text>
+              <View className="mb-5 flex-row flex-wrap" style={{ gap: 8 }}>
+                {allAllergens.map((allergen) => (
+                  <FilterChip
+                    key={allergen}
+                    tone="exclude"
+                    label={allergen}
+                    count={countFor('excludedAllergens', (dish) => dish.allergens.includes(allergen))}
+                    selected={filters.excludedAllergens.has(allergen)}
+                    onPress={() => {
+                      const next = new Set(filters.excludedAllergens);
+                      if (next.has(allergen)) next.delete(allergen);
+                      else next.add(allergen);
+                      onChange({ ...filters, excludedAllergens: next });
+                    }}
+                  />
+                ))}
+              </View>
+            </>
+          )}
+
+          <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
+            {t('dishFilterAvailabilitySection')}
+          </Text>
+          <Pressable
+            onPress={() => onChange({ ...filters, availableOnly: !filters.availableOnly })}
+            className="flex-row items-center rounded-lg border px-3 py-2.5"
+            style={{ gap: 8, borderColor: filters.availableOnly ? colors.royalBlue : colors.border }}
+          >
+            <Ionicons
+              name={filters.availableOnly ? 'checkbox' : 'square-outline'}
+              size={20}
+              color={filters.availableOnly ? colors.royalBlue : colors.textMuted}
+            />
+            <Text className="text-sm font-medium" style={{ color: colors.ink }}>
+              {t('dishFilterAvailableOnly')}
+            </Text>
+          </Pressable>
+        </ScrollView>
+        <View className="border-t px-4 py-3" style={{ borderColor: colors.border }}>
+          <Pressable onPress={onClose} className="items-center justify-center rounded-lg" style={{ backgroundColor: colors.royalBlue, paddingVertical: 12 }}>
+            <Text className="text-sm font-semibold text-white">{t('dishFilterShowResults')}</Text>
+          </Pressable>
+          <Text className="mt-2 text-center text-xs" style={{ color: colors.textMuted }}>
+            {t('dishFilterResultsCount').replace('{filtered}', String(totalMatching)).replace('{total}', String(dishes.length))}
+          </Text>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // "החל מ-" only means something once the sizes actually span 2+ distinct
 // PRICES (2026-09-29, refined per explicit follow-up) — two serving sizes
 // that happen to cost the same are still just one real price to the diner.
@@ -622,8 +1118,12 @@ function PriceRow({
   // entrecote steak).
   almostOutLabel: string | null;
 }) {
+  // mt-1.5 (2026-10-01, per explicit request, gentle increase) — this line
+  // had no top spacing at all before, sitting flush against the discount/
+  // almost-out row right above it. text-[10px] (2026-10-01 follow-up, same
+  // gentle-increase request) — was text-[9px].
   const vatLabel = vatRatePercent != null && (
-    <Text className="text-[9px]" style={{ color: colors.textMuted }}>
+    <Text className="mt-1.5 text-[10px]" style={{ color: colors.textMuted }}>
       {t('dishVatIncludedLabel').replace('{percent}', String(vatRatePercent))}
     </Text>
   );
@@ -641,12 +1141,16 @@ function PriceRow({
           {/* "כמעט אזל" first in source order so RTL puts it on the physical
               right of the price, matching this row's own established
               convention. */}
+          {/* Sized up slightly (2026-10-01, per explicit request, gentle
+              increase) — was text-[10px]. */}
           {almostOutLabel && (
-            <Text className="text-[10px] font-semibold" style={{ color: colors.brightRed }}>
+            <Text className="text-[11px] font-semibold" style={{ color: colors.brightRed }}>
               {almostOutLabel}
             </Text>
           )}
-          <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
+          {/* Sized up slightly (2026-10-01, per explicit request, gentle
+              increase) — was text-sm (14px). */}
+          <Text className="text-base font-semibold" style={{ color: colors.royalBlue }}>
             {priceLabel(dish, sizes, t)}
           </Text>
         </View>
@@ -685,13 +1189,64 @@ function PriceRow({
   const isApprox = displayPercent !== truePercent;
   return (
     <View style={{ alignItems: 'flex-end' }}>
-      <View className="flex-row items-center" style={{ gap: 5 }}>
-        <Text className="text-xs" style={{ color: colors.originalPriceRed, textDecorationLine: 'line-through' }}>
-          {prefix}₪{basePrice}
-        </Text>
-        <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
-          ₪{discounted}
-        </Text>
+      <View className="flex-row items-end" style={{ gap: 4 }}>
+        {/* "החל מ-" split out of the strikethrough price (2026-10-01, per
+            explicit request) — it used to be inside the same struck-through
+            Text as the original price, so the line ran through the label
+            text too, not just the number. First in source order so RTL puts
+            it rightmost, read first: "החל מ-" → original price (red, struck)
+            → discounted price (blue, bold).
+            2026-10-01 (follow-up, per explicit request + screenshot):
+            matched to the discounted price's own color/weight instead of a
+            small muted label — the two read as one unit, with only the
+            struck original price staying visually secondary.
+            2026-10-01 (follow-up): sized back down a notch (17px→14px, gap
+            5→4) — kept the color/weight match, just not the same literal
+            size as the price number itself.
+            2026-10-01 (follow-up): items-end (was items-center) so the
+            smaller original/prefix text sit on the discounted price's own
+            bottom line instead of floating centered against its taller
+            height; the original price also moved into its own tight
+            sub-group with the discounted price (gap 2, not 4) so it reads as
+            attached to it specifically, closer than its distance from the
+            "החל מ-" label. */}
+        {prefix !== '' && (
+          <Text className="text-sm font-bold" style={{ color: colors.royalBlue }}>
+            {prefix}
+          </Text>
+        )}
+        <View className="flex-row items-end" style={{ gap: 2 }}>
+          <Text className="text-xs" style={{ color: colors.originalPriceRed, textDecorationLine: 'line-through' }}>
+            ₪{basePrice}
+          </Text>
+          {/* Bolder/larger than before (2026-10-01, per explicit request) —
+              same emphasis treatment as the dish-detail modal's own per-size
+              discount tags, applied here too, nothing else in the row
+              resized. Sized up once more (2026-10-01 follow-up, gentle
+              increase) — was text-base (16px).
+              2026-10-01 (follow-up): a literal space ("₪ {discounted}")
+              let the bidi algorithm split the symbol from the number into
+              separate runs and reorder them, pushing the symbol to the
+              wrong side — real-device feedback. Split into its own flex-row
+              instead, immune to bidi reordering since each is its own flex
+              item, not adjacent characters in one text run.
+              2026-10-01 (follow-up again, confirmed on-device): the first
+              attempt put ₪ first in source expecting it to land on the
+              physical right (this file's usual flex-row/RTL convention),
+              but real-device feedback showed the opposite is what this
+              specific plain "₪80" layout actually needs — the number first
+              (physical right), ₪ second (physical left) — matching how the
+              untouched, never-complained-about `₪{basePrice}` right above
+              this already renders as plain unflexed text. */}
+          <View className="flex-row items-end" style={{ gap: 2 }}>
+            <Text className="text-[17px] font-bold" style={{ color: colors.royalBlue }}>
+              {discounted}
+            </Text>
+            <Text className="text-[17px] font-bold" style={{ color: colors.royalBlue }}>
+              ₪
+            </Text>
+          </View>
+        </View>
       </View>
       <View className="mt-1 flex-row items-center" style={{ gap: 6 }}>
         <View className="rounded px-1 py-0.5" style={{ backgroundColor: colors.discountGreenDark }}>
@@ -702,8 +1257,10 @@ function PriceRow({
         {/* "כמעט אזל" beside the discount badge (2026-10-01, per explicit
             request) — badge first in source order so RTL puts it on the
             physical right, with this label landing to its physical left. */}
+        {/* Sized up slightly (2026-10-01, per explicit request, gentle
+            increase) — was text-[10px]. */}
         {almostOutLabel && (
-          <Text className="text-[10px] font-semibold" style={{ color: colors.brightRed }}>
+          <Text className="text-[11px] font-semibold" style={{ color: colors.brightRed }}>
             {almostOutLabel}
           </Text>
         )}
@@ -730,6 +1287,7 @@ function LikeButton({
   table,
   id,
   initialCount,
+  initiallyLiked,
   showCount = true,
   positionStyle,
   iconSize = 18,
@@ -738,6 +1296,11 @@ function LikeButton({
   table: 'dish_likes' | 'menu_category_likes';
   id: string | undefined;
   initialCount: number;
+  // 2026-10-01: resolved once by useMyLikes at the MenuBrowser level (not
+  // fetched independently per-row here) — see that hook's own comment for
+  // the visible "like resets then re-activates on every screen return" bug
+  // this replaced.
+  initiallyLiked: boolean;
   // 2026-10-01: DishRow wants the same toggle in the title's corner (where
   // the score badge used to sit) with no count beside it — a plain icon,
   // not the white pill this button was originally built for on top of a
@@ -757,25 +1320,18 @@ function LikeButton({
   // a stand-in for real typing elsewhere) — the runtime value is always
   // exactly the correct column name for whichever table was actually passed.
   const idColumn = (table === 'dish_likes' ? 'dish_id' : 'category_id') as never;
-  const [liked, setLiked] = useState(false);
+  const [liked, setLiked] = useState(initiallyLiked);
   const [count, setCount] = useState(initialCount);
   const [busy, setBusy] = useState(false);
 
+  // Only resyncs when useMyLikes' own fetch actually resolves after this
+  // component already mounted (the one real race: this row rendered before
+  // that fetch returned) — never fights a diner's own optimistic toggle()
+  // below, since initiallyLiked only changes when useMyLikes' Set itself is
+  // replaced, which happens exactly once per MenuBrowser mount.
   useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || cancelled) return;
-      const { data } = await supabase.from(table).select(idColumn).eq(idColumn, id).eq('user_id', user.id).maybeSingle();
-      if (!cancelled && data) setLiked(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [table, idColumn, id]);
+    setLiked(initiallyLiked);
+  }, [initiallyLiked]);
 
   async function toggle() {
     if (!id || busy) return;
@@ -854,12 +1410,14 @@ function CategoryCard({
   onPress,
   t,
   isRTL,
+  initiallyLiked,
 }: {
   category: MenuCategory;
   dishes: Dish[];
   onPress: () => void;
   t: (key: TranslationKey) => string;
   isRTL: boolean;
+  initiallyLiked: boolean;
 }) {
   const rated = dishes.filter((d) => d.rating_count > 0);
   const avgRating = rated.length > 0 ? rated.reduce((sum, d) => sum + (d.rating_avg ?? 0), 0) / rated.length : null;
@@ -882,7 +1440,7 @@ function CategoryCard({
         ) : (
           <View style={{ width: '100%', height: '100%', backgroundColor: '#EFEBE2' }} />
         )}
-        <LikeButton table="menu_category_likes" id={category.id} initialCount={category.likes_count} />
+        <LikeButton table="menu_category_likes" id={category.id} initialCount={category.likes_count} initiallyLiked={initiallyLiked} />
       </View>
       {/* pt-2 (not py-3) so the name sits close under the image, per
           feedback that it read as floating too far below it. Rating block
@@ -946,6 +1504,7 @@ function DishRow({
   categoryOrdersToday,
   criticalStockStatus,
   vatRatePercent,
+  initiallyLiked,
 }: {
   dish: Dish;
   sizes: DishSizeOption[];
@@ -956,6 +1515,7 @@ function DishRow({
   categoryOrdersToday: number;
   criticalStockStatus: 'low' | 'out' | undefined;
   vatRatePercent: number | null;
+  initiallyLiked: boolean;
 }) {
   const image = dish.photo_urls[0];
   // Score-derived (2026-09-24): dishes.is_special_value turned out to be a
@@ -969,6 +1529,40 @@ function DishRow({
   const activityLabel = orderActivityLabel(orderStats, t);
   const presenceLabel = presenceCount <= 0 ? null : presenceCount === 1 ? t('dishPresenceSingularLabel') : t('dishPresencePluralLabel').replace('{count}', String(presenceCount));
 
+  // Tap-only, not swipe (2026-10-01, per explicit request): a horizontal
+  // swipe across this card never leaves its own bounds, so RN's own
+  // Pressable never cancels it as a drag (that cancellation is based on the
+  // touch leaving the element's hit rect, not on how far it moved) — swiping
+  // across the card was opening the dish detail screen exactly like a tap.
+  // Recording the touch's start point and comparing it against the release
+  // point lets onPress ignore anything that moved more than a few px, which
+  // a real tap never does.
+  const cardTouchStart = useRef<{ x: number; y: number } | null>(null);
+  const SWIPE_CANCEL_THRESHOLD = 12;
+
+  function handleCardPressIn(e: GestureResponderEvent) {
+    cardTouchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+  }
+
+  function handleCardPress(e: GestureResponderEvent) {
+    const start = cardTouchStart.current;
+    if (start) {
+      const dx = Math.abs(e.nativeEvent.pageX - start.x);
+      const dy = Math.abs(e.nativeEvent.pageY - start.y);
+      if (dx > SWIPE_CANCEL_THRESHOLD || dy > SWIPE_CANCEL_THRESHOLD) return;
+    }
+    onPress();
+  }
+
+  // Long-press the photo for a larger preview (2026-10-01, per explicit
+  // request) — closes the instant the long-press is released (onPressOut),
+  // not on a second tap. This is its own nested Pressable, not part of the
+  // card's own one above: RN's touch responder system hands an entire touch
+  // sequence to whichever view claims it (the deepest one that can), so this
+  // inner Pressable naturally intercepts the long-press on the photo without
+  // also triggering the outer card's onPress for that same touch.
+  const [imagePreviewVisible, setImagePreviewVisible] = useState(false);
+
   return (
     // Image first, content second: under this app's forced RTL, the first
     // flex-row child renders on the physical right (same convention already
@@ -980,8 +1574,10 @@ function DishRow({
     // corners were clipping the price/button area, which sits close to the
     // card's bottom-left corner — squaring it off removes the clip instead
     // of chasing padding to dodge the curve).
+    <>
     <Pressable
-      onPress={onPress}
+      onPressIn={handleCardPressIn}
+      onPress={handleCardPress}
       className="mb-3 flex-row bg-white"
       style={{ gap: 10, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}
     >
@@ -989,11 +1585,53 @@ function DishRow({
           explicit request — "as it was before" the card padding started
           insetting it) — no padding/rounding of its own; the card's own
           overflow-hidden + rounded-xl already clips it to match. Only the
-          text content half keeps its own inner padding below. */}
+          text content half keeps its own inner padding below.
+          2026-10-01 (two follow-up fixes for the long-press preview below):
+          attempt 1 wrapped the Image in a Pressable with height:'100%' on
+          the Image — a percentage height nested inside an ALSO-stretch-sized
+          parent, which Yoga couldn't resolve and stretched the image across
+          the whole screen. Attempt 2 kept width:120/alignSelf:'stretch' on
+          the Image itself but inside an extra plain View wrapper — that
+          wrapper defaults to a COLUMN flex container, and alignSelf:'stretch'
+          only affects the CROSS axis (width in a column), so the Image got
+          no height at all this time and disappeared entirely (both real-
+          device feedback). Fixed for real: the width:120/alignSelf:'stretch'
+          spec — the one that always worked — now lives on THIS View, a
+          direct row child exactly like the Image used to be, so it resolves
+          the same height as before through the ROW's own cross axis. The
+          Image and the long-press Pressable are both absolutely inset to
+          fill it (0,0,0,0), not percentage-sized, which is the one sizing
+          mechanism that doesn't create the ambiguous-height chain above. */}
+      {/* Width bumped 120→150 (2026-10-01, per explicit request — "too
+          cropped and unclear") — this column stretches to the row's own
+          height, which has grown a lot over this session (score/review line,
+          VAT line, discount badge, etc.); against a typical landscape food
+          photo, that made for an increasingly tall/narrow box that
+          resizeMode="cover" had to crop and upscale aggressively to fill,
+          losing detail. A wider box needs less of either. */}
       {image ? (
-        <Image source={{ uri: image }} style={{ width: 120, alignSelf: 'stretch' }} resizeMode="cover" />
+        <View style={{ width: 150, alignSelf: 'stretch', position: 'relative' }}>
+          <Image source={{ uri: image }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} resizeMode="cover" />
+          {/* This overlay is the deepest view under a touch that starts on
+              the photo, so it's the one that becomes the touch responder —
+              the outer card's own onPress never fires for a touch that
+              started here (2026-10-01, per explicit request/real-device
+              feedback: a quick tap on the photo did nothing). Mirroring the
+              same onPressIn/onPress pair the card uses elsewhere makes a
+              quick tap on the photo behave identically to tapping anywhere
+              else on the card; RN suppresses onPress once onLongPress has
+              actually fired, so a long-press only opens the preview and
+              never also navigates to the detail screen. */}
+          <Pressable
+            onPressIn={handleCardPressIn}
+            onPress={handleCardPress}
+            onLongPress={() => setImagePreviewVisible(true)}
+            onPressOut={() => setImagePreviewVisible(false)}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+        </View>
       ) : (
-        <View style={{ width: 120, alignSelf: 'stretch', backgroundColor: '#EFEBE2' }} />
+        <View style={{ width: 150, alignSelf: 'stretch', backgroundColor: '#EFEBE2' }} />
       )}
       <View className="flex-1 justify-center py-3 pe-4">
         {/* Title row (2026-09-24): the score badge moved up here, to the
@@ -1021,14 +1659,24 @@ function DishRow({
             small decorative icon. `paddingEnd` on the title bumped to match
             the bigger icon so the two-line title text still can't run under
             it. */}
-        <View style={{ position: 'relative' }}>
-          <Text className="text-base font-semibold text-[#1B2430]" style={{ paddingEnd: 32 }} numberOfLines={2}>
+        {/* minHeight (2026-10-01, per explicit request — heart looked
+            slightly clipped at its bottom edge): the box the heart is
+            absolutely stretched into (top:0,bottom:0 below) is exactly as
+            tall as the title's own single-line height, which can be a hair
+            shorter than the 22px icon itself once centered inside it —
+            minHeight guarantees enough room regardless of the title's own
+            line height, for a one-line or a two-line name alike. */}
+        <View style={{ position: 'relative', minHeight: 26 }}>
+          {/* Sized up slightly (2026-10-01, per explicit request, gentle
+              increase) — was text-base (16px). */}
+          <Text className="text-[17px] font-semibold text-[#1B2430]" style={{ paddingEnd: 32 }} numberOfLines={2}>
             {dish.name}
           </Text>
           <LikeButton
             table="dish_likes"
             id={dish.id}
             initialCount={dish.likes_count}
+            initiallyLiked={initiallyLiked}
             showCount={false}
             iconSize={22}
             hitSlop={14}
@@ -1138,8 +1786,10 @@ function DishRow({
             this instant. Deliberately muted (not bottleGreen): a view is a
             softer signal than an actual order, and the two shouldn't read as
             the same weight of claim. */}
+        {/* Sized down slightly (2026-10-01, per explicit request, gentle
+            decrease) — was text-[12px]. */}
         {presenceLabel && (
-          <Text className="mt-0.5 text-[12px] font-medium" style={{ color: colors.textMuted }}>
+          <Text className="mt-0.5 text-[11px] font-medium" style={{ color: colors.textMuted }}>
             {presenceLabel}
           </Text>
         )}
@@ -1204,6 +1854,20 @@ function DishRow({
         </Pressable>
       </View>
     </Pressable>
+    {/* Full-screen long-press preview (2026-10-01, per explicit request) —
+        same photo, shown large with resizeMode="contain" so none of it is
+        cropped the way the 120px cover thumbnail is. transparent+dark
+        backdrop, no close button: it's only ever open while the finger is
+        still down (onPressOut above closes it), so there's nothing else to
+        dismiss it with. */}
+    {image && (
+      <Modal visible={imagePreviewVisible} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', alignItems: 'center', justifyContent: 'center' }}>
+          <Image source={{ uri: image }} style={{ width: '100%', height: '70%' }} resizeMode="contain" />
+        </View>
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -1220,6 +1884,55 @@ const DONENESS_GROUP_NAME = 'מידת עשייה';
 // left to size itself off the text. Text wraps within it (numberOfLines={2})
 // instead of stretching the tile.
 const OPTION_TILE_WIDTH = 76;
+
+// Full-screen photo viewer for every photo of a dish (2026-10-06, per explicit
+// request) — opened by tapping the photo in the dish detail sheet, swipeable
+// left/right. Opens on the photo the diner was already looking at.
+function DishPhotoGallery({
+  visible,
+  photos,
+  initialIndex,
+  onClose,
+}: {
+  visible: boolean;
+  photos: string[];
+  initialIndex: number;
+  onClose: () => void;
+}) {
+  const screenWidth = Dimensions.get('window').width;
+  const count = photos.length;
+  const [index, setIndex] = useState(initialIndex);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (visible) setIndex(initialIndex);
+  }, [visible, initialIndex]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View className="flex-1 justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.85)' }}>
+        <Pressable onPress={onClose} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          contentOffset={{ x: (count - 1 - initialIndex) * screenWidth, y: 0 }}
+          onMomentumScrollEnd={(e) => setIndex(count - 1 - Math.round(e.nativeEvent.contentOffset.x / screenWidth))}
+          style={{ flexGrow: 0, direction: 'ltr' }}
+        >
+          {[...photos].reverse().map((uri) => (
+            <View key={uri} style={{ width: screenWidth, justifyContent: 'center' }}>
+              <Image source={{ uri }} style={{ width: screenWidth, height: screenWidth * 1.1 }} resizeMode="contain" />
+            </View>
+          ))}
+        </ScrollView>
+        <Text className="mt-4 text-center text-sm font-semibold text-white">{`⁦${index + 1}/${count}⁩`}</Text>
+        <Pressable onPress={onClose} className="absolute items-center justify-center rounded-full bg-white/20" style={{ top: 48, end: 16, width: 40, height: 40 }}>
+          <Ionicons name="close" size={22} color="#FFFFFF" />
+        </Pressable>
+      </View>
+    </Modal>
+  );
+}
 
 function DishDetailModal({
   dish,
@@ -1300,6 +2013,7 @@ function DishDetailModal({
   }
   const [quantity, setQuantity] = useState(1);
   const [validationErrorKey, setValidationErrorKey] = useState<TranslationKey | null>(null);
+  const [galleryVisible, setGalleryVisible] = useState(false);
   // Same score-derived signal as DishRow's own trophy/badge (2026-09-24).
   const isTopRated = (dish.guest_rating_score ?? 0) > 9;
   const { reviews: dishReviews, positiveReviewCount } = useDishReviews(dish.id);
@@ -1538,7 +2252,16 @@ function DishDetailModal({
                   )}
                 </View>
               )}
-              {dish.photo_urls[0] && <Image source={{ uri: dish.photo_urls[0] }} style={{ width: '100%', height: 180, marginTop: 12 }} />}
+              {dish.photo_urls[0] && (
+                <Pressable onPress={() => setGalleryVisible(true)} style={{ marginTop: 12 }}>
+                  <Image source={{ uri: dish.photo_urls[0] }} style={{ width: '100%', height: 180 }} />
+                  {dish.photo_urls.length > 1 && (
+                    <View className="absolute rounded-full px-2 py-0.5" style={{ bottom: 8, end: 8, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+                      <Text className="text-xs font-semibold text-white">{` 1/${dish.photo_urls.length}⁩`}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              )}
               <Text className="px-4 pb-1 pt-3 text-sm font-semibold text-[#1B2430]">{t('dishDescriptionTitle')}</Text>
               <Text className="px-4 pb-3 text-sm leading-5 text-[#6E6A61]">{dish.description || t('dishDescriptionEmpty')}</Text>
               {/* Verified-diner reviews (2026-09-24, per the user's explicit
@@ -1608,18 +2331,45 @@ function DishDetailModal({
                     request) — was a neutral gray border/dark text by
                     default before. */}
                 <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                  {sizes.map((size) => (
-                    <Pressable
-                      key={size.id}
-                      onPress={() => setSizeOptionId(size.id)}
-                      className="rounded-lg border px-3 py-2"
-                      style={{ borderColor: colors.royalBlue, backgroundColor: sizeOptionId === size.id ? colors.royalBlue : '#FFFFFF' }}
-                    >
-                      <Text style={{ color: sizeOptionId === size.id ? '#FFFFFF' : colors.royalBlue }} className="text-sm font-medium">
-                        {size.name} · ₪{size.price}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  {sizes.map((size) => {
+                    // Per-size discount shown directly on its own tag
+                    // (2026-10-01, per explicit request) — picking it already
+                    // charged the discounted price correctly (unitPrice/
+                    // resolveDishDiscountRaw), but the tag itself still showed
+                    // the raw size.price with no visual indication, so a
+                    // diner had no way to tell a discount applied before
+                    // picking. Same strikethrough-original/discounted-price
+                    // convention as the card's own PriceRow.
+                    const sizeHasDiscount = hasAnyDishDiscount(dish, size);
+                    const sizeSelected = sizeOptionId === size.id;
+                    const selectedTextColor = sizeSelected ? '#FFFFFF' : colors.royalBlue;
+                    const discountedSizePrice = sizeHasDiscount ? Math.round(resolveDishDiscountRaw(dish, size.price, size)) : size.price;
+                    return (
+                      <Pressable
+                        key={size.id}
+                        onPress={() => setSizeOptionId(size.id)}
+                        className="rounded-lg border px-3 py-2"
+                        style={{ borderColor: colors.royalBlue, backgroundColor: sizeSelected ? colors.royalBlue : '#FFFFFF' }}
+                      >
+                        <Text className="text-sm font-medium">
+                          <Text style={{ color: selectedTextColor }}>{size.name} · </Text>
+                          {/* Shrunk and de-emphasized relative to the
+                              discounted price beside it (2026-10-01, per
+                              explicit request) — was the same size/weight as
+                              everything else in the tag, competing with the
+                              actual price instead of reading as secondary. */}
+                          {sizeHasDiscount && (
+                            <Text className="text-xs" style={{ color: colors.originalPriceRed, textDecorationLine: 'line-through' }}>
+                              ₪{size.price}{' '}
+                            </Text>
+                          )}
+                          <Text className="text-base font-bold" style={{ color: selectedTextColor }}>
+                            ₪{discountedSizePrice}
+                          </Text>
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </View>
             )}
@@ -1878,6 +2628,8 @@ function DishDetailModal({
         dismissLabel={t('gotIt')}
         onDismiss={() => setValidationErrorKey(null)}
       />
+
+      <DishPhotoGallery visible={galleryVisible} photos={dish.photo_urls} initialIndex={0} onClose={() => setGalleryVisible(false)} />
     </Modal>
   );
 }
@@ -1995,11 +2747,24 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   const missingIngredients = useDishMissingIngredients(restaurantId);
   const unavailableOptions = useUnavailableModifierOptions(restaurantId);
   const vatRatePercent = useRestaurantVatRate(restaurantId);
+  const { likedDishIds, likedCategoryIds } = useMyLikes();
   const [section, setSection] = useState<MenuSection>('food');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const items = useCartStore((s) => s.items);
+  // Filter/sort state for the dish-list-within-category screen (2026-10-01,
+  // per explicit request) — reset whenever the diner leaves the category
+  // (categoryId changes), so re-entering a (possibly different) category
+  // never carries over a stale filter from the last one.
+  const [dishSort, setDishSort] = useState<DishSortOption>(null);
+  const [dishFilters, setDishFilters] = useState<DishFilterState>(DEFAULT_DISH_FILTERS);
+  const [sortSheetVisible, setSortSheetVisible] = useState(false);
+  const [filterScreenVisible, setFilterScreenVisible] = useState(false);
+  useEffect(() => {
+    setDishSort(null);
+    setDishFilters(DEFAULT_DISH_FILTERS);
+  }, [categoryId]);
 
   // Same LIFO device-back convention already established for internal stage
   // machines elsewhere (add-participants.tsx, 2026-09-10) — being inside a
@@ -2040,6 +2805,20 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   const categoriesInSection = data.categories.filter((c) => c.section === section);
   const activeCategory = categoryId ? data.categories.find((c) => c.id === categoryId) : null;
   const dishesInActiveCategory = activeCategory ? (data.dishesByCategory.get(activeCategory.id) ?? []) : [];
+  // Filtered + sorted view of the category's dish list (2026-10-01, per
+  // explicit request) — categoryOrdersToday below still reads from the full
+  // (unfiltered) dishesInActiveCategory, since the "ביקוש גבוה" ratio is
+  // about the category's real order activity as a whole, not just whichever
+  // subset happens to currently be visible.
+  const visibleDishesInActiveCategory = sortDishesForDisplay(
+    dishesInActiveCategory.filter((d) =>
+      dishMatchesFilters(d, effectiveDishPrice(d, data.sizesByDish.get(d.id) ?? []), criticalStock.get(d.id), dishFilters),
+    ),
+    dishSort,
+    orderStats,
+    data.sizesByDish,
+  );
+  const hasActiveDishFilters = !dishFilterIsEmpty(dishFilters);
 
   return (
     <View className="flex-1">
@@ -2050,28 +2829,42 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
           Two equal flex:1 columns (not a centered cluster with a gap) so
           each tab sits centered within its own half of the white strip,
           matching the mockup's left-half/right-half split. */}
-      <View className="flex-row border-b bg-white" style={{ borderColor: colors.border }}>
-        {(['food', 'drink'] as MenuSection[]).map((s) => (
-          <Pressable
-            key={s}
-            onPress={() => {
-              setSection(s);
-              setCategoryId(null);
-            }}
-            className="flex-1 flex-row items-center justify-center py-3"
-            style={{ gap: 6, borderBottomWidth: section === s ? 2 : 0, borderColor: colors.royalBlue }}
-          >
-            {s === 'food' ? (
-              <MaterialCommunityIcons name="room-service-outline" size={17} color={section === s ? colors.royalBlue : '#6E6A61'} />
-            ) : (
-              <Ionicons name="wine-outline" size={16} color={section === s ? colors.royalBlue : '#6E6A61'} />
-            )}
-            <Text className="text-sm font-semibold" style={{ color: section === s ? colors.royalBlue : '#6E6A61' }}>
-              {s === 'food' ? t('menuSectionFood') : t('menuSectionDrink')}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {/* Food/drink section toggle only while browsing categories — once a
+          diner has drilled into one category's own dish list, that section
+          choice no longer applies, and the filter/sort bar takes its place
+          instead (2026-10-01, per explicit request + mockup
+          7.1.1.2-Meats menus filter.JPG). */}
+      {activeCategory ? (
+        <FilterSortBar
+          onOpenFilter={() => setFilterScreenVisible(true)}
+          onOpenSort={() => setSortSheetVisible(true)}
+          hasActiveFilters={hasActiveDishFilters}
+          t={t}
+        />
+      ) : (
+        <View className="flex-row border-b bg-white" style={{ borderColor: colors.border }}>
+          {(['food', 'drink'] as MenuSection[]).map((s) => (
+            <Pressable
+              key={s}
+              onPress={() => {
+                setSection(s);
+                setCategoryId(null);
+              }}
+              className="flex-1 flex-row items-center justify-center py-3"
+              style={{ gap: 6, borderBottomWidth: section === s ? 2 : 0, borderColor: colors.royalBlue }}
+            >
+              {s === 'food' ? (
+                <MaterialCommunityIcons name="room-service-outline" size={17} color={section === s ? colors.royalBlue : '#6E6A61'} />
+              ) : (
+                <Ionicons name="wine-outline" size={16} color={section === s ? colors.royalBlue : '#6E6A61'} />
+              )}
+              <Text className="text-sm font-semibold" style={{ color: section === s ? colors.royalBlue : '#6E6A61' }}>
+                {s === 'food' ? t('menuSectionFood') : t('menuSectionDrink')}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       {activeCategory ? (
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
@@ -2088,13 +2881,18 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
           </View>
           {dishesInActiveCategory.length === 0 ? (
             <Text className="px-6 py-8 text-center text-sm text-[#9CA3AF]">{t('menuCategoryEmpty')}</Text>
+          ) : visibleDishesInActiveCategory.length === 0 ? (
+            <Text className="px-6 py-8 text-center text-sm text-[#9CA3AF]">{t('dishFilterNoMatches')}</Text>
           ) : (
             (() => {
               // Denominator for the "ביקוש גבוה" ratio (item 2) — every
               // dish's own share of today's orders within this same
               // category, computed once per render rather than per row.
+              // Reads from the FULL category list, not the filtered/sorted
+              // view below, so the ratio reflects real order activity
+              // regardless of which subset is currently visible.
               const categoryOrdersToday = dishesInActiveCategory.reduce((sum, d) => sum + (orderStats.get(d.id)?.count ?? 0), 0);
-              return dishesInActiveCategory.map((dish) => (
+              return visibleDishesInActiveCategory.map((dish) => (
                 <DishRow
                   key={dish.id}
                   dish={dish}
@@ -2106,6 +2904,7 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
                   categoryOrdersToday={categoryOrdersToday}
                   criticalStockStatus={criticalStock.get(dish.id)}
                   vatRatePercent={vatRatePercent}
+                  initiallyLiked={likedDishIds.has(dish.id)}
                 />
               ));
             })()
@@ -2114,7 +2913,15 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
       ) : (
         <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 100 }}>
           {categoriesInSection.map((category) => (
-            <CategoryCard key={category.id} category={category} dishes={data.dishesByCategory.get(category.id) ?? []} onPress={() => setCategoryId(category.id)} t={t} isRTL={isRTL} />
+            <CategoryCard
+              key={category.id}
+              category={category}
+              dishes={data.dishesByCategory.get(category.id) ?? []}
+              onPress={() => setCategoryId(category.id)}
+              t={t}
+              isRTL={isRTL}
+              initiallyLiked={likedCategoryIds.has(category.id)}
+            />
           ))}
         </ScrollView>
       )}
@@ -2156,6 +2963,18 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
           setCartOpen(false);
           onOrderPlaced();
         }}
+      />
+
+      <SortSheet visible={sortSheetVisible} onClose={() => setSortSheetVisible(false)} value={dishSort} onChange={setDishSort} t={t} />
+      <FilterScreen
+        visible={filterScreenVisible}
+        onClose={() => setFilterScreenVisible(false)}
+        filters={dishFilters}
+        onChange={setDishFilters}
+        dishes={dishesInActiveCategory}
+        sizesByDish={data.sizesByDish}
+        criticalStock={criticalStock}
+        t={t}
       />
     </View>
   );

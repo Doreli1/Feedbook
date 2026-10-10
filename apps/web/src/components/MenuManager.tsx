@@ -11,7 +11,7 @@ import type {
   ModifierOptionIngredient,
   ModifierOptionServingVariant,
 } from '@feedbook/types';
-import { TrashIcon, PencilIcon, SparklesIcon, InfoIcon, CloseIcon } from './Icons';
+import { TrashIcon, PencilIcon, SparklesIcon, InfoIcon, CloseIcon, ChevronDownIcon } from './Icons';
 import { Tooltip } from './Tooltip';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
@@ -226,11 +226,15 @@ function CategoryCard({
   onRefresh: () => void;
   onDeleteCategory: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, dir } = useI18n();
   const [addingDish, setAddingDish] = useState(false);
   const [editingDishId, setEditingDishId] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(category.name);
+  // Collapsed by default (2026-10-01, per explicit request) — clicking the
+  // category row opens its dish list, same accordion convention as the rest
+  // of this screen's sections.
+  const [expanded, setExpanded] = useState(false);
 
   async function commitRename() {
     const name = renameValue.trim();
@@ -250,14 +254,41 @@ function CategoryCard({
   }
 
   return (
-    <div className="rounded border border-border bg-surface-2 p-4">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <SectionToggle value={category.section === 'drink' ? 'drink' : 'food'} onChange={(v) => void changeSection(v)} />
+    // While collapsed, the ENTIRE card (including its own padding above and
+    // below the header line) opens the category — not just the thin header
+    // row (2026-10-01, per explicit request/screenshot: the visible beige
+    // box is one card, and only the icon line inside it was actually
+    // clickable). Only attached while collapsed: once expanded, the card
+    // also contains the dish list and "add dish" button, which must stay
+    // independently clickable without also closing the category on every
+    // click inside it.
+    <div
+      className={`rounded border border-border bg-surface-2 p-4 ${expanded ? '' : 'cursor-pointer'}`}
+      onClick={expanded ? undefined : () => setExpanded(true)}
+    >
+      {/* The header row itself keeps its own toggle regardless of state
+          (stopPropagation only matters while collapsed, to avoid the outer
+          card's handler firing a second, redundant setExpanded(true)) — this
+          is what collapses the category again once expanded, since the
+          outer card has no handler at all in that state. Every other
+          interactive control inside it (section toggle, rename, delete)
+          also stops propagation so it doesn't fire this toggle either. */}
+      <div
+        onClick={(e) => {
+          e.stopPropagation();
+          setExpanded((v) => !v);
+        }}
+        className="mb-3 flex flex-wrap items-center gap-2 cursor-pointer"
+      >
+        <div onClick={(e) => e.stopPropagation()}>
+          <SectionToggle value={category.section === 'drink' ? 'drink' : 'food'} onChange={(v) => void changeSection(v)} />
+        </div>
         {renaming ? (
           <input
             type="text"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
             onBlur={() => void commitRename()}
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.currentTarget.blur();
@@ -275,7 +306,10 @@ function CategoryCard({
         <Tooltip content={t('editCategory')}>
           <button
             type="button"
-            onClick={() => setRenaming(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setRenaming(true);
+            }}
             aria-label={t('editCategory')}
             className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
           >
@@ -285,66 +319,85 @@ function CategoryCard({
         <Tooltip content={t('deleteCategory')}>
           <button
             type="button"
-            onClick={onDeleteCategory}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteCategory();
+            }}
             aria-label={t('deleteCategory')}
             className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
           >
             <TrashIcon />
           </button>
         </Tooltip>
+        {/* Moved to the row's own physical left, past the delete button
+            (2026-10-01, per explicit request) — and collapsed-state
+            direction follows the live language toggle (2026-10-01
+            follow-up), not a hardcoded assumption: in RTL (Hebrew),
+            "forward" (the direction content expands toward) is physically
+            left, so rotate-90 (clockwise) turns the down-chevron to point
+            left; in LTR (English) that same "forward" is physically right,
+            so it rotates the other way instead. Expanded always points
+            straight down regardless of direction. */}
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? '' : dir === 'rtl' ? 'rotate-90' : '-rotate-90'}`}
+        />
       </div>
 
-      <div className="space-y-2">
-        {dishes.map((dish) =>
-          editingDishId === dish.id ? (
+      {expanded && (
+        <>
+          <div className="space-y-2">
+            {dishes.map((dish) =>
+              editingDishId === dish.id ? (
+                <DishForm
+                  key={dish.id}
+                  dish={dish}
+                  categoryId={category.id}
+                  section={category.section}
+                  restaurantId={category.restaurant_id}
+                  ingredients={ingredients}
+                  existingSizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
+                  onDone={() => {
+                    setEditingDishId(null);
+                    onRefresh();
+                  }}
+                  onCancel={() => setEditingDishId(null)}
+                />
+              ) : (
+                <DishRow
+                  key={dish.id}
+                  dish={dish}
+                  section={category.section}
+                  sizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
+                  onRefresh={onRefresh}
+                  onEdit={() => setEditingDishId(dish.id)}
+                />
+              ),
+            )}
+          </div>
+
+          {addingDish ? (
             <DishForm
-              key={dish.id}
-              dish={dish}
               categoryId={category.id}
               section={category.section}
               restaurantId={category.restaurant_id}
               ingredients={ingredients}
-              existingSizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
+              existingSizeOptions={[]}
               onDone={() => {
-                setEditingDishId(null);
+                setAddingDish(false);
                 onRefresh();
               }}
-              onCancel={() => setEditingDishId(null)}
+              onCancel={() => setAddingDish(false)}
             />
           ) : (
-            <DishRow
-              key={dish.id}
-              dish={dish}
-              section={category.section}
-              sizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
-              onRefresh={onRefresh}
-              onEdit={() => setEditingDishId(dish.id)}
-            />
-          ),
-        )}
-      </div>
-
-      {addingDish ? (
-        <DishForm
-          categoryId={category.id}
-          section={category.section}
-          restaurantId={category.restaurant_id}
-          ingredients={ingredients}
-          existingSizeOptions={[]}
-          onDone={() => {
-            setAddingDish(false);
-            onRefresh();
-          }}
-          onCancel={() => setAddingDish(false)}
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setAddingDish(true)}
-          className="mt-2 w-full rounded border border-dashed border-border-strong py-1.5 text-xs text-accent hover:bg-accent-soft"
-        >
-          {t(category.section === 'drink' ? 'addDishDrink' : 'addDish')}
-        </button>
+            <button
+              type="button"
+              onClick={() => setAddingDish(true)}
+              className="mt-2 w-full rounded border border-dashed border-border-strong py-1.5 text-xs text-accent hover:bg-accent-soft"
+            >
+              {t(category.section === 'drink' ? 'addDishDrink' : 'addDish')}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -409,7 +462,13 @@ function DishRow({
   const discountPercentDisplay = hasDiscount ? Math.ceil(isFixedPriceSource ? (1 - discountedPriceRaw / basePrice) * 100 : dish.discount_percent) : 0;
 
   return (
-    <div className="flex items-center gap-3 rounded bg-surface p-2">
+    // Whole row opens edit on click (2026-10-01, per explicit request) — in
+    // addition to the pencil button, not instead of it. The delete button
+    // stops propagation so deleting a dish doesn't also open its edit form.
+    <div
+      onClick={onEdit}
+      className="flex cursor-pointer items-center gap-3 rounded border-b border-border-strong bg-surface p-2 transition-colors hover:bg-accent-soft"
+    >
       {dish.photo_urls[0] ? (
         <img src={dish.photo_urls[0]} alt={dish.name} className="h-10 w-10 rounded object-cover" />
       ) : (
@@ -437,34 +496,65 @@ function DishRow({
         {hasDiscount ? (
           <p className="tabular-nums text-sm font-medium text-ink">
             {pricePrefix}
-            <span className="me-2 text-xs text-muted-foreground line-through">₪{basePrice}</span>
-            <span className="text-danger">₪{discountedPrice}</span>
+            {/* Original price in red, discounted price in the same ink tone
+                as "החל מ-"/the prefix text and bolded for emphasis
+                (2026-10-01, per explicit request).
+                2026-10-01 (follow-up): wrapped in its own inline-flex instead
+                of leaving the two as plain inline siblings — real-device
+                feedback showed the original price wasn't actually landing to
+                the physical right of the discounted one as plain RTL text
+                flow should have given it (digits are weak-LTR runs under the
+                Unicode bidi algorithm, so relying on source order alone was
+                unreliable here). A flex row under this page's real dir="rtl"
+                mirrors its children the same way every other flex row in
+                this app already does, which is the reliable fix — first
+                child (original price) lands on the physical right. The flex
+                gap also replaces the old me-2 margin for the space between
+                them. */}
+            <span className="inline-flex items-center" style={{ gap: 6 }}>
+              <span className="text-xs text-danger line-through">₪{basePrice}</span>
+              <span className="text-base font-bold text-ink">₪{discountedPrice}</span>
+            </span>
           </p>
         ) : (
           <p className="tabular-nums text-sm font-medium text-ink">
             {pricePrefix}₪{basePrice}
           </p>
         )}
-        {hasDiscount && <p className="text-[10px] font-semibold text-danger">-{discountPercentDisplay}%</p>}
+        {/* Green/white badge with "הנחה של X%" wording (2026-10-01, per
+            explicit request) — same solid-fill treatment as the mobile
+            app's own discount badge, using this app's own success token
+            rather than importing the mobile palette's hex directly. */}
+        {hasDiscount && (
+          <span className="mt-1 inline-block rounded bg-success px-1.5 py-0.5 text-[10px] font-bold text-white">
+            {t('dishDiscountBadgeLabel').replace('{percent}', String(discountPercentDisplay))}
+          </span>
+        )}
       </div>
       <Tooltip content={t(isDrink ? 'editDishDrink' : 'editDish')}>
         <button
           type="button"
-          onClick={onEdit}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
           aria-label={t(isDrink ? 'editDishDrink' : 'editDish')}
           className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent-soft hover:text-accent"
         >
-          <PencilIcon className="h-3.5 w-3.5" />
+          <PencilIcon className="h-4 w-4" />
         </button>
       </Tooltip>
       <Tooltip content={t(isDrink ? 'deleteDishDrink' : 'deleteDish')}>
         <button
           type="button"
-          onClick={() => void handleDelete()}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleDelete();
+          }}
           aria-label={t(isDrink ? 'deleteDishDrink' : 'deleteDish')}
           className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
         >
-          <TrashIcon className="h-3.5 w-3.5" />
+          <TrashIcon className="h-4 w-4" />
         </button>
       </Tooltip>
     </div>

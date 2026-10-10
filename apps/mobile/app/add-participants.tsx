@@ -153,6 +153,14 @@ export default function AddParticipantsScreen() {
   }
 
   async function handleContinue() {
+    // Guard against a double-tap firing this twice concurrently — real bug
+    // found 2026-10-10: the button had no disabled state, so two taps before
+    // the first request's state update landed both passed join-session's
+    // check-then-insert race and each created their own session_participants
+    // row for the same user (see the migration adding a UNIQUE constraint on
+    // session_participants(session_id, user_id) for the server-side half of
+    // this fix). This early return is the client-side half.
+    if (stage === 'busy') return;
     setStage('busy');
     const {
       data: { session },
@@ -185,10 +193,12 @@ export default function AddParticipantsScreen() {
       participantId: data.participant.id,
       restaurantId: params.restaurantId,
       restaurantName: params.restaurantName,
+      tableId: params.tableId,
       tableNumber: params.tableNumber,
       sessionAccountNumber: params.sessionAccountNumber,
       subAccountNumber: data.participant.sub_account_number,
       reviewVerificationCode: data.participant.review_verification_code,
+      qrToken: params.qrToken,
     });
     router.push('/menu');
   }

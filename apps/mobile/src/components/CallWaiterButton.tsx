@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
@@ -31,37 +30,10 @@ function WaiterCalledModal({ visible, onDismiss, t }: { visible: boolean; onDism
   );
 }
 
-// App Flow §3.6: "האפליקציה מקצה לחצן קריאת שירות הזמין בכל שלב במהלך
-// הביקור" — available at every stage of the visit, not just the Orders tab.
-// Moved here from OrderTracker.tsx (2026-09-14, real-device feedback: the
-// original full-width bar on the Orders tab read as visually heavy/competing
-// with the order cards' own cancel buttons, and wasn't reachable from the
-// other two tabs at all). Rendered once at OrderingScreen level so it stays
-// mounted across all three tabs.
-//
-// 2026-09-14 (third round, real-device feedback):
-// - round 1: "hand-left-outline" — read as a "stop" gesture, no label.
-// - round 2: "megaphone-outline" + label — still didn't read as "call a
-//   waiter" specifically.
-// - round 3: a literal hotel concierge/reception bell — FontAwesome5's
-//   "concierge-bell" (the classic bell-on-a-stand-with-a-push-button glyph).
-//   A dedicated "waiter carrying a tray" glyph was requested in round 4 but
-//   doesn't exist in any bundled icon set (Ionicons, MaterialCommunityIcons,
-//   MaterialIcons, FontAwesome5/6, Feather, AntDesign, Octicons, Fontisto —
-//   checked all of them directly against the installed glyph maps) — a
-//   custom illustration asset would be a separate scope decision (this app
-//   has no image-icon pipeline anywhere else), so concierge-bell stays.
-//
-// 2026-09-14 (round 4, real-device feedback): the fixed `bottom: 20` didn't
-// account for Android's own navigation bar — on a device with 3-button nav
-// (not gesture nav), that bar sits ON TOP of a plain absolute position,
-// causing the exact collision reported. `useSafeAreaInsets()` (already used
-// elsewhere in this app, e.g. add-participants.tsx) reports that bar's real
-// height at runtime; adding it to the base offset keeps the button above it
-// on every device, not just ones with gesture navigation.
-export function CallWaiterButton() {
-  const { t } = useI18n();
-  const insets = useSafeAreaInsets();
+// The call-waiter POST, loading/called/error state — shared by every trigger
+// that renders CallWaiterInlineTrigger (one per ordering tab, see
+// OrderingScreen.tsx and AccountScreen.tsx), nothing UI-specific.
+export function useCallWaiter() {
   const sessionId = useTableSessionStore((s) => s.sessionId);
   const [calling, setCalling] = useState(false);
   const [called, setCalled] = useState(false);
@@ -81,38 +53,73 @@ export function CallWaiterButton() {
     setCalled(true);
   }
 
+  return {
+    calling,
+    called,
+    error,
+    handlePress,
+    dismissCalled: () => setCalled(false),
+    dismissError: () => setError(false),
+  };
+}
+
+// The confirmation + error modals, shared by every trigger instance so none
+// of them copy/paste the pair.
+function CallWaiterModals({
+  called,
+  error,
+  onDismissCalled,
+  onDismissError,
+  t,
+}: {
+  called: boolean;
+  error: boolean;
+  onDismissCalled: () => void;
+  onDismissError: () => void;
+  t: (key: TranslationKey) => string;
+}) {
   return (
     <>
-      <Pressable
-        onPress={() => void handlePress()}
-        disabled={calling}
-        accessibilityRole="button"
-        className="flex-row items-center rounded-full px-4 py-3"
-        style={{
-          position: 'absolute',
-          bottom: insets.bottom + 20,
-          insetInlineEnd: 16,
-          gap: 8,
-          backgroundColor: colors.royalBlueDark,
-          shadowColor: '#000',
-          shadowOpacity: 0.25,
-          shadowRadius: 6,
-          shadowOffset: { width: 0, height: 3 },
-          elevation: 5,
-        }}
-      >
-        {calling ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <>
-            <FontAwesome5 name="concierge-bell" size={17} color="#FFFFFF" />
-            <Text className="text-sm font-semibold text-white">{t('callWaiterButton')}</Text>
-          </>
-        )}
+      <WaiterCalledModal visible={called} onDismiss={onDismissCalled} t={t} />
+      <ErrorModal visible={error} title={t('placeOrderFailedTitle')} message={t('callWaiterFailedMessage')} dismissLabel={t('gotIt')} onDismiss={onDismissError} />
+    </>
+  );
+}
+
+// App Flow §3.6: "האפליקציה מקצה לחצן קריאת שירות הזמין בכל שלב במהלך
+// הביקור" — available at every stage of the visit. Originally a single
+// screen-wide floating pill (see git history, removed 2026-10-10); now one
+// instance per ordering tab, each embedded in that tab's own bottom strip
+// (OrderingScreen.tsx for menu/orders, AccountScreen.tsx for account) rather
+// than floating over whatever the tab renders at its own bottom — the
+// floating version kept colliding with each tab's own bottom content
+// (MenuBrowser's cart bar, AccountScreen's bill panel) with no reliable way
+// for this component to know another screen's layout. Icon choice (round 3
+// of 4, 2026-09-14, real-device feedback): a literal hotel concierge/
+// reception bell — FontAwesome5's "concierge-bell" — after "hand-left-
+// outline" read as a "stop" gesture and "megaphone-outline" didn't read as
+// "call a waiter" specifically. A dedicated "waiter carrying a tray" glyph
+// was requested in round 4 but doesn't exist in any bundled icon set
+// (Ionicons, MaterialCommunityIcons, MaterialIcons, FontAwesome5/6, Feather,
+// AntDesign, Octicons, Fontisto — checked all of them directly against the
+// installed glyph maps), so concierge-bell stays. Label renders before the
+// icon in JSX so it lands on the icon's right under native RTL.
+export function CallWaiterInlineTrigger() {
+  const { t } = useI18n();
+  const { calling, called, error, handlePress, dismissCalled, dismissError } = useCallWaiter();
+
+  return (
+    <>
+      <Pressable onPress={() => void handlePress()} disabled={calling} accessibilityRole="button" className="flex-row items-center gap-2">
+        <Text className="text-sm font-semibold" style={{ color: colors.royalBlueDark }}>
+          {t('callWaiterButton')}
+        </Text>
+        <View className="items-center justify-center rounded-full" style={{ height: 36, width: 36, backgroundColor: colors.royalBlueDark }}>
+          {calling ? <ActivityIndicator color="#FFFFFF" size="small" /> : <FontAwesome5 name="concierge-bell" size={15} color="#FFFFFF" />}
+        </View>
       </Pressable>
 
-      <WaiterCalledModal visible={called} onDismiss={() => setCalled(false)} t={t} />
-      <ErrorModal visible={error} title={t('placeOrderFailedTitle')} message={t('callWaiterFailedMessage')} dismissLabel={t('gotIt')} onDismiss={() => setError(false)} />
+      <CallWaiterModals called={called} error={error} onDismissCalled={dismissCalled} onDismissError={dismissError} t={t} />
     </>
   );
 }

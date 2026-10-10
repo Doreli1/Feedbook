@@ -28,10 +28,17 @@ interface TableSessionState {
   participantId: string | null;
   restaurantId: string | null;
   restaurantName: string | null;
+  tableId: string | null;
   tableNumber: string | null;
   sessionAccountNumber: string | null;
   subAccountNumber: string | null;
   reviewVerificationCode: string | null;
+  // qr_token itself, not just its presence — re-entering add-participants
+  // mid-session (the "+" button on the "ניהול חשבון" tab, 2026-10-10) needs
+  // the real token again: join-session always re-validates it server-side
+  // (project_session_id_not_capability_token), so there is no way to invite
+  // more people later without it.
+  qrToken: string | null;
   // Persisted storage is read back asynchronously (a promise, not ready on
   // the very first synchronous render after a reload) — OrderingChrome's
   // "no session data, redirect to /profile" guard must wait for this to
@@ -44,10 +51,12 @@ interface TableSessionState {
     participantId: string;
     restaurantId: string;
     restaurantName: string;
+    tableId: string;
     tableNumber: string;
     sessionAccountNumber: string;
     subAccountNumber: string;
     reviewVerificationCode: string;
+    qrToken: string;
   }) => void;
   setHasHydrated: (hasHydrated: boolean) => void;
 }
@@ -59,10 +68,12 @@ export const useTableSessionStore = create<TableSessionState>()(
       participantId: null,
       restaurantId: null,
       restaurantName: null,
+      tableId: null,
       tableNumber: null,
       sessionAccountNumber: null,
       subAccountNumber: null,
       reviewVerificationCode: null,
+      qrToken: null,
       hasHydrated: false,
       setTableSession: (data) => set(data),
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
@@ -71,8 +82,8 @@ export const useTableSessionStore = create<TableSessionState>()(
       name: 'feedbook-table-session',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => {
-        const { sessionId, participantId, restaurantId, restaurantName, tableNumber, sessionAccountNumber, subAccountNumber, reviewVerificationCode } = state;
-        return { sessionId, participantId, restaurantId, restaurantName, tableNumber, sessionAccountNumber, subAccountNumber, reviewVerificationCode };
+        const { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, sessionAccountNumber, subAccountNumber, reviewVerificationCode, qrToken } = state;
+        return { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, sessionAccountNumber, subAccountNumber, reviewVerificationCode, qrToken };
       },
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
