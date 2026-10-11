@@ -15,7 +15,7 @@ interface RawRow {
   id: string;
   quantity: number;
   unit_price: number;
-  orders: { participant_id: string; session_id: string } | null;
+  orders: { participant_id: string; session_id: string; placed_at: string } | null;
   dishes: { name: string } | null;
   order_item_modifiers:
     | {
@@ -54,10 +54,16 @@ export function useAccountItems(sessionId: string | null) {
     const { data } = await supabase
       .from('order_items')
       .select(
-        'id, quantity, unit_price, orders!inner(participant_id, session_id), dishes!inner(name), order_item_modifiers(modifier_option_id, serving_variant_id, price_delta_at_order, dish_modifier_options(name), modifier_option_serving_variants(name, container_type))',
+        'id, quantity, unit_price, orders!inner(participant_id, session_id, placed_at), dishes!inner(name), order_item_modifiers(modifier_option_id, serving_variant_id, price_delta_at_order, dish_modifier_options(name), modifier_option_serving_variants(name, container_type))',
       )
       .eq('orders.session_id', sessionId)
       .neq('status', 'cancelled')
+      // Real bug (2026-10-11, user report): with no explicit order, a newly
+      // placed/edited item could land anywhere in the result set — on a
+      // long bill it read as "nothing updated" even though the row really
+      // was there, just buried mid-list instead of appearing at the bottom
+      // where a diner naturally looks for what they just added.
+      .order('placed_at', { referencedTable: 'orders', ascending: true })
       .returns<RawRow[]>();
 
     const mapped: AccountItem[] = [];
