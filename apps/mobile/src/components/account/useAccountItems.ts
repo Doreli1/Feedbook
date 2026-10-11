@@ -63,7 +63,16 @@ export function useAccountItems(sessionId: string | null) {
       // long bill it read as "nothing updated" even though the row really
       // was there, just buried mid-list instead of appearing at the bottom
       // where a diner naturally looks for what they just added.
-      .order('placed_at', { referencedTable: 'orders', ascending: true })
+      //
+      // `.order('placed_at', { referencedTable: 'orders' })` looked right
+      // but is a DIFFERENT, documented thing: it only reorders the nested
+      // `orders` object *within* each row (a no-op here, since it's a
+      // single `!inner` object, not an array) — it does NOT sort the
+      // parent order_items rows. Verified directly against raw PostgREST:
+      // `order=orders(placed_at).asc` (the table-qualified column AS the
+      // column string, no `referencedTable` option) is what actually sorts
+      // the parent rows by a joined column.
+      .order('orders(placed_at)', { ascending: true })
       .returns<RawRow[]>();
 
     const mapped: AccountItem[] = [];
