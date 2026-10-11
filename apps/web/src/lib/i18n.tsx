@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import translations, { type Lang, type TranslationKey } from './translations';
 
 const STORAGE_KEY = 'feedbook-lang';
@@ -23,7 +23,7 @@ function readStoredLang(): Lang {
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(readStoredLang);
-  const dir = lang === 'he' ? 'rtl' : 'ltr';
+  const dir: 'rtl' | 'ltr' = lang === 'he' ? 'rtl' : 'ltr';
 
   // The whole document's dir/lang follow the chosen language, so every
   // screen — including ones that forget to set it locally — stays
@@ -36,7 +36,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.dir = dir;
   }, [lang, dir]);
 
-  function setLang(next: Lang) {
+  // Real bug fix (2026-10-11, same root cause found on the mobile side —
+  // see that file's own comment): setLang/t and the context value object
+  // were plain function/object literals recreated on every I18nProvider
+  // render, so every consumer's `t` got a brand-new identity on
+  // essentially every render anywhere in the tree, not just on an actual
+  // language change. Any hook that put `t` in a useCallback/useEffect
+  // dependency array (e.g. a realtime subscription) was tearing down and
+  // recreating far more often than intended. Memoized so `t`/setLang/the
+  // context value only change when `lang` itself actually does.
+  const setLang = useCallback((next: Lang) => {
     setLangState(next);
     try {
       localStorage.setItem(STORAGE_KEY, next);
@@ -44,13 +53,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       // localStorage can throw in private-browsing contexts — the choice
       // just won't persist across reloads, which is a harmless fallback.
     }
-  }
+  }, []);
 
-  function t(key: TranslationKey): string {
-    return translations[lang][key];
-  }
+  const t = useCallback((key: TranslationKey): string => translations[lang][key], [lang]);
 
-  return <I18nContext.Provider value={{ lang, setLang, t, dir }}>{children}</I18nContext.Provider>;
+  const value = useMemo(() => ({ lang, setLang, t, dir }), [lang, setLang, t, dir]);
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
 export function useI18n() {

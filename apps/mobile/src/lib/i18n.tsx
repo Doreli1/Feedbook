@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { DevSettings, I18nManager } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import translations, { type Lang, type TranslationKey } from './translations';
@@ -37,7 +37,20 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     void getPersistedLang().then(setLangState);
   }, []);
 
-  function setLang(next: Lang) {
+  // Real bug fix (2026-10-11, found while investigating a user report that
+  // looked like a stale account-screen realtime subscription): setLang/t
+  // and the context value object were all plain function/object literals
+  // recreated on every I18nProvider render — which, since this provider
+  // sits near the app root, meant every consumer's own `t` got a brand new
+  // identity on essentially every render anywhere in the tree, regardless
+  // of whether the language itself ever changed. Several hooks across this
+  // app (e.g. useAccountItems.ts) put `t` directly in a useCallback/
+  // useEffect dependency array — with `t` this unstable, those effects
+  // (including realtime subscriptions) were tearing down and recreating
+  // far more often than their own logic ever intended, not just on actual
+  // language changes. Memoized so `t`/setLang/the context value are only
+  // ever new when `lang` itself actually changes.
+  const setLang = useCallback((next: Lang) => {
     setLangState(next);
     void AsyncStorage.setItem(LANG_STORAGE_KEY, next).catch(() => {
       // AsyncStorage can fail in rare low-storage conditions — the choice
@@ -49,13 +62,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       I18nManager.forceRTL(shouldBeRTL);
       DevSettings.reload();
     }
-  }
+  }, []);
 
-  function t(key: TranslationKey): string {
-    return translations[lang][key];
-  }
+  const t = useCallback((key: TranslationKey): string => translations[lang][key], [lang]);
 
-  return <I18nContext.Provider value={{ lang, setLang, t, isRTL: lang === 'he' }}>{children}</I18nContext.Provider>;
+  const value = useMemo(() => ({ lang, setLang, t, isRTL: lang === 'he' }), [lang, setLang, t]);
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
 export function useI18n() {
