@@ -2,7 +2,7 @@
 
 Feedbook is a two-sided platform for the restaurant industry: a Web Admin app for
 restaurant owners/staff, and a mobile app for diners (QR-based table entry, ordering,
-split payment, reviews). Vision, features, and roadmap: `../1.PRD_restaurant_system_v14.docx`.
+split payment, reviews). Vision, features, and roadmap: `../1.PRD_restaurant_system_v15.docx`.
 
 ## Repo status (updated 2026-08-31)
 
@@ -51,13 +51,13 @@ packages/config/        Empty placeholder — shared eslint/tailwind config, not
 
 | Need | Source |
 |---|---|
-| Full feature list, MVP scope, out-of-scope | `../1.PRD_restaurant_system_v14.docx` §5, §9 |
-| Screen-by-screen flows, wireframes, sitemap | `../2.Feedbook_App_Flow v9.docx` |
-| Every table, column, constraint, RLS pattern | `../5.Feedbook_Backend_Schema vr10.docx` |
+| Full feature list, MVP scope, out-of-scope | `../1.PRD_restaurant_system_v15.docx` §5, §9 |
+| Screen-by-screen flows, wireframes, sitemap | `../2.Feedbook_App_Flow v10.docx` |
+| Every table, column, constraint, RLS pattern | `../5.Feedbook_Backend_Schema vr11.docx` |
 | Visual ERDs + relationship cardinality | `../5.1.Feedbook_ER_Diagrams v2.docx` |
-| Every API endpoint, request/response shape | `../7.Feedbook_API_Specification_v9.docx` |
+| Every API endpoint, request/response shape | `../7.Feedbook_API_Specification_v10.docx` |
 | Voice, tone, terminology, moderation rules | `../4.Feedbook_Content_Guidelines v3.docx` |
-| Build order, security gates, test types per phase | `../6.Feedbook_Implementation_Plan v7.docx` |
+| Build order, security gates, test types per phase | `../6.Feedbook_Implementation_Plan v8.docx` |
 | Payments/payout settlement model | `../9.Feedbook_Settlement_Architecture vr5.docx` |
 | Known gaps / open decisions log | `../10.Feedbook_Gap_Register v4.docx` |
 

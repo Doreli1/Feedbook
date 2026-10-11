@@ -1,8 +1,8 @@
 # supabase/ — Database, RLS, Edge Functions
 
-Schema source of truth: `../../../5.Feedbook_Backend_Schema vr10.docx` (all DDL in §14).
+Schema source of truth: `../../../5.Feedbook_Backend_Schema vr11.docx` (all DDL in §14).
 Visual ERDs: `../../../5.1.Feedbook_ER_Diagrams v2.docx`. Endpoint contracts:
-`../../../7.Feedbook_API_Specification_v9.docx`.
+`../../../7.Feedbook_API_Specification_v10.docx`.
 
 ## Status (updated 2026-08-31)
 

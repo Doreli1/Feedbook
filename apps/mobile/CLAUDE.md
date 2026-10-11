@@ -4,8 +4,8 @@
 
 React Native app: QR entry, table session, ordering, split payment, reviews, Feedstars
 tier (renamed from "Genius" 2026-09-01, see PRD §13.3). Screen inventory and flows:
-`../../../2.Feedbook_App_Flow v9.docx` Part A (§2). Feature specs:
-`../../../1.PRD_restaurant_system_v14.docx` §5.2.
+`../../../2.Feedbook_App_Flow v10.docx` Part A (§2). Feature specs:
+`../../../1.PRD_restaurant_system_v15.docx` §5.2.
 
 Stage 4 (mobile core) build started 2026-09-07, Week 1 of the 4-week plan in
 `../../../פיתוחים/מסכי אפליקציה UI/Feedbook_UI_Milestone4_Mobile_Spec.docx` — see that
