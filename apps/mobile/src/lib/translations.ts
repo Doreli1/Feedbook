@@ -325,12 +325,6 @@ const translations = {
     accountColumnUnitPrice: 'מחיר ליחידה',
     accountColumnTotalPrice: 'מחיר כללי',
     accountColumnMember: 'חבר חשבון',
-    // Removing a priced modifier row from the account bill (2026-10-11,
-    // user request) — distinct from a free choice (e.g. doneness), which
-    // was never shown as its own billable row to begin with.
-    accountRemoveModifierAction: 'הסרה',
-    accountRemoveModifierConfirmTitle: 'הסרת התוספת מההזמנה',
-    accountRemoveModifierConfirmMessage: '"{name}" תוסר מההזמנה שלכם. לא ניתן לשחזר פעולה זו.',
     serviceFeeDisclaimerPrefix: 'דמי השירות ',
     serviceFeeDisclaimerEmphasis: 'אינם כלולים בחשבון',
     accountTotalLabel: 'סך עלות',
@@ -644,9 +638,6 @@ const translations = {
     accountColumnUnitPrice: 'Unit price',
     accountColumnTotalPrice: 'Total price',
     accountColumnMember: 'Account member',
-    accountRemoveModifierAction: 'Remove',
-    accountRemoveModifierConfirmTitle: 'Remove this add-on',
-    accountRemoveModifierConfirmMessage: '"{name}" will be removed from your order. This can\'t be undone.',
     serviceFeeDisclaimerPrefix: 'Service fees ',
     serviceFeeDisclaimerEmphasis: 'are not included in the bill',
     accountTotalLabel: 'Total',

@@ -2127,14 +2127,30 @@ export function DishDetailModal({
 
   function toggleOption(group: DishModifierGroup, optionId: string) {
     if (unavailableOptionIds.has(optionId)) return;
+    const option = (optionsByGroup.get(group.id) ?? []).find((o) => o.id === optionId);
     setSelections((prev) => {
       const next = new Map(prev);
       const current = new Set(next.get(group.id) ?? []);
       let deselected: string | null = null;
       if (group.selection_type === 'single') {
         const previouslySelected = [...current][0];
-        if (previouslySelected && previouslySelected !== optionId) deselected = previouslySelected;
-        next.set(group.id, new Set([optionId]));
+        // Re-tapping an already-chosen option that carries a real added
+        // cost (e.g. a drink add-on priced via its own serving variant —
+        // 1/3 ליטר Weihenstephan at ₪34 — the option row itself is always
+        // ₪0, the price lives on the resolved variant) clears the group
+        // back to "nothing chosen" instead of being a no-op (2026-10-11,
+        // user request: only a priced tag can be undone this way — a free
+        // choice, or any choice in a group that must always have
+        // something selected, stays sticky, same as before).
+        const { variant } = resolveVariant(optionId);
+        const effectivePrice = variant ? variant.price_delta : (option?.price_delta ?? 0);
+        if (previouslySelected === optionId && effectivePrice > 0) {
+          next.set(group.id, new Set());
+          deselected = optionId;
+        } else {
+          if (previouslySelected && previouslySelected !== optionId) deselected = previouslySelected;
+          next.set(group.id, new Set([optionId]));
+        }
       } else if (current.has(optionId)) {
         current.delete(optionId);
         next.set(group.id, current);
