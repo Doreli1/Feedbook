@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CallWaiterInlineTrigger } from '../CallWaiterButton';
 import { useI18n } from '../../lib/i18n';
+import { formatPrice } from '../../lib/formatPrice';
 import { useTableSessionStore } from '../../lib/tableSessionStore';
 import { colors } from '../../theme';
 import { useAccountItems, type AccountItem } from './useAccountItems';
@@ -14,10 +15,15 @@ type AccountSubTab = 'general' | 'personal';
 
 // Not Number.toLocaleString() — Hermes' grouping/locale behavior isn't
 // guaranteed consistent across devices, and this only ever needs one fixed
-// format (comma thousands, 2 decimals), not the user's device locale.
+// format (comma thousands, 2 decimals), not the user's device locale. No
+// trailing ".00" (2026-10-11, user request, applied app-wide) — a
+// whole-number total reads cleaner without it; a non-zero fractional part
+// still keeps its two decimals, same rule as formatPrice, just with comma
+// grouping layered on top for this screen's bigger totals.
 function formatAmount(amount: number): string {
   const [whole, decimals] = amount.toFixed(2).split('.');
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${decimals}`;
+  const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return decimals === '00' ? groupedWhole : `${groupedWhole}.${decimals}`;
 }
 
 function ParticipantAvatar({ participant }: { participant: SessionParticipant }) {
@@ -48,6 +54,7 @@ function ParticipantsRow({ participants }: { participants: SessionParticipant[] 
   const restaurantName = useTableSessionStore((s) => s.restaurantName);
   const tableId = useTableSessionStore((s) => s.tableId);
   const tableNumber = useTableSessionStore((s) => s.tableNumber);
+  const tableType = useTableSessionStore((s) => s.tableType);
   const sessionAccountNumber = useTableSessionStore((s) => s.sessionAccountNumber);
   const qrToken = useTableSessionStore((s) => s.qrToken);
 
@@ -70,7 +77,7 @@ function ParticipantsRow({ participants }: { participants: SessionParticipant[] 
           onPress={() =>
             router.push({
               pathname: '/add-participants',
-              params: { restaurantId, restaurantName, tableId, tableNumber, sessionId, sessionAccountNumber, qrToken },
+              params: { restaurantId, restaurantName, tableId, tableNumber, tableType: tableType ?? '', sessionId, sessionAccountNumber, qrToken },
             })
           }
           className="items-center justify-center rounded-full"
@@ -139,10 +146,10 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
                 <Text className="flex-[2] text-sm text-[#1B2430]">{item.dishName}</Text>
                 <Text className="w-12 text-center text-sm text-[#1B2430]">{item.quantity}</Text>
                 <Text className="flex-1 text-center text-sm text-[#1B2430]" numberOfLines={1} adjustsFontSizeToFit>
-                  ₪{item.unitPrice.toFixed(2)}
+                  ₪{formatPrice(item.unitPrice)}
                 </Text>
                 <Text className="flex-1 text-center text-sm text-[#1B2430]" numberOfLines={1} adjustsFontSizeToFit>
-                  ₪{(item.unitPrice * item.quantity).toFixed(2)}
+                  ₪{formatPrice(item.unitPrice * item.quantity)}
                 </Text>
               </View>
             );
@@ -178,6 +185,7 @@ export function AccountScreen() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [billComingSoonOpen, setBillComingSoonOpen] = useState(false);
   const tableNumber = useTableSessionStore((s) => s.tableNumber);
+  const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
   const sessionAccountNumber = useTableSessionStore((s) => s.sessionAccountNumber);
   const subAccountNumber = useTableSessionStore((s) => s.subAccountNumber);
   const reviewVerificationCode = useTableSessionStore((s) => s.reviewVerificationCode);
@@ -274,14 +282,24 @@ export function AccountScreen() {
           <Text className="text-lg font-bold" style={{ color: colors.success }}>
             ₪{formatAmount(total)}
           </Text>
-          <CallWaiterInlineTrigger />
+          {!isBarTable && <CallWaiterInlineTrigger />}
         </View>
         <Text className="mb-1 text-xs leading-4" style={{ color: colors.ink }}>
           {t('serviceFeeDisclaimerPrefix')}
           <Text style={{ fontWeight: '700' }}>{t('serviceFeeDisclaimerEmphasis')}</Text>
         </Text>
 
-        <Pressable onPress={() => setBillComingSoonOpen(true)} className="items-center rounded-xl py-4" style={{ backgroundColor: colors.royalBlue }}>
+        {/* minHeight 48, not py-4 (2026-10-11, user request, follow-up: an
+            interim py-3 then py-2 still didn't actually match the cart-
+            summary bar's thickness — padding alone can't, since this
+            button's text-lg label sits taller than that bar's text-sm one;
+            an explicit shared height is what makes them line up) — matches
+            CartBarInlineTrigger/placeOrderButton (MenuBrowser.tsx) exactly. */}
+        <Pressable
+          onPress={() => setBillComingSoonOpen(true)}
+          className="items-center justify-center rounded-xl"
+          style={{ backgroundColor: colors.royalBlue, minHeight: 48 }}
+        >
           <Text className="text-lg font-semibold text-white">{t('requestBillButton')}</Text>
         </Pressable>
       </View>

@@ -186,6 +186,9 @@ const translations = {
     ratingTierGood: 'טוב',
     ratingTierFair: 'סביר',
     addToOrderButton: 'הוסיפו להזמנה',
+    // Shown instead of addToOrderButton only when DishDetailModal was
+    // opened to edit an existing cart line (2026-10-11, user request).
+    updateOrderItemButton: 'עדכון המנה',
     dishSizeSectionTitle: 'גודל הגשה',
     // Bottle and draft get genuinely different phrasing, not just a swapped
     // noun (2026-09-29, per explicit correction): a bottle is never "poured"
@@ -216,9 +219,31 @@ const translations = {
     verifiedDinerFallbackLabel: 'סועד מאומת',
 
     // Cart review (AFD screen 3 — "סל הזמנה פעילה")
-    cartTitle: 'סל ההזמנה שלכם',
+    cartTitle: 'פרטי ההזמנה שלכם',
+    // Short label for the cart-summary bar only (2026-10-11, user request) —
+    // cartTitle stays the modal's own heading; this bar needed a shorter
+    // "ההזמנה שלכם" rather than repeating "סל".
+    cartBarLabel: 'ההזמנה שלכם',
+    // Orderer-details section (2026-10-11, user request, mockup
+    // 7.1.5-MyOrder Part2.JPG) — "הזמנה עבור: [name]".
+    orderedByLabel: 'הזמנה עבור:',
+    // Same reviewVerificationCode field AccountScreen's strip shows as
+    // "קוד חשבון" — relabeled here to match this screen's own mockup
+    // wording exactly.
+    cartOrderSecretCodeLabel: 'קוד סודי',
+    // Special-request feature (2026-10-11, user request) — one free-text
+    // note for the whole order, triggered right below the itemized dish
+    // list in CartModal.
+    addSpecialRequestLabel: 'הוסיפו בקשה מיוחדת',
+    specialRequestModalTitle: 'בקשה מיוחדת',
+    specialRequestPlaceholder: 'לדוגמה: בלי בצל, רגיש לבוטנים...',
     cartEmpty: 'עדיין לא הוספתם מנות להזמנה.',
     cartItemRemove: 'הסרה',
+    // M-05 escape-route confirmation before removing a cart line (2026-10-11,
+    // user request) — ConfirmModal reused, cartItemRemove/back as its two
+    // action labels.
+    cartRemoveItemConfirmTitle: 'הסרת מנה מההזמנה',
+    cartRemoveItemConfirmMessage: 'המנה תוסר מההזמנה שלכם. לא ניתן לשחזר פעולה זו.',
     cartTotalLabel: 'סה"כ',
     cartBackToMenu: 'המשך לעיין בתפריט',
     placeOrderButton: 'שליחה למטבח',
@@ -269,6 +294,8 @@ const translations = {
     callWaiterButton: 'הזמינו שירות',
     callWaiterConfirmTitle: 'הקריאה נשלחה!',
     callWaiterConfirmMessage: 'צוות המסעדה קיבל את הפנייה ויגיע אליכם בהקדם.',
+    callWaiterConfirmPromptTitle: 'לקרוא למלצר?',
+    callWaiterConfirmPromptMessage: 'הקריאה תשלח התראה מיידית לצוות המסעדה לגשת אליכם. ודאו שאתם אכן זקוקים לעזרה לפני שתמשיכו.',
     callWaiterFailedMessage: 'לא הצלחנו לשלוח את הקריאה למלצר. נסו שוב.',
 
     // Account tab — table/personal account summary strip (2026-09-13 redesign:
@@ -496,6 +523,7 @@ const translations = {
     ratingTierGood: 'Good',
     ratingTierFair: 'Fair',
     addToOrderButton: 'Add to order',
+    updateOrderItemButton: 'Update item',
     dishSizeSectionTitle: 'Serving size',
     dishServingSizeTitlePrefixDraft: 'Choose a pour size ',
     dishServingSizeTitleBoldDraft: 'from the keg',
@@ -520,9 +548,17 @@ const translations = {
     verifiedDinerFallbackLabel: 'Verified diner',
 
     // Cart review (AFD screen 3 — "Active order cart")
-    cartTitle: 'Your order cart',
+    cartTitle: 'Your order details',
+    cartBarLabel: 'Your order',
+    orderedByLabel: 'Ordered by:',
+    cartOrderSecretCodeLabel: 'Secret code',
+    addSpecialRequestLabel: 'Add a special request',
+    specialRequestModalTitle: 'Special request',
+    specialRequestPlaceholder: 'For example: no onions, peanut allergy...',
     cartEmpty: "You haven't added any dishes to your order yet.",
     cartItemRemove: 'Remove',
+    cartRemoveItemConfirmTitle: 'Remove this item',
+    cartRemoveItemConfirmMessage: "This item will be removed from your order. This can't be undone.",
     cartTotalLabel: 'Total',
     cartBackToMenu: 'Continue browsing the menu',
     placeOrderButton: 'Send to kitchen',
@@ -573,6 +609,8 @@ const translations = {
     callWaiterButton: 'Request service',
     callWaiterConfirmTitle: 'Your call was sent!',
     callWaiterConfirmMessage: 'The restaurant staff has been notified and will be with you shortly.',
+    callWaiterConfirmPromptTitle: 'Call a waiter?',
+    callWaiterConfirmPromptMessage: 'This will immediately notify the restaurant staff to come to you. Make sure you actually need help before continuing.',
     callWaiterFailedMessage: "We couldn't send your call for a server. Please try again.",
 
     yourTableNumberLabel: 'Your table number',

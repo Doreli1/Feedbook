@@ -5,10 +5,11 @@ import { useRouter } from 'expo-router';
 import { AccountScreen } from './account/AccountScreen';
 import { BurgerSideMenuPanel } from './BurgerSideMenu';
 import { CallWaiterInlineTrigger } from './CallWaiterButton';
-import { MenuBrowser } from './menu/MenuBrowser';
+import { CartBarInlineTrigger, MenuBrowser } from './menu/MenuBrowser';
 import { OrderTracker } from './orders/OrderTracker';
 import { OrderingHeader } from './OrderingHeader';
 import { OrderingTabBar, type OrderingTabKey } from './OrderingTabBar';
+import { useCartStore } from '../lib/cartStore';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
@@ -41,7 +42,9 @@ export function OrderingScreen() {
   const sessionId = useTableSessionStore((s) => s.sessionId);
   const participantId = useTableSessionStore((s) => s.participantId);
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
+  const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
   const hasHydrated = useTableSessionStore((s) => s.hasHydrated);
+  const cartItemCount = useCartStore((s) => s.items.length);
   // sessionId/participantId/restaurantId were added 2026-09-14 (Stage 5) —
   // a session persisted by an app install from before that still has
   // subAccountNumber but none of these three, since they were never part of
@@ -73,6 +76,9 @@ export function OrderingScreen() {
   if (!hasHydrated || !hasCompleteSession) {
     return null;
   }
+
+  const showCallWaiterRow = activeTab !== 'account' && !isBarTable;
+  const showCartBar = activeTab === 'menu' && cartItemCount > 0;
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
@@ -107,17 +113,32 @@ export function OrderingScreen() {
           every tab now gets the same treatment instead of a screen-wide
           floating button. Account tab keeps its own version, built into its
           bottom panel alongside the total/disclaimer/bill button, so it's
-          excluded here. Being a normal-flow sibling of the Animated.View
-          above (not absolute) means MenuBrowser's own cart bar — positioned
-          absolutely *within its own container* — automatically clears this
-          strip too: this strip's real height shrinks that container, so the
-          cart bar's `bottom: insets.bottom + 16` still resolves above this
-          strip, not overlapping it, with no manual coordination needed. */}
-      {activeTab !== 'account' && (
+          excluded here. Hidden entirely for bar seating (2026-10-11, user
+          request): real restaurants treat the bar as the bar staff's own
+          responsibility, not the floor waiters', and there is no dedicated
+          bar staff role in the system yet for a bar call to even be
+          resolvable by the right person — see tableSessionStore.ts's own
+          comment on tableType.
+
+          The cart-summary bar (CartBarInlineTrigger) joins this same strip
+          below the call-waiter row (2026-10-11, user request) — moved out
+          of MenuBrowser's own absolutely-positioned floating pill. Kept on
+          the menu tab only (its original scope) and shown independently of
+          isBarTable: a bar table still orders food/drinks through the app,
+          only the waiter-call escalation is bar staff's job, not the cart's
+          own existence. */}
+      {(showCallWaiterRow || showCartBar) && (
         <View className="px-4 pt-3" style={{ backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }}>
-          <View className="flex-row justify-end">
-            <CallWaiterInlineTrigger />
-          </View>
+          {showCallWaiterRow && (
+            <View className="flex-row justify-end">
+              <CallWaiterInlineTrigger />
+            </View>
+          )}
+          {showCartBar && (
+            <View className={showCallWaiterRow ? 'mt-3' : undefined}>
+              <CartBarInlineTrigger />
+            </View>
+          )}
         </View>
       )}
     </View>

@@ -2,8 +2,8 @@
 
 React Admin app for restaurant owners/staff: menu, inventory, tables, orders,
 payments, reports, non-conformances, and restaurant self-registration. Screen
-inventory and flows: `../../../2.Feedbook_App_Flow v8.docx` Part B (§3). Feature specs:
-`../../../1.PRD_restaurant_system_v12.docx` §5.1.
+inventory and flows: `../../../2.Feedbook_App_Flow v9.docx` Part B (§3). Feature specs:
+`../../../1.PRD_restaurant_system_v14.docx` §5.1.
 
 Scaffolded (2026-08-31): React 19 + Vite 7 + TypeScript + Tailwind v4, placeholder
 screen only — no real UI built yet.

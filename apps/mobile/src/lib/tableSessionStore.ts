@@ -30,6 +30,13 @@ interface TableSessionState {
   restaurantName: string | null;
   tableId: string | null;
   tableNumber: string | null;
+  // 'bar' | 'couple' | 'family' | 'family_extended' | 'high' | null — used to
+  // hide the "הזמינו שירות" trigger for bar seating (2026-10-11): real
+  // restaurants treat the bar as the bar staff's own responsibility, not the
+  // floor waiters', and there is no dedicated bar staff role in the system
+  // yet (staff.role is manager/waiter/kitchen only) for a bar call to even
+  // be resolvable by the right person.
+  tableType: string | null;
   sessionAccountNumber: string | null;
   subAccountNumber: string | null;
   reviewVerificationCode: string | null;
@@ -53,6 +60,7 @@ interface TableSessionState {
     restaurantName: string;
     tableId: string;
     tableNumber: string;
+    tableType: string | null;
     sessionAccountNumber: string;
     subAccountNumber: string;
     reviewVerificationCode: string;
@@ -70,6 +78,7 @@ export const useTableSessionStore = create<TableSessionState>()(
       restaurantName: null,
       tableId: null,
       tableNumber: null,
+      tableType: null,
       sessionAccountNumber: null,
       subAccountNumber: null,
       reviewVerificationCode: null,
@@ -82,8 +91,8 @@ export const useTableSessionStore = create<TableSessionState>()(
       name: 'feedbook-table-session',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => {
-        const { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, sessionAccountNumber, subAccountNumber, reviewVerificationCode, qrToken } = state;
-        return { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, sessionAccountNumber, subAccountNumber, reviewVerificationCode, qrToken };
+        const { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, tableType, sessionAccountNumber, subAccountNumber, reviewVerificationCode, qrToken } = state;
+        return { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, tableType, sessionAccountNumber, subAccountNumber, reviewVerificationCode, qrToken };
       },
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

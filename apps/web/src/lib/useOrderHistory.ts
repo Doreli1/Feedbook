@@ -27,6 +27,9 @@ export interface OrderHistoryItem {
   // Same gap, same fix as useOrders.ts's KitchenOrderItem — see its comment.
   sessionAccountNumber: string | null;
   subAccountNumber: string | null;
+  // Same orders.special_request field as useOrders.ts's KitchenOrderItem —
+  // see its comment.
+  specialRequest: string | null;
 }
 
 interface RawRow {
@@ -44,6 +47,7 @@ interface RawRow {
   orders: {
     placed_at: string;
     bar_ticket_number: number | null;
+    special_request: string | null;
     session_participants: { sub_account_number: string } | null;
     table_sessions: { session_account_number: string; tables: { table_number: string } | null } | null;
   } | null;
@@ -69,7 +73,7 @@ export function useOrderHistory(restaurantId: string | undefined) {
     const { data } = await supabase
       .from('order_items')
       .select(
-        'id, order_id, status, status_updated_at, quantity, unit_price, cancellation_restocked, cancellation_reason, dishes(name), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number)))',
+        'id, order_id, status, status_updated_at, quantity, unit_price, cancellation_restocked, cancellation_reason, dishes(name), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, special_request, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number)))',
       )
       .eq('orders.table_sessions.restaurant_id', restaurantId)
       .returns<RawRow[]>();
@@ -96,6 +100,7 @@ export function useOrderHistory(restaurantId: string | undefined) {
         cancellationReason: row.cancellation_reason,
         sessionAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.table_sessions?.session_account_number ?? null) : null,
         subAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.session_participants?.sub_account_number ?? null) : null,
+        specialRequest: row.orders!.special_request,
       }))
       .sort((a, b) => new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime());
 

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { KitchenItemStatus, KitchenOrderItem } from '../lib/useOrders';
-import type { KitchenWaiterCall } from '../lib/useWaiterCalls';
 import { useOrderHistory } from '../lib/useOrderHistory';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
@@ -15,9 +14,7 @@ interface KitchenFocusRequest {
 interface Props {
   restaurantId: string;
   items: KitchenOrderItem[];
-  waiterCalls: KitchenWaiterCall[];
   onRefreshOrders: () => void;
-  onAcknowledgeCall: (id: string) => void;
   // Set by Dashboard.tsx when a staff member clicks a notification — jumps
   // to the right section and highlights the specific row it's about,
   // requested 2026-09-19 right after the notification feature itself.
@@ -91,7 +88,7 @@ function elapsedTimeClasses(item: KitchenOrderItem): string {
   return 'text-danger';
 }
 
-export function KitchenScreen({ restaurantId, items, waiterCalls, onRefreshOrders, onAcknowledgeCall, focusRequest, onFocusHandled }: Props) {
+export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusRequest, onFocusHandled }: Props) {
   const { t } = useI18n();
   const [printItem, setPrintItem] = useState<KitchenOrderItem | null>(null);
   const [section, setSection] = useState<'active' | 'history'>('active');
@@ -171,29 +168,6 @@ export function KitchenScreen({ restaurantId, items, waiterCalls, onRefreshOrder
         </div>
       )}
 
-      {waiterCalls.length > 0 && (
-        <div className="card border-l-4 border-l-danger p-4">
-          <h2 className="mb-2 text-sm font-semibold text-ink">{t('kitchenWaiterCallsHeading')}</h2>
-          <div className="space-y-2">
-            {waiterCalls.map((call) => (
-              <div key={call.id} className="flex items-center justify-between rounded bg-danger-soft px-3 py-2 text-sm">
-                <span className="font-medium text-ink">
-                  {t('kitchenTableLabel')} {call.tableNumber}
-                  {call.reason ? ` · ${call.reason}` : ''}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onAcknowledgeCall(call.id)}
-                  className="rounded bg-white px-3 py-1 text-xs font-medium text-danger hover:bg-surface-2"
-                >
-                  {t('kitchenAcknowledgeCall')}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="card p-6">
         <h1 className="mb-1 text-lg font-bold text-ink">{t('kitchenTitle')}</h1>
         <p className="mb-4 text-sm text-muted-foreground">{t('kitchenSubtitle')}</p>
@@ -229,6 +203,7 @@ export function KitchenScreen({ restaurantId, items, waiterCalls, onRefreshOrder
                     <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnPersonalAccount')}</th>
                     <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnDish')}</th>
                     <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnDetails')}</th>
+                    <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnSpecialRequest')}</th>
                     <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnElapsed')}</th>
                     <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnStatus')}</th>
                     <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnActions')}</th>
@@ -266,6 +241,7 @@ export function KitchenScreen({ restaurantId, items, waiterCalls, onRefreshOrder
                         {item.quantity}× {item.dishName}
                       </td>
                       <td className="px-2 py-2.5 text-xs text-muted-foreground">{[item.sizeName, item.modifierSummary].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className="px-2 py-2.5 text-xs text-muted-foreground">{item.specialRequest ?? '—'}</td>
                       <td className={`px-2 py-2.5 tabular-nums text-xs font-medium ${elapsedTimeClasses(item)}`}>{t('kitchenElapsedMinutes').replace('{minutes}', String(elapsedMinutes(item.placedAt)))}</td>
                       <td className="px-2 py-2.5">
                         <span className={`inline-block shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${statusPillClasses(item.status)}`}>
@@ -425,6 +401,7 @@ function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId
                 <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnPersonalAccount')}</th>
                 <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnDish')}</th>
                 <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnDetails')}</th>
+                <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnSpecialRequest')}</th>
                 <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnDate')}</th>
                 <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnStatus')}</th>
                 <th className="px-2 py-2 text-start text-eyebrow">{t('kitchenColumnCancellationReason')}</th>
@@ -457,6 +434,7 @@ function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId
                     {item.quantity}× {item.dishName}
                   </td>
                   <td className="px-2 py-2.5 text-xs text-muted-foreground">{[item.sizeName, item.modifierSummary].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="px-2 py-2.5 text-xs text-muted-foreground">{item.specialRequest ?? '—'}</td>
                   <td className="px-2 py-2.5 text-xs text-muted-foreground">{new Date(item.placedAt).toLocaleString('he-IL')}</td>
                   <td className="px-2 py-2.5">
                     <span className={`inline-block shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${statusPillClasses(item.status)}`}>{t(statusLabelKey(item.status))}</span>

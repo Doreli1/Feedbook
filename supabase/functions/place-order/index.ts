@@ -14,7 +14,13 @@
 //   "items": [{ "dish_id": "uuid", "quantity": 2,
 //               "dish_size_option_id": "uuid | null",
 //               "modifier_selections": [{ "modifier_option_id": "uuid",
-//                                          "serving_variant_id": "uuid | null" }] }] }
+//                                          "serving_variant_id": "uuid | null" }] }],
+//   "special_request": "string | null" }
+// special_request (2026-10-11, user request): one free-text note for the
+// whole order, set from CartModal's own "הוסיפו בקשה מיוחדת" feature —
+// optional, passed straight through to place_order_transaction, which
+// trims/nulls a blank string the same way every other optional text field
+// in this schema does.
 // Supersedes the API Specification's earlier free-form jsonb `modifiers`
 // placeholder (marked "טרם ממוגרר" in the doc) now that dish_modifier_groups/
 // dish_modifier_options/order_item_modifiers actually exist (2026-09-12).
@@ -103,6 +109,11 @@ Deno.serve(async (req) => {
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     return errorResponse("MISSING_REQUIRED_FIELD", "items must be a non-empty array", 400);
   }
+  const rawSpecialRequest = body?.special_request;
+  if (rawSpecialRequest !== undefined && rawSpecialRequest !== null && typeof rawSpecialRequest !== "string") {
+    return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: special_request", 400);
+  }
+  const specialRequest = (rawSpecialRequest as string | null | undefined) ?? null;
 
   const items: RequestItem[] = [];
   for (const raw of rawItems) {
@@ -193,6 +204,7 @@ Deno.serve(async (req) => {
         dish_size_option_id: i.dish_size_option_id,
         modifier_selections: i.modifier_selections,
       })),
+      p_special_request: specialRequest,
     })
     .single();
 

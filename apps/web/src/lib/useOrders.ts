@@ -40,6 +40,10 @@ export interface KitchenOrderItem {
   // means the dish never had one configured, and the kitchen screen must
   // never guess a default; the traffic-light indicator stays neutral then.
   prepTimeMinutes: number | null;
+  // One free-text note for the WHOLE order (2026-10-11, user request), set
+  // once from CartModal's own "הוסיפו בקשה מיוחדת" feature — not per dish,
+  // so every item row belonging to the same order shows the same value.
+  specialRequest: string | null;
 }
 
 interface RawRow {
@@ -55,6 +59,7 @@ interface RawRow {
   orders: {
     placed_at: string;
     bar_ticket_number: number | null;
+    special_request: string | null;
     session_participants: { sub_account_number: string } | null;
     table_sessions: { session_account_number: string; tables: { table_number: string; table_type: string | null } | null } | null;
   } | null;
@@ -76,7 +81,7 @@ export function useOrders(restaurantId: string | undefined) {
     const { data } = await supabase
       .from('order_items')
       .select(
-        'id, order_id, status, status_updated_at, quantity, cancellation_restocked, dishes(name, prep_time_minutes), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number, table_type)))',
+        'id, order_id, status, status_updated_at, quantity, cancellation_restocked, dishes(name, prep_time_minutes), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, special_request, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number, table_type)))',
       )
       .eq('orders.table_sessions.restaurant_id', restaurantId)
       // A cancelled item is included here too, but only while it still
@@ -108,6 +113,7 @@ export function useOrders(restaurantId: string | undefined) {
         sessionAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.table_sessions?.session_account_number ?? null) : null,
         subAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.session_participants?.sub_account_number ?? null) : null,
         prepTimeMinutes: row.dishes?.prep_time_minutes ?? null,
+        specialRequest: row.orders!.special_request,
       }))
       .sort((a, b) => new Date(a.placedAt).getTime() - new Date(b.placedAt).getTime());
 

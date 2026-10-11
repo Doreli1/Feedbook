@@ -5,6 +5,7 @@ import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { supabase } from '../lib/supabase';
 import { useTableSessionStore } from '../lib/tableSessionStore';
+import { ConfirmModal } from './ConfirmModal';
 import { ErrorModal } from './ErrorModal';
 import { colors } from '../theme';
 
@@ -107,10 +108,15 @@ function CallWaiterModals({
 export function CallWaiterInlineTrigger() {
   const { t } = useI18n();
   const { calling, called, error, handlePress, dismissCalled, dismissError } = useCallWaiter();
+  // Accidental-tap guard (2026-10-11, user request): a real-world miss-tap
+  // sends a waiter across the restaurant for nothing. ConfirmModal is the
+  // same reusable "explain + undo route" component already used for sign-out
+  // (profile.tsx) — not a one-off built just for this.
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
     <>
-      <Pressable onPress={() => void handlePress()} disabled={calling} accessibilityRole="button" className="flex-row items-center gap-2">
+      <Pressable onPress={() => setConfirmOpen(true)} disabled={calling} accessibilityRole="button" className="flex-row items-center gap-2">
         <Text className="text-sm font-semibold" style={{ color: colors.royalBlueDark }}>
           {t('callWaiterButton')}
         </Text>
@@ -118,6 +124,19 @@ export function CallWaiterInlineTrigger() {
           {calling ? <ActivityIndicator color="#FFFFFF" size="small" /> : <FontAwesome5 name="concierge-bell" size={15} color="#FFFFFF" />}
         </View>
       </Pressable>
+
+      <ConfirmModal
+        visible={confirmOpen}
+        title={t('callWaiterConfirmPromptTitle')}
+        message={t('callWaiterConfirmPromptMessage')}
+        cancelLabel={t('cancel')}
+        confirmLabel={t('continueLabel')}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          void handlePress();
+        }}
+      />
 
       <CallWaiterModals called={called} error={error} onDismissCalled={dismissCalled} onDismissError={dismissError} t={t} />
     </>

@@ -31,10 +31,22 @@ export interface CartLineItem {
 interface CartState {
   items: CartLineItem[];
   hasHydrated: boolean;
+  // Whether CartModal is open — lifted here (2026-10-11) from MenuBrowser's
+  // own local state so the cart-summary bar can be rendered from
+  // OrderingScreen's fixed bottom strip (alongside the call-waiter trigger)
+  // while still being able to open the modal that lives inside MenuBrowser.
+  isCartOpen: boolean;
+  // One free-text note for the whole pending order (2026-10-11, user
+  // request), set via CartModal's own "הוסיפו בקשה מיוחדת" feature — not
+  // per dish, sent once alongside the whole order in place-order's own
+  // body. Cleared together with items once an order is actually placed.
+  specialRequest: string | null;
   addItem: (item: Omit<CartLineItem, 'id'>) => void;
   removeItem: (id: string) => void;
   clear: () => void;
   setHasHydrated: (hasHydrated: boolean) => void;
+  setCartOpen: (open: boolean) => void;
+  setSpecialRequest: (text: string | null) => void;
 }
 
 export const useCartStore = create<CartState>()(
@@ -42,18 +54,22 @@ export const useCartStore = create<CartState>()(
     (set) => ({
       items: [],
       hasHydrated: false,
+      isCartOpen: false,
+      specialRequest: null,
       addItem: (item) =>
         set((state) => ({
           items: [...state.items, { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }],
         })),
       removeItem: (id) => set((state) => ({ items: state.items.filter((i) => i.id !== id) })),
-      clear: () => set({ items: [] }),
+      clear: () => set({ items: [], specialRequest: null }),
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
+      setCartOpen: (open) => set({ isCartOpen: open }),
+      setSpecialRequest: (text) => set({ specialRequest: text }),
     }),
     {
       name: 'feedbook-cart',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ items: state.items }),
+      partialize: (state) => ({ items: state.items, specialRequest: state.specialRequest }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },

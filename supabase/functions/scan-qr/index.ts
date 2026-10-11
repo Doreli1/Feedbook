@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
   return jsonResponse(
     {
       restaurant: table.restaurant,
-      table: { id: table.id, table_number: table.table_number, smoking_allowed: table.smoking_allowed },
+      table: { id: table.id, table_number: table.table_number, smoking_allowed: table.smoking_allowed, table_type: table.table_type },
       session,
     },
     200,

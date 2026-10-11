@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -1019,6 +1019,7 @@ export type Database = {
           participant_id: string
           placed_at: string
           session_id: string
+          special_request: string | null
           status: string
           updated_at: string
         }
@@ -1028,6 +1029,7 @@ export type Database = {
           participant_id: string
           placed_at?: string
           session_id: string
+          special_request?: string | null
           status?: string
           updated_at?: string
         }
@@ -1037,6 +1039,7 @@ export type Database = {
           participant_id?: string
           placed_at?: string
           session_id?: string
+          special_request?: string | null
           status?: string
           updated_at?: string
         }
@@ -1661,6 +1664,7 @@ export type Database = {
           id: string
           reason: string | null
           resolved_at: string | null
+          resolved_by: string | null
           session_id: string
           status: string
           table_id: string
@@ -1671,6 +1675,7 @@ export type Database = {
           id?: string
           reason?: string | null
           resolved_at?: string | null
+          resolved_by?: string | null
           session_id: string
           status?: string
           table_id: string
@@ -1681,11 +1686,19 @@ export type Database = {
           id?: string
           reason?: string | null
           resolved_at?: string | null
+          resolved_by?: string | null
           session_id?: string
           status?: string
           table_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "waiter_calls_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "waiter_calls_session_id_fkey"
             columns: ["session_id"]
@@ -1722,6 +1735,7 @@ export type Database = {
       current_participant_ids: { Args: never; Returns: string[] }
       current_participant_session_ids: { Args: never; Returns: string[] }
       current_staff_restaurant_ids: { Args: never; Returns: string[] }
+      current_waiter_restaurant_ids: { Args: never; Returns: string[] }
       deduct_inventory_for_order: {
         Args: { p_order_id: string }
         Returns: {
@@ -1793,14 +1807,32 @@ export type Database = {
         Args: { p_order_item_id: string }
         Returns: undefined
       }
-      place_order_transaction: {
-        Args: { p_items: Json; p_participant_id: string; p_session_id: string }
-        Returns: {
-          bar_ticket_number: number
-          inventory_alerts: Json
-          order_id: string
-        }[]
-      }
+      place_order_transaction:
+        | {
+            Args: {
+              p_items: Json
+              p_participant_id: string
+              p_session_id: string
+            }
+            Returns: {
+              bar_ticket_number: number
+              inventory_alerts: Json
+              order_id: string
+            }[]
+          }
+        | {
+            Args: {
+              p_items: Json
+              p_participant_id: string
+              p_session_id: string
+              p_special_request?: string
+            }
+            Returns: {
+              bar_ticket_number: number
+              inventory_alerts: Json
+              order_id: string
+            }[]
+          }
       receive_purchase_order: { Args: { p_po_id: string }; Returns: undefined }
       record_cancellation_inventory_decision: {
         Args: { p_order_item_id: string; p_restock: boolean }

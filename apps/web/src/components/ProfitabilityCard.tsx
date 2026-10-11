@@ -1,5 +1,6 @@
 import type { Dish, DishIngredient, Ingredient } from '@feedbook/types';
 import { useI18n } from '../lib/i18n';
+import { formatPrice } from '../lib/formatPrice';
 
 interface Props {
   dishes: Dish[];
@@ -99,7 +100,7 @@ export function ProfitabilityCard({ dishes, dishIngredients, ingredients, vatRat
               {rows.map(({ dish, basePrice, directCost, indirectCost, profit, marginPct }) => (
                 <tr key={dish.id} className="border-b border-border last:border-0 hover:bg-surface-2">
                   <td className="px-2 py-2.5 font-medium text-ink">{dish.name}</td>
-                  <td className="px-2 py-2.5 tabular-nums text-muted-foreground">₪{basePrice.toFixed(2)}</td>
+                  <td className="px-2 py-2.5 tabular-nums text-muted-foreground">₪{formatPrice(basePrice)}</td>
                   {directCost === null ? (
                     <td colSpan={3} className="px-2 py-2.5 text-xs text-muted-foreground">
                       {t('profitabilityMissingData')}
@@ -108,11 +109,11 @@ export function ProfitabilityCard({ dishes, dishIngredients, ingredients, vatRat
                     <>
                       <td className="px-2 py-2.5 tabular-nums text-muted-foreground">
                         <div>
-                          {t('profitabilityDirectCostLabel')} ₪{directCost.toFixed(2)}
+                          {t('profitabilityDirectCostLabel')} ₪{formatPrice(directCost)}
                         </div>
-                        <div>{indirectCost === null ? t('profitabilityIndirectCostUnknown') : `${t('profitabilityIndirectCostLabel')} ₪${indirectCost.toFixed(2)}`}</div>
+                        <div>{indirectCost === null ? t('profitabilityIndirectCostUnknown') : `${t('profitabilityIndirectCostLabel')} ₪${formatPrice(indirectCost)}`}</div>
                       </td>
-                      <td className="px-2 py-2.5 tabular-nums font-medium text-ink">₪{profit!.toFixed(2)}</td>
+                      <td className="px-2 py-2.5 tabular-nums font-medium text-ink">₪{formatPrice(profit!)}</td>
                       <td className="px-2 py-2.5">
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${

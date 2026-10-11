@@ -121,6 +121,7 @@ export default function RestaurantDetailsScreen() {
     kosherCertificateUrl: string;
     tableId: string;
     tableNumber: string;
+    tableType: string;
     sessionId: string;
     sessionAccountNumber: string;
     qrToken: string;
@@ -166,6 +167,7 @@ export default function RestaurantDetailsScreen() {
         restaurantName: params.restaurantName,
         tableId: params.tableId,
         tableNumber: params.tableNumber,
+        tableType: params.tableType,
         sessionId: params.sessionId,
         sessionAccountNumber: params.sessionAccountNumber,
         qrToken: params.qrToken,

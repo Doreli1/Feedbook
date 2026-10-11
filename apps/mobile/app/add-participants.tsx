@@ -55,6 +55,7 @@ export default function AddParticipantsScreen() {
     restaurantName: string;
     tableId: string;
     tableNumber: string;
+    tableType: string;
     sessionId: string;
     sessionAccountNumber: string;
     qrToken: string;
@@ -195,6 +196,7 @@ export default function AddParticipantsScreen() {
       restaurantName: params.restaurantName,
       tableId: params.tableId,
       tableNumber: params.tableNumber,
+      tableType: params.tableType || null,
       sessionAccountNumber: params.sessionAccountNumber,
       subAccountNumber: data.participant.sub_account_number,
       reviewVerificationCode: data.participant.review_verification_code,

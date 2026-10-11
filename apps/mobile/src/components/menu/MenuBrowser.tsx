@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Dimensions, Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Dimensions, Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { GestureResponderEvent } from 'react-native';
 import { useNavigation } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Dish, DishModifierGroup, DishModifierOption, DishSizeOption, MenuCategory, ModifierOptionServingVariant } from '@feedbook/types';
+import { ConfirmModal } from '../ConfirmModal';
 import { ErrorModal } from '../ErrorModal';
 import { useI18n } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { supabase } from '../../lib/supabase';
 import { extractFunctionErrorCode } from '../../lib/functionError';
-import { cartTotal, useCartStore } from '../../lib/cartStore';
+import { cartTotal, useCartStore, type CartLineItem } from '../../lib/cartStore';
+import { formatPrice } from '../../lib/formatPrice';
 import { useTableSessionStore } from '../../lib/tableSessionStore';
 import { colors } from '../../theme';
 
@@ -1943,6 +1944,7 @@ function DishDetailModal({
   soldOut,
   missingIngredientNames,
   unavailableOptionIds,
+  editingItem,
   onClose,
   onAdded,
   trackDish,
@@ -1956,6 +1958,11 @@ function DishDetailModal({
   soldOut: boolean;
   missingIngredientNames: string[];
   unavailableOptionIds: Set<string>;
+  // Set only when opened via the cart's edit icon (2026-10-11, user
+  // request) — pre-fills every selection below from this existing cart
+  // line instead of starting neutral, and handleAdd() replaces it in the
+  // cart (remove + re-add) rather than appending a new one.
+  editingItem: CartLineItem | null;
   onClose: () => void;
   onAdded: () => void;
   // Owned by useDishPresence in the parent (2026-10-01) — this modal no
@@ -1967,12 +1974,31 @@ function DishDetailModal({
 }) {
   const { t } = useI18n();
   const addItem = useCartStore((s) => s.addItem);
+  const removeItem = useCartStore((s) => s.removeItem);
   // No pre-selected size, ever (2026-09-24, per the user's explicit
   // request) — every size is presented neutrally and the diner must
   // actively pick one; handleAdd() below blocks adding to the order until
-  // they do, the same way a required modifier group already does.
-  const [sizeOptionId, setSizeOptionId] = useState<string | null>(null);
-  const [selections, setSelections] = useState<Map<string, Set<string>>>(new Map());
+  // they do, the same way a required modifier group already does. The one
+  // deliberate exception (2026-10-11, user request): editing an existing
+  // cart line pre-fills its already-made size choice, since the whole
+  // point of reopening here is to show what's already selected, not to
+  // force the diner through the same required choice again.
+  const [sizeOptionId, setSizeOptionId] = useState<string | null>(() => editingItem?.sizeOptionId ?? null);
+  const [selections, setSelections] = useState<Map<string, Set<string>>>(() => {
+    const map = new Map<string, Set<string>>();
+    if (!editingItem) return map;
+    for (const sel of editingItem.modifierSelections) {
+      for (const group of groups) {
+        if ((optionsByGroup.get(group.id) ?? []).some((o) => o.id === sel.modifierOptionId)) {
+          const set = map.get(group.id) ?? new Set<string>();
+          set.add(sel.modifierOptionId);
+          map.set(group.id, set);
+          break;
+        }
+      }
+    }
+    return map;
+  });
   // Bottle/draft(+size) serving-format choice (2026-09-29, refined per
   // explicit follow-up into a real two-axis choice): optionId -> chosen
   // container type, only asked when an option actually offers BOTH (a
@@ -1981,9 +2007,28 @@ function DishDetailModal({
   // whichever container ends up in play — only asked when that container has
   // more than one size defined. Both cleared for an option the diner just
   // deselected, in toggleOption below, so a stale pick from an earlier
-  // selection can't silently ride along.
-  const [containerTypeSelections, setContainerTypeSelections] = useState<Map<string, 'bottle' | 'draft'>>(new Map());
-  const [variantSelections, setVariantSelections] = useState<Map<string, string>>(new Map());
+  // selection can't silently ride along. Pre-filled from editingItem's own
+  // stored servingVariantId the same way (2026-10-11, user request).
+  const [containerTypeSelections, setContainerTypeSelections] = useState<Map<string, 'bottle' | 'draft'>>(() => {
+    const map = new Map<string, 'bottle' | 'draft'>();
+    if (!editingItem) return map;
+    for (const sel of editingItem.modifierSelections) {
+      if (!sel.servingVariantId) continue;
+      const variant = (variantsByOption.get(sel.modifierOptionId) ?? []).find((v) => v.id === sel.servingVariantId);
+      if (variant?.container_type === 'bottle' || variant?.container_type === 'draft') {
+        map.set(sel.modifierOptionId, variant.container_type);
+      }
+    }
+    return map;
+  });
+  const [variantSelections, setVariantSelections] = useState<Map<string, string>>(() => {
+    const map = new Map<string, string>();
+    if (!editingItem) return map;
+    for (const sel of editingItem.modifierSelections) {
+      if (sel.servingVariantId) map.set(sel.modifierOptionId, sel.servingVariantId);
+    }
+    return map;
+  });
 
   // Resolves an option's final chosen variant — auto-resolving every step
   // that isn't a real choice (one container type only, or one size only
@@ -2011,7 +2056,7 @@ function DishDetailModal({
     // sizes was selected, no matter what the diner did next.
     return { variant, needsContainerChoice: false, needsSizeChoice: sizesForType.length > 1 && !variant };
   }
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(() => editingItem?.quantity ?? 1);
   const [validationErrorKey, setValidationErrorKey] = useState<TranslationKey | null>(null);
   const [galleryVisible, setGalleryVisible] = useState(false);
   // Same score-derived signal as DishRow's own trophy/badge (2026-09-24).
@@ -2169,6 +2214,11 @@ function DishDetailModal({
       .filter((n): n is string => n !== null)
       .join(', ');
 
+    // Replace, not append, when editing (2026-10-11, user request) — remove
+    // the original line first; addItem always mints a fresh id anyway, so
+    // this is equivalent to an in-place update from the diner's point of
+    // view.
+    if (editingItem) removeItem(editingItem.id);
     addItem({
       dishId: dish.id,
       dishName: dish.name,
@@ -2614,8 +2664,10 @@ function DishDetailModal({
               className="flex-row items-center justify-between rounded-xl px-4 py-4"
               style={{ backgroundColor: canAdd ? colors.royalBlue : '#9CA3AF' }}
             >
-              <Text className="text-base font-semibold text-white">{soldOut ? t('dishSoldOutButton') : t('addToOrderButton')}</Text>
-              {!soldOut && <Text className="text-base font-semibold text-white">₪{(unitPrice * quantity).toFixed(2)}</Text>}
+              <Text className="text-base font-semibold text-white">
+                {soldOut ? t('dishSoldOutButton') : editingItem ? t('updateOrderItemButton') : t('addToOrderButton')}
+              </Text>
+              {!soldOut && <Text className="text-base font-semibold text-white">₪{formatPrice(unitPrice * quantity)}</Text>}
             </Pressable>
           </View>
         </View>
@@ -2634,15 +2686,182 @@ function DishDetailModal({
   );
 }
 
-function CartModal({ visible, onClose, onPlaced }: { visible: boolean; onClose: () => void; onPlaced: () => void }) {
+// The cart-summary bar — moved (2026-10-11, user request) out of its old
+// spot absolutely floating over MenuBrowser's own content and into
+// OrderingScreen's fixed bottom strip, stacked below CallWaiterInlineTrigger
+// there. Reads/writes the cart store directly (isCartOpen lifted into
+// cartStore.ts for exactly this reason) rather than taking props, so
+// OrderingScreen doesn't need to prop-drill cart state down into — or a
+// callback back up out of — MenuBrowser just to render this. Counter badge
+// placed after the title in JSX (2026-10-11, user request: it reads to the
+// title's physical left) — same reasoning as CallWaiterInlineTrigger's own
+// label/icon order under native RTL mirroring; styled to match the
+// round-white-badge-on-blue convention from add-participants.tsx's own
+// selection counter.
+export function CartBarInlineTrigger() {
+  const { t } = useI18n();
+  const items = useCartStore((s) => s.items);
+  const setCartOpen = useCartStore((s) => s.setCartOpen);
+
+  if (items.length === 0) return null;
+
+  return (
+    // minHeight, not just py (2026-10-11, user request follow-up) — equal
+    // padding alone didn't actually match this button's thickness to
+    // requestBillButton/placeOrderButton, since this row's own text-sm
+    // content sits shorter than their text-lg/text-base labels; a shared
+    // explicit height is what makes all three line up regardless of font
+    // size.
+    <Pressable
+      onPress={() => setCartOpen(true)}
+      className="flex-row items-center justify-between rounded-xl px-4"
+      style={{ backgroundColor: colors.royalBlue, minHeight: 48 }}
+    >
+      <View className="flex-row items-center" style={{ gap: 8 }}>
+        <Text className="text-base font-semibold text-white">{t('cartBarLabel')}</Text>
+        <View className="items-center justify-center rounded-full bg-white" style={{ height: 20, width: 20 }}>
+          <Text className="text-xs font-bold" style={{ color: colors.royalBlue }}>
+            {items.length}
+          </Text>
+        </View>
+      </View>
+      {/* Split into two Text runs with a gap, not a literal "₪ {price}"
+          space (2026-10-11, user request) — a real-device bug already found
+          and fixed the same way elsewhere in this file (see the discounted-
+          price block above, ~line 1226): a space character between ₪ and
+          the number lets the bidi algorithm reorder them wrong. Number
+          first in source, ₪ second — same reasoning as there, matches how
+          this app's plain "₪{amount}" already renders physically (symbol on
+          the visual left, number on the right). */}
+      <View className="flex-row items-center" style={{ gap: 4 }}>
+        <Text className="text-lg font-semibold text-white">{formatPrice(cartTotal(items))}</Text>
+        <Text className="text-lg font-semibold text-white">₪</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+// The diner's own name + email for CartModal's orderer-details section
+// (2026-10-11, user request, mockup 7.1.5-MyOrder Part2.JPG) — same
+// auth.getSession() + user_profiles lookup profile.tsx already does, but
+// without that screen's own fallback-seeding (upsert-a-default-name-if-
+// missing): by the time a diner reaches the cart they've already been
+// through onboarding, so a missing row here is the defensive edge case, not
+// the expected path — this just shows '—' for it rather than writing data.
+function useMyDinerIdentity() {
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.auth.getSession();
+      const user = data.session?.user;
+      if (cancelled || !user) return;
+      setEmail(user.email ?? null);
+      const { data: profile } = await supabase.from('user_profiles').select('display_name').eq('user_id', user.id).maybeSingle();
+      if (!cancelled) setDisplayName(profile?.display_name ?? null);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { displayName, email };
+}
+
+// Free-text "הוסיפו בקשה מיוחדת" entry (2026-10-11, user request) — same
+// blank-field-with-Save/Cancel shape as CancelReasonModal's own "אחר" text
+// input, just without that modal's fixed-reason list since every special
+// request here is free text from the start. Resets its own draft to
+// whatever was last saved (not necessarily blank) each time it opens, so
+// re-tapping an already-set request shows what's there to edit, not a
+// blank box.
+function SpecialRequestModal({
+  visible,
+  initialText,
+  onCancel,
+  onSave,
+}: {
+  visible: boolean;
+  initialText: string;
+  onCancel: () => void;
+  onSave: (text: string) => void;
+}) {
+  const { t } = useI18n();
+  const [text, setText] = useState(initialText);
+
+  useEffect(() => {
+    if (visible) setText(initialText);
+  }, [visible, initialText]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View className="flex-1 items-center justify-center bg-black/40 px-6">
+        <View className="w-full max-w-sm rounded-2xl bg-white p-5">
+          <Text className="mb-3 text-lg font-bold text-[#1B2430]">{t('specialRequestModalTitle')}</Text>
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            placeholder={t('specialRequestPlaceholder')}
+            placeholderTextColor="#9CA3AF"
+            className="rounded-xl border px-4 py-3 text-sm text-[#1B2430]"
+            style={{ borderColor: colors.border, minHeight: 90, textAlignVertical: 'top' }}
+            multiline
+            autoFocus
+          />
+          <View className="mt-4 flex-row-reverse" style={{ gap: 12 }}>
+            <Pressable onPress={() => onSave(text.trim())} className="flex-1 items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
+              <Text className="font-semibold text-white">{t('save')}</Text>
+            </Pressable>
+            <Pressable onPress={onCancel} className="flex-1 items-center rounded-lg border py-3" style={{ borderColor: colors.border }}>
+              <Text className="font-semibold text-[#1B2430]">{t('cancel')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function CartModal({
+  visible,
+  onClose,
+  onPlaced,
+  dishById,
+  onEditItem,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPlaced: () => void;
+  dishById: Map<string, Dish>;
+  // Closes this sheet and reopens DishDetailModal pre-filled with the
+  // item's existing selections (2026-10-11, user request) — handled by the
+  // parent (MenuBrowser), not here, since that's where selectedDish/the
+  // detail modal itself already lives.
+  onEditItem: (item: CartLineItem) => void;
+}) {
   const { t } = useI18n();
   const items = useCartStore((s) => s.items);
   const removeItem = useCartStore((s) => s.removeItem);
   const clear = useCartStore((s) => s.clear);
+  const specialRequest = useCartStore((s) => s.specialRequest);
+  const setSpecialRequest = useCartStore((s) => s.setSpecialRequest);
   const sessionId = useTableSessionStore((s) => s.sessionId);
   const participantId = useTableSessionStore((s) => s.participantId);
+  const tableNumber = useTableSessionStore((s) => s.tableNumber);
+  const subAccountNumber = useTableSessionStore((s) => s.subAccountNumber);
+  const reviewVerificationCode = useTableSessionStore((s) => s.reviewVerificationCode);
+  const { displayName, email } = useMyDinerIdentity();
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [specialRequestModalOpen, setSpecialRequestModalOpen] = useState(false);
+  // Escape-route confirmation before removing a line (2026-10-11, user
+  // request) — holds the item id pending confirmation, not just a boolean,
+  // since the list can have several rows and each needs its own trash tap
+  // to resolve to the right one.
+  const [removeConfirmItemId, setRemoveConfirmItemId] = useState<string | null>(null);
 
   async function handlePlaceOrder() {
     if (!sessionId || !participantId || items.length === 0) return;
@@ -2660,6 +2879,7 @@ function CartModal({ visible, onClose, onPlaced }: { visible: boolean; onClose: 
             serving_variant_id: m.servingVariantId,
           })),
         })),
+        special_request: specialRequest,
       },
     });
     setBusy(false);
@@ -2686,43 +2906,148 @@ function CartModal({ visible, onClose, onPlaced }: { visible: boolean; onClose: 
             </Pressable>
           </View>
 
+          {/* Orderer details (2026-10-11, user request, mockup
+              7.1.5-MyOrder Part2.JPG) — name, email, table number, personal
+              sub-account number, and the locked review-verification code
+              (reviewVerificationCode; same field AccountScreen's strip
+              already shows as "קוד חשבון", relabeled here to match the
+              mockup's own "קוד סוד" wording for this screen specifically).
+              Phone number deliberately omitted (2026-10-11, user decision):
+              nothing in this data model stores a diner's phone today — sign-
+              in is email+password only, SMS MFA is still deferred per
+              sms_mfa_deferred — so there is no real value to mask here yet. */}
+          <View className="border-b px-4 py-3" style={{ borderColor: colors.border }}>
+            <View className="flex-row items-center" style={{ gap: 8 }}>
+              <Ionicons name="person-outline" size={15} color="#6E6A61" />
+              <Text className="flex-1 text-xs text-[#1B2430]" numberOfLines={1}>
+                {t('orderedByLabel')} {displayName ?? '—'}
+              </Text>
+            </View>
+            <View className="mt-1.5 flex-row items-center" style={{ gap: 8 }}>
+              <Ionicons name="mail-outline" size={15} color="#6E6A61" />
+              <Text className="flex-1 text-xs text-[#1B2430]" numberOfLines={1}>
+                {email ?? '—'}
+              </Text>
+            </View>
+            <View className="mt-1.5 flex-row items-center" style={{ gap: 8 }}>
+              <Ionicons name="grid-outline" size={15} color="#6E6A61" />
+              <Text className="text-xs text-[#1B2430]">
+                {t('accountStripTableLabel')}: {tableNumber ?? '—'}
+              </Text>
+            </View>
+            <View className="mt-1.5 flex-row items-center" style={{ gap: 8 }}>
+              <Ionicons name="receipt-outline" size={15} color="#6E6A61" />
+              <Text className="text-xs text-[#1B2430]">
+                {t('personalAccountNumberLabel')}: {subAccountNumber ?? '—'}
+              </Text>
+            </View>
+            <View className="mt-1.5 flex-row items-center" style={{ gap: 8 }}>
+              <Ionicons name="lock-closed-outline" size={15} color="#6E6A61" />
+              <Text className="text-xs text-[#1B2430]">
+                {t('cartOrderSecretCodeLabel')}: {reviewVerificationCode ?? '—'}
+              </Text>
+            </View>
+          </View>
+
           {items.length === 0 ? (
             <View className="items-center px-6 py-10">
               <Text className="text-center text-sm text-[#9CA3AF]">{t('cartEmpty')}</Text>
             </View>
           ) : (
             <ScrollView style={{ maxHeight: 400 }} contentContainerStyle={{ padding: 16 }}>
-              {items.map((item) => (
-                <View key={item.id} className="mb-3 flex-row items-start justify-between" style={{ gap: 8 }}>
-                  <View className="flex-1">
-                    <Text className="text-sm font-semibold text-[#1B2430]">
-                      {item.quantity}× {item.dishName}
-                    </Text>
-                    {(item.sizeOptionName || item.modifierSummary) && (
-                      <Text className="mt-0.5 text-xs text-[#9CA3AF]">{[item.sizeOptionName, item.modifierSummary].filter(Boolean).join(' · ')}</Text>
+              {items.map((item) => {
+                const photoUrl = dishById.get(item.dishId)?.photo_urls[0] ?? null;
+                return (
+                  <View key={item.id} className="mb-3 flex-row items-center" style={{ gap: 10 }}>
+                    {/* Dish photo on the physical right (2026-10-11, user
+                        request) — first in JSX so native RTL mirroring
+                        places it there, same convention as every other
+                        first-in-source-renders-right element in this file.
+                        Falls back to a plain placeholder tile for a dish
+                        with no photo, rather than leaving a gap. */}
+                    {photoUrl ? (
+                      <Image source={{ uri: photoUrl }} style={{ height: 48, width: 48, borderRadius: 8 }} />
+                    ) : (
+                      <View className="items-center justify-center rounded-lg" style={{ height: 48, width: 48, backgroundColor: '#F1F0ED' }}>
+                        <MaterialCommunityIcons name="room-service-outline" size={20} color="#9CA3AF" />
+                      </View>
                     )}
+                    <View className="flex-1">
+                      <Text className="text-sm font-semibold text-[#1B2430]">
+                        {item.quantity}× {item.dishName}
+                      </Text>
+                      {(item.sizeOptionName || item.modifierSummary) && (
+                        <Text className="mt-0.5 text-xs text-[#9CA3AF]">{[item.sizeOptionName, item.modifierSummary].filter(Boolean).join(' · ')}</Text>
+                      )}
+                    </View>
+                    <Text className="text-base font-semibold text-[#1B2430]">₪{formatPrice(item.unitPrice * item.quantity)}</Text>
+                    {/* Edit icon (2026-10-11, user request) — reopens
+                        DishDetailModal pre-filled with this item's existing
+                        size/modifiers/quantity; closes this sheet first so
+                        the two modals don't stack. Only rendered when the
+                        dish is still on the live menu — an item from a dish
+                        since removed/hidden has nothing to reopen. */}
+                    {dishById.has(item.dishId) && (
+                      <Pressable
+                        onPress={() => {
+                          onClose();
+                          onEditItem(item);
+                        }}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="create-outline" size={18} color="#6E6A61" />
+                      </Pressable>
+                    )}
+                    {/* Trash icon, not a "הסרה" text label (2026-10-11, user
+                        request) — accessibilityLabel keeps the existing
+                        cartItemRemove translation key meaningful for screen
+                        readers instead of dropping it as dead code. Opens
+                        the M-05 confirmation below instead of removing
+                        immediately (2026-10-11, follow-up user request). */}
+                    <Pressable onPress={() => setRemoveConfirmItemId(item.id)} accessibilityLabel={t('cartItemRemove')} hitSlop={8}>
+                      <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                    </Pressable>
                   </View>
-                  <Text className="text-sm font-semibold text-[#1B2430]">₪{(item.unitPrice * item.quantity).toFixed(2)}</Text>
-                  <Pressable onPress={() => removeItem(item.id)}>
-                    <Text className="text-xs font-medium" style={{ color: colors.danger }}>
-                      {t('cartItemRemove')}
-                    </Text>
-                  </Pressable>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
+          )}
+
+          {/* Special-request trigger (2026-10-11, user request) — sits right
+              below the itemized dish list, one free-text note for the whole
+              order (not per dish). Shows the saved text once set, so
+              re-tapping reopens the modal to edit rather than starting
+              blank again. Sent once alongside the whole order
+              (handlePlaceOrder below) and surfaced to kitchen staff as a new
+              column on the orders table in Web Admin's "הזמנות ומטבח"
+              module (useOrders.ts / KitchenScreen.tsx). */}
+          {items.length > 0 && (
+            <Pressable
+              onPress={() => setSpecialRequestModalOpen(true)}
+              className="flex-row items-center border-t px-4 py-3"
+              style={{ gap: 8, borderColor: colors.border }}
+            >
+              <Ionicons name="create-outline" size={16} color={colors.royalBlue} />
+              <Text className="flex-1 text-sm font-medium" style={{ color: colors.royalBlue }} numberOfLines={2}>
+                {specialRequest || t('addSpecialRequestLabel')}
+              </Text>
+            </Pressable>
           )}
 
           <View className="border-t px-4 py-3" style={{ borderColor: colors.border }}>
             <View className="mb-3 flex-row items-center justify-between">
               <Text className="text-sm font-medium text-[#6E6A61]">{t('cartTotalLabel')}</Text>
-              <Text className="text-lg font-bold text-[#1B2430]">₪{cartTotal(items).toFixed(2)}</Text>
+              <Text className="text-xl font-bold text-[#1B2430]">₪{formatPrice(cartTotal(items))}</Text>
             </View>
+            {/* minHeight 48, matching CartBarInlineTrigger/requestBillButton
+                exactly (2026-10-11, user request) — see CartBarInlineTrigger's
+                own comment for why padding alone can't do this across
+                different font sizes. */}
             <Pressable
               onPress={() => void handlePlaceOrder()}
               disabled={items.length === 0 || busy}
-              className="items-center rounded-xl py-4"
-              style={{ backgroundColor: items.length === 0 || busy ? '#9CA3AF' : colors.royalBlue }}
+              className="items-center justify-center rounded-xl"
+              style={{ backgroundColor: items.length === 0 || busy ? '#9CA3AF' : colors.royalBlue, minHeight: 48 }}
             >
               {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-base font-semibold text-white">{t('placeOrderButton')}</Text>}
             </Pressable>
@@ -2731,13 +3056,40 @@ function CartModal({ visible, onClose, onPlaced }: { visible: boolean; onClose: 
       </View>
 
       <ErrorModal visible={errorMessage !== null} title={t('placeOrderFailedTitle')} message={errorMessage ?? ''} dismissLabel={t('gotIt')} onDismiss={() => setErrorMessage(null)} />
+
+      {/* M-05 escape-route confirmation before removing a cart line
+          (2026-10-11, user request) — same ConfirmModal reused for
+          sign-out/call-waiter, with "הסרה"/"חזרה" as its two action
+          labels specifically. */}
+      <ConfirmModal
+        visible={removeConfirmItemId !== null}
+        title={t('cartRemoveItemConfirmTitle')}
+        message={t('cartRemoveItemConfirmMessage')}
+        cancelLabel={t('back')}
+        confirmLabel={t('cartItemRemove')}
+        danger
+        onCancel={() => setRemoveConfirmItemId(null)}
+        onConfirm={() => {
+          if (removeConfirmItemId) removeItem(removeConfirmItemId);
+          setRemoveConfirmItemId(null);
+        }}
+      />
+
+      <SpecialRequestModal
+        visible={specialRequestModalOpen}
+        initialText={specialRequest ?? ''}
+        onCancel={() => setSpecialRequestModalOpen(false)}
+        onSave={(text) => {
+          setSpecialRequest(text === '' ? null : text);
+          setSpecialRequestModalOpen(false);
+        }}
+      />
     </Modal>
   );
 }
 
 export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   const { t, isRTL } = useI18n();
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
   const { data, loading } = useMenuData(restaurantId);
@@ -2751,7 +3103,13 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   const [section, setSection] = useState<MenuSection>('food');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
-  const [cartOpen, setCartOpen] = useState(false);
+  // Set alongside selectedDish only when DishDetailModal was opened via the
+  // cart's edit icon (2026-10-11, user request), never from the regular
+  // dish-list tap — that's what tells the modal to pre-fill from this item
+  // and replace it on save instead of adding a new line.
+  const [editingCartItem, setEditingCartItem] = useState<CartLineItem | null>(null);
+  const cartOpen = useCartStore((s) => s.isCartOpen);
+  const setCartOpen = useCartStore((s) => s.setCartOpen);
   const items = useCartStore((s) => s.items);
   // Filter/sort state for the dish-list-within-category screen (2026-10-01,
   // per explicit request) — reset whenever the diner leaves the category
@@ -2800,6 +3158,20 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
         <ActivityIndicator color={colors.royalBlue} />
       </View>
     );
+  }
+
+  // Flat dishId → Dish lookup for CartModal's own item rows (2026-10-11,
+  // user request) — cart line items only ever stored
+  // dishId/dishName/pricing, never the dish's own photo, so this is built
+  // fresh each render from the same dishesByCategory data already loaded
+  // here rather than adding fields to CartLineItem just for display. Also
+  // what resolves a cart item's edit icon back to a real Dish to reopen in
+  // DishDetailModal (see editingCartItem below).
+  const dishById = new Map<string, Dish>();
+  for (const dishes of data.dishesByCategory.values()) {
+    for (const dish of dishes) {
+      dishById.set(dish.id, dish);
+    }
   }
 
   const categoriesInSection = data.categories.filter((c) => c.section === section);
@@ -2926,19 +3298,6 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
         </ScrollView>
       )}
 
-      {items.length > 0 && (
-        <Pressable
-          onPress={() => setCartOpen(true)}
-          className="absolute flex-row items-center justify-between rounded-xl px-4 py-3"
-          style={{ backgroundColor: colors.royalBlue, left: 16, right: 16, bottom: insets.bottom + 16 }}
-        >
-          <Text className="text-sm font-semibold text-white">
-            {items.length} · {t('cartTitle')}
-          </Text>
-          <Text className="text-sm font-semibold text-white">₪{cartTotal(items).toFixed(2)}</Text>
-        </Pressable>
-      )}
-
       {selectedDish && (
         <DishDetailModal
           dish={selectedDish}
@@ -2949,8 +3308,15 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
           soldOut={criticalStock.get(selectedDish.id) === 'out'}
           missingIngredientNames={missingIngredients.get(selectedDish.id) ?? []}
           unavailableOptionIds={unavailableOptions}
-          onClose={() => setSelectedDish(null)}
-          onAdded={() => setSelectedDish(null)}
+          editingItem={editingCartItem}
+          onClose={() => {
+            setSelectedDish(null);
+            setEditingCartItem(null);
+          }}
+          onAdded={() => {
+            setSelectedDish(null);
+            setEditingCartItem(null);
+          }}
           trackDish={trackDish}
           untrackDish={untrackDish}
         />
@@ -2962,6 +3328,13 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
         onPlaced={() => {
           setCartOpen(false);
           onOrderPlaced();
+        }}
+        dishById={dishById}
+        onEditItem={(item) => {
+          const dish = dishById.get(item.dishId);
+          if (!dish) return;
+          setEditingCartItem(item);
+          setSelectedDish(dish);
         }}
       />
 

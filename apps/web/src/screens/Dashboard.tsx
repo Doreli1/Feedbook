@@ -10,6 +10,7 @@ import { OverheadExpensesForm } from '../components/OverheadExpensesForm';
 import { IngredientsScreen } from './IngredientsScreen';
 import { KitchenScreen } from './KitchenScreen';
 import { PurchaseOrdersScreen } from './PurchaseOrdersScreen';
+import { ServiceScreen } from './ServiceScreen';
 import { UsersScreen } from './UsersScreen';
 import { TableManagerContent } from './TableManagerForm';
 import { useMenu } from '../lib/useMenu';
@@ -31,7 +32,7 @@ import type { TranslationKey } from '../lib/translations';
 // need this rewritten — it just needs a new case here.
 const NOTIFICATION_TYPE_TAB: Record<string, DashboardTab> = {
   order_status: 'orders',
-  waiter_ack: 'orders',
+  waiter_ack: 'service',
   inventory_alert: 'inventory',
 };
 
@@ -119,7 +120,7 @@ function ApprovedDashboard({
   const { ingredients, purchaseOrders, refresh: refreshInventory } = useInventory(restaurant.id);
   const { expenses: overheadExpenses, totalMonthlyOverhead, dishesSoldInWindow, saveExpenses: saveOverheadExpenses } = useOverheadExpenses(restaurant.id);
   const { items: orderItems, refresh: refreshOrders } = useOrders(restaurant.id);
-  const { calls: waiterCalls, refresh: refreshWaiterCalls, acknowledge: acknowledgeWaiterCall } = useWaiterCalls(restaurant.id);
+  const { calls: waiterCalls, refresh: refreshWaiterCalls, resolve: resolveWaiterCall } = useWaiterCalls(restaurant.id);
   const { staff, refresh: refreshStaff } = useStaff(restaurant.id);
   const { tables, refresh: refreshTables } = useTables(restaurant.id);
   const { notifications: staffNotifications, markRead: markNotificationRead } = useNotifications(restaurant.id, session.user.id);
@@ -282,6 +283,7 @@ function ApprovedDashboard({
       activeTab={tab}
       onTabChange={setTab}
       lowStockCount={lowStock.length}
+      openServiceCallsCount={waiterCalls.filter((c) => c.status !== 'resolved').length}
       tabNotificationCounts={tabNotificationCounts}
       notifications={notifications}
       onSignOut={() => void supabase.auth.signOut()}
@@ -356,13 +358,13 @@ function ApprovedDashboard({
         <KitchenScreen
           restaurantId={restaurant.id}
           items={orderItems}
-          waiterCalls={waiterCalls}
           onRefreshOrders={refreshOrders}
-          onAcknowledgeCall={(id) => void acknowledgeWaiterCall(id)}
           focusRequest={kitchenFocus}
           onFocusHandled={() => setKitchenFocus(null)}
         />
       )}
+
+      {tab === 'service' && <ServiceScreen calls={waiterCalls} onResolve={resolveWaiterCall} />}
 
       {tab === 'tables' && (
         <TableManagerContent restaurant={restaurant} tables={tables} onRefresh={refreshTables} />

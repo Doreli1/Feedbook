@@ -5,6 +5,7 @@ import { useI18n } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { supabase } from '../../lib/supabase';
 import { extractFunctionErrorCode } from '../../lib/functionError';
+import { formatPrice } from '../../lib/formatPrice';
 import { useTableSessionStore } from '../../lib/tableSessionStore';
 import { ErrorModal } from '../ErrorModal';
 import { CancelReasonModal } from './CancelReasonModal';
@@ -323,7 +324,7 @@ function OrderItemCard({
         )}
         <View className="flex-1 items-center">
           <Text className="text-xl font-bold" style={{ color: colors.royalBlue }}>
-            ₪{(item.unitPrice * item.quantity).toFixed(2)}
+            ₪{formatPrice(item.unitPrice * item.quantity)}
           </Text>
         </View>
       </View>

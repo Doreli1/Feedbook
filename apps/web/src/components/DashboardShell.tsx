@@ -1,18 +1,19 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Restaurant } from '@feedbook/types';
 import { TopBar, type TopBarNotification } from './TopBar';
-import { DashboardIcon, InventoryIcon, MenuTabIcon, OrdersTabIcon, TablesTabIcon, TeamTabIcon } from './Icons';
+import { BellIcon, DashboardIcon, InventoryIcon, MenuTabIcon, OrdersTabIcon, TablesTabIcon, TeamTabIcon } from './Icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
-export type DashboardTab = 'overview' | 'menu' | 'inventory' | 'orders' | 'tables' | 'team';
+export type DashboardTab = 'overview' | 'menu' | 'inventory' | 'orders' | 'service' | 'tables' | 'team';
 
-const TABS: DashboardTab[] = ['overview', 'menu', 'inventory', 'orders', 'tables', 'team'];
+const TABS: DashboardTab[] = ['overview', 'menu', 'inventory', 'orders', 'service', 'tables', 'team'];
 const TAB_LABEL_KEYS: Record<DashboardTab, TranslationKey> = {
   overview: 'dashboardTabOverview',
   menu: 'dashboardTabMenu',
   inventory: 'dashboardTabInventory',
   orders: 'dashboardTabOrders',
+  service: 'dashboardTabService',
   tables: 'dashboardTabTables',
   team: 'dashboardTabTeam',
 };
@@ -25,6 +26,10 @@ const TAB_ICONS: Record<DashboardTab, ComponentType<{ className?: string }>> = {
   menu: MenuTabIcon,
   inventory: InventoryIcon,
   orders: OrdersTabIcon,
+  // Reuses the same bell glyph as TopBar's own notification bell (BellIcon,
+  // Icons.tsx) rather than a new one-off icon — this tab's whole purpose is
+  // surfacing the notifications that bell announces.
+  service: BellIcon,
   tables: TablesTabIcon,
   team: TeamTabIcon,
 };
@@ -35,6 +40,10 @@ interface Props {
   activeTab: DashboardTab;
   onTabChange: (tab: DashboardTab) => void;
   lowStockCount: number;
+  // Open + acknowledged (not-yet-resolved) service calls — same always-on
+  // "current state" badge treatment as lowStockCount, added alongside the
+  // service tab itself (2026-10-11).
+  openServiceCallsCount: number;
   // Unread persisted-notification count per tab (see useNotifications.ts) —
   // separate from lowStockCount, which is its own long-standing, always-on
   // warning-colored pill for a continuous state, not an event count.
@@ -65,6 +74,7 @@ export function DashboardShell({
   activeTab,
   onTabChange,
   lowStockCount,
+  openServiceCallsCount,
   tabNotificationCounts,
   notifications,
   onSignOut,
@@ -101,7 +111,8 @@ export function DashboardShell({
             // inconsistent. Both now count toward the same red corner badge;
             // the underlying counts (and the reason for showing it) are
             // still tracked separately in state, only the display is merged.
-            const badgeCount = (tab === 'inventory' ? lowStockCount : 0) + (tabNotificationCounts[tab] ?? 0);
+            const badgeCount =
+              (tab === 'inventory' ? lowStockCount : 0) + (tab === 'service' ? openServiceCallsCount : 0) + (tabNotificationCounts[tab] ?? 0);
             const TabIcon = TAB_ICONS[tab];
             return (
               <button

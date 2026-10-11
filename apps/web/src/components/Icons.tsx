@@ -57,6 +57,17 @@ export function CheckIcon({ className = 'h-4 w-4' }: { className?: string }) {
   );
 }
 
+// Service screen's "בטיפול" status icon (2026-10-11) — a plain clock,
+// matching the mockup's Ionicons "time-outline" glyph.
+export function ClockIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M10 6v4l2.5 1.5" />
+    </svg>
+  );
+}
+
 // Exact Ionicons "notifications-outline" path data (ionic-team/ionicons),
 // the same glyph the mobile app renders via @expo/vector-icons — swapped in
 // 2026-09-20 so the Web Admin's bell matches it exactly instead of being a

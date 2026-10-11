@@ -19,7 +19,7 @@ export interface ScanQrResponse {
     kosher_status: string;
     kosher_certificate_url: string | null;
   };
-  table: { id: string; table_number: string; smoking_allowed: boolean };
+  table: { id: string; table_number: string; smoking_allowed: boolean; table_type: string | null };
   session: { id: string; session_account_number: string; status: string };
 }
 
@@ -67,6 +67,13 @@ export async function resolveTableToken(
       kosherCertificateUrl: data.restaurant.kosher_certificate_url ?? '',
       tableId: data.table.id,
       tableNumber: data.table.table_number,
+      // Carried through to add-participants.tsx so it can store it — used to
+      // hide the "הזמינו שירות" trigger for bar seating (2026-10-11): real
+      // restaurants treat the bar as the bar staff's own responsibility, not
+      // the floor waiters', and there is no dedicated bar staff role in the
+      // system yet (staff.role is manager/waiter/kitchen only) for a bar
+      // call to even be resolvable by the right person.
+      tableType: data.table.table_type ?? '',
       sessionId: data.session.id,
       sessionAccountNumber: data.session.session_account_number,
       // Carried forward to join-session, which now requires it as proof of
