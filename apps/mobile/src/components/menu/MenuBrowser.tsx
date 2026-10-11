@@ -2163,7 +2163,17 @@ export function DishDetailModal({
 
   const unitPrice = useMemo(() => {
     const chosenSize = sizeOptionId ? (sizes.find((s) => s.id === sizeOptionId) ?? null) : null;
-    const base = chosenSize ? chosenSize.price : dish.price;
+    // Real bug fix (2026-10-11, user report): a dish WITH size options has
+    // no real base price until one is actually chosen — dish.price only
+    // applies to a dish with no sizes at all (same rule handleAdd's own
+    // `sizes.length > 0 && !sizeOptionId` validation already enforces).
+    // Falling back to dish.price unconditionally made the button's price
+    // silently include the dish's own flat price before any size was
+    // picked — invisible as long as size was chosen first (chosenSize then
+    // overrides it immediately), but very visible when a diner picked
+    // modifiers before size: every modifier stacked on top of that wrong
+    // base the whole time.
+    const base = chosenSize ? chosenSize.price : sizes.length > 0 ? 0 : dish.price;
     // Discount applies to the dish's own base price component only, never to
     // modifiers — same split place_order_transaction itself makes server-
     // side (see resolveDishDiscountRaw's own comment). Rounded here (unlike
