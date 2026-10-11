@@ -24,6 +24,27 @@ interface Props {
 
 const HIGHLIGHT_DURATION_MS = 4000;
 
+// "!" attention mark (2026-10-11, user request) — order_items.edited_at
+// means the diner used the mobile app's "בצעו שינויים במנה" to change this
+// item after it had already entered the kitchen's prep queue; staff need
+// to notice the requirement changed instead of silently preparing the
+// pre-edit version. Same filled-circle-badge treatment (not plain text)
+// already established for this exact "!" convention on mobile
+// (feedback_attention_mark_icon_convention), same #38BDF8 color as the
+// info badges already used elsewhere in this app (e.g. OrderTracker's own
+// edit-window-passed note).
+function EditedAttentionBadge({ t }: { t: (key: TranslationKey) => string }) {
+  return (
+    <span
+      title={t('kitchenItemEditedTooltip')}
+      className="ms-1.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full align-middle text-[10px] font-bold leading-none text-white"
+      style={{ backgroundColor: '#38BDF8' }}
+    >
+      !
+    </span>
+  );
+}
+
 // API Specification §7.3: the kitchen side updates order_items.status
 // directly via PostgREST, not through an Edge Function — RLS
 // (staff_manage_own_restaurant_order_items) is the only gate needed. The
@@ -239,6 +260,7 @@ export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusReque
                       <td className="px-2 py-2.5 tabular-nums text-muted-foreground">{item.subAccountNumber ?? '—'}</td>
                       <td className="px-2 py-2.5 font-medium text-ink">
                         {item.quantity}× {item.dishName}
+                        {item.editedAt && <EditedAttentionBadge t={t} />}
                       </td>
                       <td className="px-2 py-2.5 text-xs text-muted-foreground">{[item.sizeName, item.modifierSummary].filter(Boolean).join(' · ') || '—'}</td>
                       <td className="px-2 py-2.5 text-xs text-muted-foreground">{item.specialRequest ?? '—'}</td>
@@ -432,6 +454,7 @@ function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId
                   <td className="px-2 py-2.5 tabular-nums text-muted-foreground">{item.subAccountNumber ?? '—'}</td>
                   <td className="px-2 py-2.5 font-medium text-ink">
                     {item.quantity}× {item.dishName}
+                    {item.editedAt && <EditedAttentionBadge t={t} />}
                   </td>
                   <td className="px-2 py-2.5 text-xs text-muted-foreground">{[item.sizeName, item.modifierSummary].filter(Boolean).join(' · ') || '—'}</td>
                   <td className="px-2 py-2.5 text-xs text-muted-foreground">{item.specialRequest ?? '—'}</td>

@@ -352,6 +352,7 @@ const translations = {
     // free-text note per whole order, set by the diner from the mobile
     // app's own "הוסיפו בקשה מיוחדת" feature in CartModal.
     kitchenColumnSpecialRequest: 'בקשה מיוחדת',
+    kitchenItemEditedTooltip: 'דרישות המנה עודכנו על ידי הסועד לאחר שנכנסה לציר ההכנה',
     kitchenColumnElapsed: 'זמן מההזמנה',
     kitchenColumnStatus: 'סטטוס',
     kitchenColumnActions: 'פעולות',
@@ -925,6 +926,7 @@ const translations = {
     kitchenColumnDish: 'Dish',
     kitchenColumnDetails: 'Details',
     kitchenColumnSpecialRequest: 'Special request',
+    kitchenItemEditedTooltip: 'The diner updated this item after it entered the kitchen queue',
     kitchenColumnElapsed: 'Time since order',
     kitchenColumnStatus: 'Status',
     kitchenColumnActions: 'Actions',

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import type { Dish } from '@feedbook/types';
 import { useI18n } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { supabase } from '../../lib/supabase';
@@ -9,7 +10,7 @@ import { formatPrice } from '../../lib/formatPrice';
 import { useTableSessionStore } from '../../lib/tableSessionStore';
 import { ErrorModal } from '../ErrorModal';
 import { CancelReasonModal } from './CancelReasonModal';
-import { StarRow } from '../menu/MenuBrowser';
+import { StarRow, DishDetailModal, useMenuData, type DishSelectionPayload } from '../menu/MenuBrowser';
 import { colors } from '../../theme';
 
 type ItemStatus = 'in_progress' | 'ready' | 'served' | 'cancelled';
@@ -22,9 +23,12 @@ interface TrackedItem {
   quantity: number;
   unitPrice: number;
   placedAt: string;
+  dishId: string;
   dishName: string;
   dishPhoto: string | null;
+  sizeOptionId: string | null;
   sizeName: string | null;
+  modifierSelections: { modifierOptionId: string; servingVariantId: string | null }[];
   modifierSummary: string;
   // Optional per-dish expected cooking time, set by the restaurant in the
   // menu editor (added 2026-09-19 alongside the kitchen-side traffic
@@ -142,12 +146,18 @@ function OrderItemCard({
   highlighted,
   onCancelled,
   onChanged,
+  onEdit,
   t,
 }: {
   item: TrackedItem;
   highlighted: boolean;
   onCancelled: (id: string) => void;
   onChanged: () => void;
+  // Set by the parent only when this item's dish is still on the live menu
+  // (2026-10-11, user request) — same guard CartModal's own edit icon uses;
+  // undefined hides the button entirely rather than showing an edit flow
+  // with nothing real to reopen.
+  onEdit?: () => void;
   t: (key: TranslationKey) => string;
 }) {
   const [busy, setBusy] = useState(false);
@@ -250,17 +260,20 @@ function OrderItemCard({
               )}
             </Pressable>
             <View style={{ width: 1, backgroundColor: colors.border }} />
-            {/* Documented-but-not-built yet (2026-09-19): item editing (size/
-                modifiers/quantity) has no server-side support at all today,
-                only cancellation does. Shown locked — same treatment as the
-                still-unbuilt rows in BurgerSideMenu.tsx (muted text +
-                lock-closed-outline icon, not interactive) — purely so this
-                intended future action stays visible in the design instead of
-                being forgotten. */}
-            <View className="flex-1 flex-row items-center justify-center rounded-lg border py-2.5" style={{ borderColor: colors.border, gap: 6 }}>
-              <Text className="text-sm font-semibold text-[#9CA3AF]">{t('modifyItemButton')}</Text>
-              <Ionicons name="lock-closed-outline" size={14} color="#C7C2B4" />
-            </View>
+            {/* Live (2026-10-11, user request) — reopens the exact same
+                dish-customization screen used before sending to the
+                kitchen (DishDetailModal via OrderTracker's own
+                onSaveOverride), pre-filled with this item's current
+                size/modifiers/quantity. Hidden (not shown locked) when the
+                dish is no longer on the live menu, same convention as
+                CartModal's own edit icon. */}
+            {onEdit && (
+              <Pressable onPress={onEdit} disabled={busy} className="flex-1 items-center justify-center rounded-lg border py-2.5" style={{ borderColor: colors.royalBlue }}>
+                <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
+                  {t('modifyItemButton')}
+                </Text>
+              </Pressable>
+            )}
           </View>
         )
       )}
@@ -350,6 +363,8 @@ interface RawOrderItemRow {
   status_updated_at: string;
   quantity: number;
   unit_price: number;
+  dish_id: string;
+  dish_size_option_id: string | null;
   orders: { placed_at: string; bar_ticket_number: number | null } | null;
   dishes: {
     name: string;
@@ -360,7 +375,7 @@ interface RawOrderItemRow {
     feedstars_eligible: boolean;
   } | null;
   dish_size_options: { name: string } | null;
-  order_item_modifiers: { dish_modifier_options: { name: string } | null }[] | null;
+  order_item_modifiers: { modifier_option_id: string; serving_variant_id: string | null; dish_modifier_options: { name: string } | null }[] | null;
 }
 
 interface OrderFocusRequest {
@@ -373,8 +388,19 @@ const HIGHLIGHT_DURATION_MS = 4000;
 export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: OrderFocusRequest | null; onFocusHandled?: () => void }) {
   const { t } = useI18n();
   const sessionId = useTableSessionStore((s) => s.sessionId);
+  const restaurantId = useTableSessionStore((s) => s.restaurantId);
+  // Powers the live "בצעו שינויים במנה" edit flow (2026-10-11, user
+  // request) — same menu dataset MenuBrowser's own Menu tab fetches
+  // (sizes/modifier groups/options/serving variants), needed to reopen
+  // DishDetailModal for a specific dish from this separate tab. A second
+  // independent fetch + realtime subscription from this tab, not shared
+  // state with the Menu tab's own instance — same per-tab-fetches-what-it-
+  // needs convention already used throughout this app (AccountScreen, etc).
+  const { data: menuData } = useMenuData(restaurantId);
   const [items, setItems] = useState<TrackedItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingTrackedItem, setEditingTrackedItem] = useState<TrackedItem | null>(null);
+  const [editSaveError, setEditSaveError] = useState<string | null>(null);
   // Items this diner just cancelled themselves in this mount stay visible
   // with a "cancelled" confirmation label (see OrderItemCard) instead of
   // vanishing the moment the post-cancel refetch replaces `items` — kept
@@ -413,7 +439,7 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
     const { data } = await supabase
       .from('order_items')
       .select(
-        'id, order_id, status, status_updated_at, quantity, unit_price, orders!inner(placed_at, bar_ticket_number), dishes!inner(name, photo_urls, prep_time_minutes, rating_avg, rating_count, feedstars_eligible), dish_size_options(name), order_item_modifiers(dish_modifier_options(name))',
+        'id, order_id, status, status_updated_at, quantity, unit_price, dish_id, dish_size_option_id, orders!inner(placed_at, bar_ticket_number), dishes!inner(name, photo_urls, prep_time_minutes, rating_avg, rating_count, feedstars_eligible), dish_size_options(name), order_item_modifiers(modifier_option_id, serving_variant_id, dish_modifier_options(name))',
       )
       .eq('orders.session_id', sessionId)
       .returns<RawOrderItemRow[]>();
@@ -428,9 +454,12 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
         quantity: row.quantity,
         unitPrice: row.unit_price,
         placedAt: row.orders!.placed_at,
+        dishId: row.dish_id,
         dishName: row.dishes!.name,
         dishPhoto: row.dishes!.photo_urls[0] ?? null,
+        sizeOptionId: row.dish_size_option_id,
         sizeName: row.dish_size_options?.name ?? null,
+        modifierSelections: (row.order_item_modifiers ?? []).map((m) => ({ modifierOptionId: m.modifier_option_id, servingVariantId: m.serving_variant_id })),
         modifierSummary: (row.order_item_modifiers ?? [])
           .map((m) => m.dish_modifier_options?.name)
           .filter((n): n is string => !!n)
@@ -495,6 +524,46 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, items.length > 0]);
 
+  // Flat dishId → Dish lookup (2026-10-11, user request) — same pattern as
+  // MenuBrowser's own CartModal: resolves which dish an edit button should
+  // reopen, and doubles as the "dish still on the live menu" guard (a dish
+  // the restaurant has since removed/hidden has nothing real to reopen).
+  const dishById = new Map<string, Dish>();
+  if (menuData) {
+    for (const dishes of menuData.dishesByCategory.values()) {
+      for (const dish of dishes) {
+        dishById.set(dish.id, dish);
+      }
+    }
+  }
+  const editingDish = editingTrackedItem ? (dishById.get(editingTrackedItem.dishId) ?? null) : null;
+
+  async function handleEditSave(payload: DishSelectionPayload) {
+    if (!editingTrackedItem) return;
+    const { error } = await supabase.functions.invoke('update-order-item', {
+      method: 'PATCH',
+      body: {
+        order_item_id: editingTrackedItem.id,
+        action: 'update',
+        quantity: payload.quantity,
+        dish_size_option_id: payload.sizeOptionId,
+        modifier_selections: payload.modifierSelections.map((m) => ({
+          modifier_option_id: m.modifierOptionId,
+          serving_variant_id: m.servingVariantId,
+        })),
+      },
+    });
+    if (error) {
+      const code = await extractFunctionErrorCode(error);
+      if (code === 'EDIT_WINDOW_EXPIRED') setEditSaveError(t('editWindowExpiredMessage'));
+      else if (code === 'ITEM_ALREADY_READY') setEditSaveError(t('itemAlreadyReadyMessage'));
+      else setEditSaveError(t('placeOrderFailedMessage'));
+      return;
+    }
+    setEditingTrackedItem(null);
+    void fetchItems();
+  }
+
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center">
@@ -529,11 +598,55 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
               highlighted={item.id === highlightedId}
               onCancelled={(id) => setJustCancelledIds((prev) => new Set(prev).add(id))}
               onChanged={() => void fetchItems()}
+              onEdit={dishById.has(item.dishId) ? () => setEditingTrackedItem(item) : undefined}
               t={t}
             />
           ))}
         </ScrollView>
       )}
+
+      {editingTrackedItem && editingDish && (
+        <DishDetailModal
+          dish={editingDish}
+          sizes={menuData?.sizesByDish.get(editingDish.id) ?? []}
+          groups={menuData?.groupsByDish.get(editingDish.id) ?? []}
+          optionsByGroup={menuData?.optionsByGroup ?? new Map()}
+          variantsByOption={menuData?.variantsByOption ?? new Map()}
+          // Live stock/availability state (useDishCriticalStock,
+          // useDishMissingIngredients, useUnavailableModifierOptions) isn't
+          // wired into this tab — editing an item whose dish just went out
+          // of stock mid-edit is a real but rare edge case, left for a
+          // follow-up rather than pulling three more realtime hooks into
+          // this screen for it now.
+          soldOut={false}
+          missingIngredientNames={[]}
+          unavailableOptionIds={new Set()}
+          editingItem={{
+            id: editingTrackedItem.id,
+            dishId: editingTrackedItem.dishId,
+            dishName: editingTrackedItem.dishName,
+            quantity: editingTrackedItem.quantity,
+            sizeOptionId: editingTrackedItem.sizeOptionId,
+            sizeOptionName: editingTrackedItem.sizeName,
+            modifierSelections: editingTrackedItem.modifierSelections,
+            modifierSummary: editingTrackedItem.modifierSummary,
+            unitPrice: editingTrackedItem.unitPrice,
+          }}
+          onSaveOverride={(payload) => void handleEditSave(payload)}
+          onClose={() => setEditingTrackedItem(null)}
+          onAdded={() => setEditingTrackedItem(null)}
+          trackDish={() => {}}
+          untrackDish={() => {}}
+        />
+      )}
+
+      <ErrorModal
+        visible={editSaveError !== null}
+        title={t('placeOrderFailedTitle')}
+        message={editSaveError ?? ''}
+        dismissLabel={t('gotIt')}
+        onDismiss={() => setEditSaveError(null)}
+      />
     </View>
   );
 }

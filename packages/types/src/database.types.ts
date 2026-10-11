@@ -954,6 +954,7 @@ export type Database = {
           cancellation_restocked: boolean | null
           dish_id: string
           dish_size_option_id: string | null
+          edited_at: string | null
           id: string
           modifiers: Json | null
           order_id: string
@@ -967,6 +968,7 @@ export type Database = {
           cancellation_restocked?: boolean | null
           dish_id: string
           dish_size_option_id?: string | null
+          edited_at?: string | null
           id?: string
           modifiers?: Json | null
           order_id: string
@@ -980,6 +982,7 @@ export type Database = {
           cancellation_restocked?: boolean | null
           dish_id?: string
           dish_size_option_id?: string | null
+          edited_at?: string | null
           id?: string
           modifiers?: Json | null
           order_id?: string
@@ -1807,6 +1810,10 @@ export type Database = {
         Args: { p_order_item_id: string }
         Returns: undefined
       }
+      notify_order_item_updated: {
+        Args: { p_order_item_id: string }
+        Returns: undefined
+      }
       place_order_transaction:
         | {
             Args: {
@@ -1877,8 +1884,9 @@ export type Database = {
       update_order_item_transaction: {
         Args: {
           p_dish_size_option_id: string
-          p_modifier_option_ids: Json
+          p_modifier_selections: Json
           p_order_item_id: string
+          p_quantity: number
         }
         Returns: number
       }

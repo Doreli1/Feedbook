@@ -10,7 +10,7 @@ import { useI18n } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { supabase } from '../../lib/supabase';
 import { extractFunctionErrorCode } from '../../lib/functionError';
-import { cartTotal, useCartStore, type CartLineItem } from '../../lib/cartStore';
+import { cartTotal, useCartStore, type CartLineItem, type CartModifierSelection } from '../../lib/cartStore';
 import { formatPrice } from '../../lib/formatPrice';
 import { useTableSessionStore } from '../../lib/tableSessionStore';
 import { colors } from '../../theme';
@@ -55,7 +55,7 @@ function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
 // Dashboard.tsx's own kitchen channel — RLS still correctly scopes what the
 // refetch itself can see; the subscription is just the "something changed,
 // go look again" signal.
-function useMenuData(restaurantId: string | null) {
+export function useMenuData(restaurantId: string | null) {
   const [data, setData] = useState<MenuData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1935,7 +1935,21 @@ function DishPhotoGallery({
   );
 }
 
-function DishDetailModal({
+// The assembled result of DishDetailModal's own selection state, shared by
+// every save path (cartStore addItem, or OrderTracker's onSaveOverride) —
+// same field set CartLineItem needs, minus its own cart-only `id`.
+export interface DishSelectionPayload {
+  dishId: string;
+  dishName: string;
+  quantity: number;
+  sizeOptionId: string | null;
+  sizeOptionName: string | null;
+  modifierSelections: CartModifierSelection[];
+  modifierSummary: string;
+  unitPrice: number;
+}
+
+export function DishDetailModal({
   dish,
   sizes,
   groups,
@@ -1945,6 +1959,7 @@ function DishDetailModal({
   missingIngredientNames,
   unavailableOptionIds,
   editingItem,
+  onSaveOverride,
   onClose,
   onAdded,
   trackDish,
@@ -1958,11 +1973,22 @@ function DishDetailModal({
   soldOut: boolean;
   missingIngredientNames: string[];
   unavailableOptionIds: Set<string>;
-  // Set only when opened via the cart's edit icon (2026-10-11, user
-  // request) — pre-fills every selection below from this existing cart
-  // line instead of starting neutral, and handleAdd() replaces it in the
-  // cart (remove + re-add) rather than appending a new one.
+  // Set only when opened via the cart's edit icon, or (2026-10-11, user
+  // request) OrderTracker's "בצעו שינויים במנה" for an already-placed item
+  // within its 5-minute edit window — pre-fills every selection below from
+  // this existing line instead of starting neutral. When onSaveOverride is
+  // not given, handleAdd() replaces it in the cart (remove + re-add); when
+  // it is, only `id` is read here for the pre-fill — the save itself goes
+  // through onSaveOverride instead (see its own comment).
   editingItem: CartLineItem | null;
+  // Set only by OrderTracker's live-order-item edit flow (2026-10-11, user
+  // request: "אופן הפעולות לשינויים זהה לתהליך של ביצוע שינויים לפני שליחה
+  // למטבח" — reuse this exact screen, not a parallel one). When present,
+  // handleAdd() calls this with the assembled selection instead of touching
+  // the cart store at all — the caller owns what "save" means (a
+  // update-order-item PATCH, not a cartStore mutation) and decides when to
+  // close the modal (only after that call actually succeeds).
+  onSaveOverride?: (payload: DishSelectionPayload) => void;
   onClose: () => void;
   onAdded: () => void;
   // Owned by useDishPresence in the parent (2026-10-01) — this modal no
@@ -2214,12 +2240,7 @@ function DishDetailModal({
       .filter((n): n is string => n !== null)
       .join(', ');
 
-    // Replace, not append, when editing (2026-10-11, user request) — remove
-    // the original line first; addItem always mints a fresh id anyway, so
-    // this is equivalent to an in-place update from the diner's point of
-    // view.
-    if (editingItem) removeItem(editingItem.id);
-    addItem({
+    const payload: DishSelectionPayload = {
       dishId: dish.id,
       dishName: dish.name,
       quantity,
@@ -2228,7 +2249,23 @@ function DishDetailModal({
       modifierSelections: allOptionIds.map((id) => ({ modifierOptionId: id, servingVariantId: resolveVariant(id).variant?.id ?? null })),
       modifierSummary: summary,
       unitPrice,
-    });
+    };
+
+    // A live, already-placed order item (OrderTracker) — the caller owns
+    // the save (a server PATCH, not a cart mutation) and closes the modal
+    // itself only once that actually succeeds, so this never calls
+    // onAdded() on its own.
+    if (onSaveOverride) {
+      onSaveOverride(payload);
+      return;
+    }
+
+    // Replace, not append, when editing an existing cart line (2026-10-11,
+    // user request) — remove the original line first; addItem always mints
+    // a fresh id anyway, so this is equivalent to an in-place update from
+    // the diner's point of view.
+    if (editingItem) removeItem(editingItem.id);
+    addItem(payload);
     onAdded();
   }
 

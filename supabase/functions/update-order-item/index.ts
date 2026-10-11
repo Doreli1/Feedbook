@@ -14,9 +14,14 @@
 //     (EDIT_WINDOW_EXPIRED)
 //
 // "update" re-prices the item via update_order_item_transaction()
-// (20260914095000) — changing size/modifiers only ever changes price, never
-// JIT inventory (dish_ingredients links to dish_id, not to a size/modifier
-// row). "cancel" sets status='cancelled' IMMEDIATELY — restaurant policy is
+// (20260914095000, extended 2026-10-11 to also accept quantity and
+// modifier_selections with an optional serving_variant_id — same shape
+// place-order's own items[] uses, and sets order_items.edited_at so Web
+// Admin's "הזמנות ומטבח" can flag that this item's requirements changed
+// after it already entered the kitchen's prep queue) — changing
+// size/modifiers/quantity only ever changes price, never JIT inventory
+// (dish_ingredients links to dish_id, not to a size/modifier row).
+// "cancel" sets status='cancelled' IMMEDIATELY — restaurant policy is
 // that a cancellation inside the 5-minute edit window is final and never
 // waits on the kitchen (2026-09-19: corrects a 2026-09-18 design mistake
 // that made cancellation itself wait on kitchen confirmation). It does NOT
@@ -96,9 +101,28 @@ Deno.serve(async (req) => {
   if (sizeOptionId !== undefined && sizeOptionId !== null && typeof sizeOptionId !== "string") {
     return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: dish_size_option_id", 400);
   }
-  const modifierIds = body?.modifier_option_ids;
-  if (modifierIds !== undefined && !Array.isArray(modifierIds)) {
-    return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: modifier_option_ids", 400);
+  const quantity = body?.quantity;
+  if (action === "update" && (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity < 1)) {
+    return errorResponse("MISSING_REQUIRED_FIELD", "quantity must be a positive integer", 400);
+  }
+  const rawSelections = body?.modifier_selections;
+  if (rawSelections !== undefined && !Array.isArray(rawSelections)) {
+    return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: modifier_selections", 400);
+  }
+  const modifierSelections: { modifier_option_id: string; serving_variant_id: string | null }[] = [];
+  for (const rawSelection of (rawSelections as unknown[] | undefined) ?? []) {
+    const selection = rawSelection as Record<string, unknown>;
+    if (typeof selection?.modifier_option_id !== "string" || selection.modifier_option_id === "") {
+      return errorResponse("MISSING_REQUIRED_FIELD", "Each modifier selection requires a modifier_option_id", 400);
+    }
+    const variantId = selection.serving_variant_id;
+    if (variantId !== undefined && variantId !== null && typeof variantId !== "string") {
+      return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: serving_variant_id", 400);
+    }
+    modifierSelections.push({
+      modifier_option_id: selection.modifier_option_id,
+      serving_variant_id: (variantId as string | null) ?? null,
+    });
   }
   const cancellationReason = body?.cancellation_reason;
   if (cancellationReason !== undefined && cancellationReason !== null && typeof cancellationReason !== "string") {
@@ -156,8 +180,9 @@ Deno.serve(async (req) => {
   const { data: newTotal, error: updateRpcError } = await admin
     .rpc("update_order_item_transaction", {
       p_order_item_id: orderItemId,
+      p_quantity: quantity,
       p_dish_size_option_id: sizeOptionId ?? null,
-      p_modifier_option_ids: (modifierIds as string[] | undefined) ?? [],
+      p_modifier_selections: modifierSelections,
     })
     .single();
 
@@ -169,9 +194,17 @@ Deno.serve(async (req) => {
     return errorResponse("INTERNAL_ERROR", "Failed to update item", 500);
   }
 
+  // Fire-and-forget, same convention as the cancel branch above — the item
+  // is already updated either way, so a notification-insert hiccup must
+  // never turn a successful edit into a 500.
+  const { error: notifyError } = await admin.rpc("notify_order_item_updated", { p_order_item_id: orderItemId });
+  if (notifyError) {
+    console.error("notify_order_item_updated failed", notifyError);
+  }
+
   const { data: updated } = await admin
     .from("order_items")
-    .select("id, status, unit_price, dish_size_option_id")
+    .select("id, status, unit_price, quantity, dish_size_option_id, edited_at")
     .eq("id", orderItemId)
     .single();
 

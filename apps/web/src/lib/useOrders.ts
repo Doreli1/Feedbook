@@ -44,6 +44,12 @@ export interface KitchenOrderItem {
   // once from CartModal's own "הוסיפו בקשה מיוחדת" feature — not per dish,
   // so every item row belonging to the same order shows the same value.
   specialRequest: string | null;
+  // Set when the diner used OrderTracker's "בצעו שינויים במנה" to change
+  // this item's size/modifiers/quantity after it had already entered the
+  // kitchen's prep queue (2026-10-11, user request) — null means never
+  // edited. Surfaced as an attention flag so staff notice the requirement
+  // changed instead of silently preparing the pre-edit version.
+  editedAt: string | null;
 }
 
 interface RawRow {
@@ -53,6 +59,7 @@ interface RawRow {
   status_updated_at: string;
   quantity: number;
   cancellation_restocked: boolean | null;
+  edited_at: string | null;
   dishes: { name: string; prep_time_minutes: number | null } | null;
   dish_size_options: { name: string } | null;
   order_item_modifiers: { dish_modifier_options: { name: string } | null }[] | null;
@@ -81,7 +88,7 @@ export function useOrders(restaurantId: string | undefined) {
     const { data } = await supabase
       .from('order_items')
       .select(
-        'id, order_id, status, status_updated_at, quantity, cancellation_restocked, dishes(name, prep_time_minutes), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, special_request, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number, table_type)))',
+        'id, order_id, status, status_updated_at, quantity, cancellation_restocked, edited_at, dishes(name, prep_time_minutes), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, special_request, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number, table_type)))',
       )
       .eq('orders.table_sessions.restaurant_id', restaurantId)
       // A cancelled item is included here too, but only while it still
@@ -114,6 +121,7 @@ export function useOrders(restaurantId: string | undefined) {
         subAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.session_participants?.sub_account_number ?? null) : null,
         prepTimeMinutes: row.dishes?.prep_time_minutes ?? null,
         specialRequest: row.orders!.special_request,
+        editedAt: row.edited_at,
       }))
       .sort((a, b) => new Date(a.placedAt).getTime() - new Date(b.placedAt).getTime());
 
