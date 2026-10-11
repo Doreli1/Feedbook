@@ -33,9 +33,21 @@ function HoverTooltip({ text, children }: { text: string; children: ReactNode })
   return (
     <span className="group relative inline-flex">
       {children}
-      <span className="pointer-events-none absolute bottom-full start-1/2 z-10 mb-2 w-max max-w-[220px] -translate-x-1/2 rounded-lg bg-ink px-2.5 py-1.5 text-center text-[11px] font-medium leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
+      {/* left-1/2 + -translate-x-1/2, not the logical start-1/2 (2026-10-11,
+          user report: the bubble drifted away from the icon instead of
+          sitting centered above it) — translate-x is a physical CSS
+          transform that never flips under RTL, so pairing it with a
+          logical `start` (which DOES flip to `right` under RTL) only
+          centers correctly in LTR. Plain physical left/transform centers
+          correctly regardless of page direction, since this is relative to
+          the icon's own already-RTL-placed position, not the page itself.
+          White background (was bg-ink/dark, per the same report) — a
+          visible border + shadow keep it legible against the page's own
+          light background instead of blending into it. */}
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-max max-w-[220px] -translate-x-1/2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-center text-[11px] font-medium leading-snug text-ink opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
         {text}
-        <span className="absolute start-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-ink" />
+        <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-border" />
+        <span className="absolute left-1/2 top-full -translate-x-1/2 -mt-px border-4 border-transparent border-t-surface" />
       </span>
     </span>
   );
