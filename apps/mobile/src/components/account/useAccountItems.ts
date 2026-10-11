@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { useI18n } from '../../lib/i18n';
 
@@ -42,6 +43,7 @@ export function useAccountItems(sessionId: string | null) {
   const { t } = useI18n();
   const [items, setItems] = useState<AccountItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   const refresh = useCallback(async () => {
     if (!sessionId) {
@@ -101,18 +103,55 @@ export function useAccountItems(sessionId: string | null) {
 
   useEffect(() => {
     if (!sessionId) return;
-    // Unique per-mount suffix — see the matching comment in
-    // useSessionParticipants.ts for why a name scoped only by sessionId
-    // crashes with "cannot add postgres_changes callbacks ... after
-    // subscribe()" across the account screen's unmount/remount-on-tab-switch.
-    const channel = supabase
-      .channel(`account-items-${sessionId}-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => {
-        void refresh();
-      })
-      .subscribe();
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    // Real bug fix (2026-10-11, user report): a cancelled order with a
+    // priced modifier kept showing — and the diner kept being billed for
+    // it — in "ניהול חשבון" after the diner cancelled it. The query/RLS
+    // side was verified correct end-to-end (a real cancel via a real
+    // diner's own JWT immediately dropped out of this exact query). The
+    // gap was here: this subscription never checked its own connection
+    // status — nothing in this file (or almost anywhere else in this
+    // codebase) did — so a channel that silently failed to establish
+    // (CHANNEL_ERROR/TIMED_OUT) left this screen looking "live" while
+    // actually never hearing about another participant's change again.
+    // Still relevant even though AccountScreen fully remounts on every tab
+    // switch (which alone would've masked this for whoever acted): "חשבון
+    // כללי" is explicitly meant to update live for every OTHER diner at
+    // the same table who never left this tab.
+    function connect() {
+      // Unique per-attempt suffix — see the matching comment in
+      // useSessionParticipants.ts for why a name scoped only by sessionId
+      // crashes with "cannot add postgres_changes callbacks ... after
+      // subscribe()" across the account screen's unmount/remount-on-tab-
+      // switch, and (now) across a retry of this same effect instance too.
+      const channel = supabase
+        .channel(`account-items-${sessionId}-${Math.random().toString(36).slice(2)}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => {
+          void refresh();
+        })
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            // Catches exactly the gap above: whatever changed while this
+            // channel was down (including this device's own cancel, if it
+            // raced the subscribe) is picked up the moment it's live again.
+            void refresh();
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('account-items realtime subscribe failed', status, err);
+            void refresh();
+            if (!cancelled) {
+              void supabase.removeChannel(channel);
+              retryTimer = setTimeout(connect, 3000);
+            }
+          }
+        });
+      channelRef.current = channel;
+    }
+    connect();
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (channelRef.current) void supabase.removeChannel(channelRef.current);
     };
   }, [sessionId, refresh]);
 
