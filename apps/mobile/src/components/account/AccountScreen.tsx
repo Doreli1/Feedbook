@@ -4,12 +4,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CallWaiterInlineTrigger } from '../CallWaiterButton';
+import { ConfirmModal } from '../ConfirmModal';
+import { ErrorModal } from '../ErrorModal';
 import { useI18n } from '../../lib/i18n';
 import { formatPrice } from '../../lib/formatPrice';
+import { supabase } from '../../lib/supabase';
+import { extractFunctionErrorCode } from '../../lib/functionError';
 import { useTableSessionStore } from '../../lib/tableSessionStore';
 import { colors } from '../../theme';
 import { useAccountItems, type AccountItem } from './useAccountItems';
 import { useSessionParticipants, type SessionParticipant } from './useSessionParticipants';
+
+// Same 5-minute window as OrderTracker.tsx/update-order-item's own
+// EDIT_WINDOW_MINUTES — duplicated here on purpose, matching that existing
+// convention (each caller keeps its own copy for a value this stable, see
+// that Edge Function's own comment).
+const EDIT_WINDOW_MINUTES = 5;
 
 type AccountSubTab = 'general' | 'personal';
 
@@ -93,6 +103,36 @@ function ParticipantsRow({ participants }: { participants: SessionParticipant[] 
 function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTab; items: AccountItem[]; participants: SessionParticipant[] }) {
   const { t } = useI18n();
   const participantById = useMemo(() => new Map(participants.map((p) => [p.participantId, p])), [participants]);
+  // Removing a priced modifier (2026-10-11, user request) — the row stays
+  // visible here (no local filtering), the realtime subscription already
+  // owned by useAccountItems picks up the resulting order_items change and
+  // refetches on its own once the PATCH below actually lands.
+  const [removeTarget, setRemoveTarget] = useState<AccountItem | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  async function handleRemoveModifier() {
+    if (!removeTarget?.removable) return;
+    const { error } = await supabase.functions.invoke('update-order-item', {
+      method: 'PATCH',
+      body: {
+        order_item_id: removeTarget.removable.orderItemId,
+        action: 'update',
+        quantity: removeTarget.quantity,
+        dish_size_option_id: removeTarget.removable.dishSizeOptionId,
+        modifier_selections: removeTarget.removable.otherModifierSelections.map((m) => ({
+          modifier_option_id: m.modifierOptionId,
+          serving_variant_id: m.servingVariantId,
+        })),
+      },
+    });
+    setRemoveTarget(null);
+    if (error) {
+      const code = await extractFunctionErrorCode(error);
+      if (code === 'EDIT_WINDOW_EXPIRED') setRemoveError(t('editWindowExpiredMessage'));
+      else if (code === 'ITEM_ALREADY_READY') setRemoveError(t('itemAlreadyReadyMessage'));
+      else setRemoveError(t('placeOrderFailedMessage'));
+    }
+  }
 
   // Its own card now (2026-10-10, user request) — rounded/bordered/white,
   // matching the info-strip card above it, instead of sitting bare on the
@@ -123,9 +163,19 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
             <Text className="w-12 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnQuantity')}</Text>
             <Text className="flex-1 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnUnitPrice')}</Text>
             <Text className="flex-1 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnTotalPrice')}</Text>
+            <View className="w-8" />
           </View>
           {items.map((item, index) => {
             const member = participantById.get(item.participantId);
+            // Only a PRICED modifier row ever carries `removable`, and only
+            // while its parent order_item is still genuinely editable — same
+            // in_progress + 5-minute-window rule as OrderTracker's own
+            // "בצעו שינויים במנה" (2026-10-11, user request: distinguishes a
+            // paid add-on, which can be individually removed, from a free
+            // choice like doneness, which was never shown as its own row at
+            // all and has nothing billable to remove).
+            const elapsedMinutes = item.removable ? (Date.now() - new Date(item.removable.placedAt).getTime()) / 60000 : 0;
+            const canRemove = !!item.removable && item.removable.status === 'in_progress' && elapsedMinutes <= EDIT_WINDOW_MINUTES;
             return (
               <View
                 key={item.id}
@@ -151,11 +201,31 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
                 <Text className="flex-1 text-center text-sm text-[#1B2430]" numberOfLines={1} adjustsFontSizeToFit>
                   ₪{formatPrice(item.unitPrice * item.quantity)}
                 </Text>
+                <View className="w-8 items-center">
+                  {canRemove && (
+                    <Pressable onPress={() => setRemoveTarget(item)} hitSlop={8} accessibilityLabel={t('accountRemoveModifierAction')}>
+                      <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
+                    </Pressable>
+                  )}
+                </View>
               </View>
             );
           })}
         </>
       )}
+
+      <ConfirmModal
+        visible={removeTarget !== null}
+        title={t('accountRemoveModifierConfirmTitle')}
+        message={t('accountRemoveModifierConfirmMessage').replace('{name}', removeTarget?.dishName ?? '')}
+        cancelLabel={t('back')}
+        confirmLabel={t('accountRemoveModifierAction')}
+        danger
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={() => void handleRemoveModifier()}
+      />
+
+      <ErrorModal visible={removeError !== null} title={t('placeOrderFailedTitle')} message={removeError ?? ''} dismissLabel={t('gotIt')} onDismiss={() => setRemoveError(null)} />
     </View>
   );
 }
