@@ -2,6 +2,20 @@
 // LanguageToggle's flags — no icon library dependency for two glyphs.
 // currentColor throughout so each usage controls its own color via className.
 
+// Refresh/sync — two circular arrows (2026-10-11, user-picked option) —
+// marks an order_items row the diner edited after it already entered the
+// kitchen's prep queue (KitchenScreen.tsx).
+export function SyncIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M4.5 10a5.5 5.5 0 0 1 9.4-3.9l1.1 1.1" />
+      <path d="M12.5 7.2h2.5V4.7" />
+      <path d="M15.5 10a5.5 5.5 0 0 1-9.4 3.9l-1.1-1.1" />
+      <path d="M7.5 12.8H5v2.5" />
+    </svg>
+  );
+}
+
 export function TrashIcon({ className = 'h-4 w-4' }: { className?: string }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>

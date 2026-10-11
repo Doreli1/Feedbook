@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import type { KitchenItemStatus, KitchenOrderItem } from '../lib/useOrders';
 import { useOrderHistory } from '../lib/useOrderHistory';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { BarTicketLabelModal } from '../components/BarTicketLabelModal';
+import { SyncIcon } from '../components/Icons';
 
 interface KitchenFocusRequest {
   orderId: string | null;
@@ -24,24 +25,34 @@ interface Props {
 
 const HIGHLIGHT_DURATION_MS = 4000;
 
-// "!" attention mark (2026-10-11, user request) — order_items.edited_at
-// means the diner used the mobile app's "בצעו שינויים במנה" to change this
-// item after it had already entered the kitchen's prep queue; staff need
-// to notice the requirement changed instead of silently preparing the
-// pre-edit version. Same filled-circle-badge treatment (not plain text)
-// already established for this exact "!" convention on mobile
-// (feedback_attention_mark_icon_convention), same #38BDF8 color as the
-// info badges already used elsewhere in this app (e.g. OrderTracker's own
-// edit-window-passed note).
+// Bubble tooltip on hover (2026-10-11, user request) — replaces the plain
+// browser `title` attribute (no styling, a slow native delay) with a real
+// positioned bubble + pointer triangle, shown via pure CSS (Tailwind's
+// group/group-hover, no JS state) so it costs nothing per row.
+function HoverTooltip({ text, children }: { text: string; children: ReactNode }) {
+  return (
+    <span className="group relative inline-flex">
+      {children}
+      <span className="pointer-events-none absolute bottom-full start-1/2 z-10 mb-2 w-max max-w-[220px] -translate-x-1/2 rounded-lg bg-ink px-2.5 py-1.5 text-center text-[11px] font-medium leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
+        {text}
+        <span className="absolute start-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-ink" />
+      </span>
+    </span>
+  );
+}
+
+// Sync/refresh icon mark (2026-10-11, user-picked option, replacing an
+// earlier "!" circle) — order_items.edited_at means the diner used the
+// mobile app's "בצעו שינויים במנה" to change this item after it had
+// already entered the kitchen's prep queue; staff need to notice the
+// requirement changed instead of silently preparing the pre-edit version.
 function EditedAttentionBadge({ t }: { t: (key: TranslationKey) => string }) {
   return (
-    <span
-      title={t('kitchenItemEditedTooltip')}
-      className="ms-1.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full align-middle text-[10px] font-bold leading-none text-white"
-      style={{ backgroundColor: '#38BDF8' }}
-    >
-      !
-    </span>
+    <HoverTooltip text={t('kitchenItemEditedTooltip')}>
+      <span className="ms-1.5 inline-flex shrink-0 items-center align-middle text-accent">
+        <SyncIcon className="h-4 w-4" />
+      </span>
+    </HoverTooltip>
   );
 }
 

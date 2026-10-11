@@ -30,6 +30,14 @@ interface TrackedItem {
   sizeName: string | null;
   modifierSelections: { modifierOptionId: string; servingVariantId: string | null }[];
   modifierSummary: string;
+  // Sum of order_item_modifiers.price_delta_at_order, PER UNIT, not yet
+  // multiplied by quantity (2026-10-11, real bug fix — user report: a
+  // dish with a priced add-on, e.g. a surcharged drink modifier, showed
+  // only the dish's own base price here, silently dropping the add-on's
+  // cost from the total). Multiplied by quantity at display time
+  // alongside unitPrice, same (unitPrice + modifiers) * quantity formula
+  // place_order_transaction itself uses server-side.
+  modifiersUnitTotal: number;
   // Optional per-dish expected cooking time, set by the restaurant in the
   // menu editor (added 2026-09-19 alongside the kitchen-side traffic
   // light) — null means the dish never had one configured, in which case
@@ -336,8 +344,12 @@ function OrderItemCard({
           </>
         )}
         <View className="flex-1 items-center">
+          {/* (unitPrice + modifiersUnitTotal) * quantity (2026-10-11, real
+              bug fix) — used to show unitPrice*quantity alone, silently
+              dropping any priced add-on (e.g. a surcharged drink modifier)
+              from the total. */}
           <Text className="text-xl font-bold" style={{ color: colors.royalBlue }}>
-            ₪{formatPrice(item.unitPrice * item.quantity)}
+            ₪{formatPrice((item.unitPrice + item.modifiersUnitTotal) * item.quantity)}
           </Text>
         </View>
       </View>
@@ -375,7 +387,13 @@ interface RawOrderItemRow {
     feedstars_eligible: boolean;
   } | null;
   dish_size_options: { name: string } | null;
-  order_item_modifiers: { modifier_option_id: string; serving_variant_id: string | null; dish_modifier_options: { name: string } | null }[] | null;
+  order_item_modifiers: {
+    modifier_option_id: string;
+    serving_variant_id: string | null;
+    price_delta_at_order: number;
+    dish_modifier_options: { name: string } | null;
+    modifier_option_serving_variants: { name: string; container_type: string } | null;
+  }[] | null;
 }
 
 interface OrderFocusRequest {
@@ -439,7 +457,7 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
     const { data } = await supabase
       .from('order_items')
       .select(
-        'id, order_id, status, status_updated_at, quantity, unit_price, dish_id, dish_size_option_id, orders!inner(placed_at, bar_ticket_number), dishes!inner(name, photo_urls, prep_time_minutes, rating_avg, rating_count, feedstars_eligible), dish_size_options(name), order_item_modifiers(modifier_option_id, serving_variant_id, dish_modifier_options(name))',
+        'id, order_id, status, status_updated_at, quantity, unit_price, dish_id, dish_size_option_id, orders!inner(placed_at, bar_ticket_number), dishes!inner(name, photo_urls, prep_time_minutes, rating_avg, rating_count, feedstars_eligible), dish_size_options(name), order_item_modifiers(modifier_option_id, serving_variant_id, price_delta_at_order, dish_modifier_options(name), modifier_option_serving_variants(name, container_type))',
       )
       .eq('orders.session_id', sessionId)
       .returns<RawOrderItemRow[]>();
@@ -460,10 +478,24 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
         sizeOptionId: row.dish_size_option_id,
         sizeName: row.dish_size_options?.name ?? null,
         modifierSelections: (row.order_item_modifiers ?? []).map((m) => ({ modifierOptionId: m.modifier_option_id, servingVariantId: m.serving_variant_id })),
+        // Includes the chosen serving variant (size + bottle/draft) for a
+        // drink add-on, not just the add-on's own name (2026-10-11, real
+        // bug fix — user report: a beer add-on showed only "בירה", with no
+        // way to tell a third from a half, or bottle from draft).
         modifierSummary: (row.order_item_modifiers ?? [])
-          .map((m) => m.dish_modifier_options?.name)
+          .map((m) => {
+            const name = m.dish_modifier_options?.name;
+            if (!name) return null;
+            const variant = m.modifier_option_serving_variants;
+            if (!variant) return name;
+            const containerLabel = t(variant.container_type === 'bottle' ? 'dishServingContainerBottleLabel' : 'dishServingContainerDraftLabel');
+            return `${name} (${variant.name} · ${containerLabel})`;
+          })
           .filter((n): n is string => !!n)
           .join(', '),
+        // Per-unit sum of order_item_modifiers.price_delta_at_order
+        // (2026-10-11, real bug fix — see TrackedItem's own comment).
+        modifiersUnitTotal: (row.order_item_modifiers ?? []).reduce((sum, m) => sum + m.price_delta_at_order, 0),
         prepTimeMinutes: row.dishes!.prep_time_minutes,
         ratingAvg: row.dishes!.rating_avg,
         ratingCount: row.dishes!.rating_count,
@@ -474,7 +506,7 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
 
     setItems(mapped);
     setLoading(false);
-  }, [sessionId]);
+  }, [sessionId, t]);
 
   useEffect(() => {
     void fetchItems();
