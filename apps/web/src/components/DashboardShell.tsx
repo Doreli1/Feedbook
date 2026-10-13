@@ -1,19 +1,28 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Restaurant } from '@feedbook/types';
 import { TopBar, type TopBarNotification } from './TopBar';
-import { BellIcon, DashboardIcon, InventoryIcon, MenuTabIcon, OrdersTabIcon, TablesTabIcon, TeamTabIcon } from './Icons';
+import { AccountsTabIcon, BellIcon, DashboardIcon, InventoryIcon, MenuTabIcon, OrdersTabIcon, ReviewsTabIcon, TablesTabIcon, TeamTabIcon } from './Icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
-export type DashboardTab = 'overview' | 'menu' | 'inventory' | 'orders' | 'service' | 'tables' | 'team';
+export type DashboardTab = 'overview' | 'accounts' | 'menu' | 'inventory' | 'orders' | 'service' | 'reviews' | 'tables' | 'team';
 
-const TABS: DashboardTab[] = ['overview', 'menu', 'inventory', 'orders', 'service', 'tables', 'team'];
+// Stage 6/7 prep (2026-10-13, user request): "חשבונות" placed right after
+// "בקרת מסעדה" (overview) — it's billing/financial, closer in kind to the
+// control screen than to menu/inventory — and "חוות דעת" right after
+// "אי-התאמות ושירות" (service), both positions the user specified directly.
+// Both render as skeleton/coming-soon screens for now, same convention
+// already established for ServiceScreen's own "אי-התאמות" sub-tab — real
+// payment (Stage 6) and review (Stage 7) logic isn't built yet.
+const TABS: DashboardTab[] = ['overview', 'accounts', 'menu', 'inventory', 'orders', 'service', 'reviews', 'tables', 'team'];
 const TAB_LABEL_KEYS: Record<DashboardTab, TranslationKey> = {
   overview: 'dashboardTabOverview',
+  accounts: 'dashboardTabAccounts',
   menu: 'dashboardTabMenu',
   inventory: 'dashboardTabInventory',
   orders: 'dashboardTabOrders',
   service: 'dashboardTabService',
+  reviews: 'dashboardTabReviews',
   tables: 'dashboardTabTables',
   team: 'dashboardTabTeam',
 };
@@ -23,6 +32,7 @@ const TAB_LABEL_KEYS: Record<DashboardTab, TranslationKey> = {
 // it, both flowing right-to-left).
 const TAB_ICONS: Record<DashboardTab, ComponentType<{ className?: string }>> = {
   overview: DashboardIcon,
+  accounts: AccountsTabIcon,
   menu: MenuTabIcon,
   inventory: InventoryIcon,
   orders: OrdersTabIcon,
@@ -30,6 +40,7 @@ const TAB_ICONS: Record<DashboardTab, ComponentType<{ className?: string }>> = {
   // Icons.tsx) rather than a new one-off icon — this tab's whole purpose is
   // surfacing the notifications that bell announces.
   service: BellIcon,
+  reviews: ReviewsTabIcon,
   tables: TablesTabIcon,
   team: TeamTabIcon,
 };

@@ -7,9 +7,11 @@ import { DashboardShell, type DashboardTab } from '../components/DashboardShell'
 import { MenuManager } from '../components/MenuManager';
 import { ProfitabilityCard } from '../components/ProfitabilityCard';
 import { OverheadExpensesForm } from '../components/OverheadExpensesForm';
+import { AccountsScreen } from './AccountsScreen';
 import { IngredientsScreen } from './IngredientsScreen';
 import { KitchenScreen } from './KitchenScreen';
 import { PurchaseOrdersScreen } from './PurchaseOrdersScreen';
+import { ReviewsScreen } from './ReviewsScreen';
 import { ServiceScreen } from './ServiceScreen';
 import { UsersScreen } from './UsersScreen';
 import { TableManagerContent } from './TableManagerForm';
@@ -329,6 +331,8 @@ function ApprovedDashboard({
         </div>
       )}
 
+      {tab === 'accounts' && <AccountsScreen />}
+
       {tab === 'menu' && (
         <div className="card p-6">
           <MenuManager
@@ -365,6 +369,8 @@ function ApprovedDashboard({
       )}
 
       {tab === 'service' && <ServiceScreen calls={waiterCalls} onResolve={resolveWaiterCall} />}
+
+      {tab === 'reviews' && <ReviewsScreen />}
 
       {tab === 'tables' && (
         <TableManagerContent restaurant={restaurant} tables={tables} onRefresh={refreshTables} />

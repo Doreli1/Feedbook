@@ -300,13 +300,29 @@ const translations = {
     envelopeMessagesTitle: 'ההודעות שלכם',
     envelopeComingSoon: 'הודעות ופניות מסועדים (בקרוב)',
     accountMenuTitle: 'תפריט חשבון',
+    dashboardTabAccounts: 'חשבונות',
     dashboardTabMenu: 'תפריט',
     dashboardTabInventory: 'מלאי',
     dashboardTabOrders: 'הזמנות ומטבח',
     dashboardTabService: 'אי-התאמות ושירות',
+    dashboardTabReviews: 'חוות דעת',
     dashboardTabTables: 'שולחנות',
     dashboardTabTeam: 'צוות',
     lowStockAlertsHeading: 'המלאי דורש תשומת לב',
+
+    // Accounts screen (שלב 6 הכנה, 2026-10-13) — placeholder בלבד, מודל ההולד
+    // ותשלום אמיתיים עדיין לא נבנו (ראו Implementation Plan v8, שלב 6).
+    accountsTitle: 'חשבונות',
+    accountsSubtitle: 'תצוגה שוטפת של חשבונות שולחנות (רגיל ובר), הזמנות, ביטולים, עלות וטיפים — Backend Schema §6.5.',
+    accountsComingSoonTitle: 'מודול חשבונות בבנייה',
+    accountsComingSoonMessage: 'תשלום, תפיסת מסגרת (הולד) והיסטוריית חשבונות (billing-history) עדיין לא נבנו — שלב 6 בתוכנית היישום.',
+
+    // Reviews screen (שלב 7 הכנה, 2026-10-13) — placeholder בלבד, תלוי בהשלמת
+    // שלב 6 (הטריגר לחוות דעת הוא תשלום שהושלם, לא רק סגירת חשבון).
+    reviewsTitle: 'חוות דעת',
+    reviewsSubtitle: 'חוות דעת סועדים לאחר תשלום, כולל אימות ודירוג פר-מנה — Backend Schema §7.',
+    reviewsComingSoonTitle: 'מודול חוות דעת בבנייה',
+    reviewsComingSoonMessage: 'שלב זה תלוי בהשלמת מודול התשלום (שלב 6) — עדיין לא נבנה.',
 
     // Service screen (אי-התאמות ושירות, 2026-10-11)
     serviceTitle: 'אי-התאמות ושירות',
@@ -882,12 +898,26 @@ const translations = {
     envelopeMessagesTitle: 'Your messages',
     envelopeComingSoon: 'Diner messages and requests (coming soon)',
     accountMenuTitle: 'Account menu',
+    dashboardTabAccounts: 'Accounts',
     dashboardTabMenu: 'Menu',
     dashboardTabInventory: 'Inventory',
     dashboardTabOrders: 'Orders & Kitchen',
     dashboardTabService: 'Discrepancies & Service',
+    dashboardTabReviews: 'Reviews',
     dashboardTabTables: 'Tables',
     dashboardTabTeam: 'Team',
+
+    // Accounts screen (Stage 6 prep, 2026-10-13) — placeholder only.
+    accountsTitle: 'Accounts',
+    accountsSubtitle: 'A running view of each table’s account (regular and bar), orders, cancellations, cost, and tips — Backend Schema §6.5.',
+    accountsComingSoonTitle: 'Accounts module in progress',
+    accountsComingSoonMessage: 'Payment, order holds, and billing history haven’t been built yet — Stage 6 in the Implementation Plan.',
+
+    // Reviews screen (Stage 7 prep, 2026-10-13) — placeholder only.
+    reviewsTitle: 'Reviews',
+    reviewsSubtitle: 'Diner reviews after payment, including verification and per-dish ratings — Backend Schema §7.',
+    reviewsComingSoonTitle: 'Reviews module in progress',
+    reviewsComingSoonMessage: 'This stage depends on finishing the payment module (Stage 6) — not built yet.',
 
     // Service screen (2026-10-11)
     serviceTitle: 'Discrepancies & Service',

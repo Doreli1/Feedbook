@@ -246,3 +246,25 @@ export function TeamTabIcon({ className = 'h-4 w-4' }: { className?: string }) {
     </svg>
   );
 }
+
+export function AccountsTabIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  // Ionicons "wallet-outline" — the clasp dot (third path) has no stroke in
+  // the source, i.e. it renders solid, same convention as DashboardIcon's
+  // needle above.
+  return (
+    <svg viewBox="0 0 512 512" fill="none" stroke="currentColor" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="48" y="144" width="416" height="288" rx="48" ry="48" />
+      <path d="M411.36,144V114A50,50,0,0,0,352,64.9L88.64,109.85A50,50,0,0,0,48,159v49" />
+      <path fill="currentColor" stroke="none" d="M368,320a32,32,0,1,1,32-32A32,32,0,0,1,368,320Z" />
+    </svg>
+  );
+}
+
+export function ReviewsTabIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  // Ionicons "star-outline".
+  return (
+    <svg viewBox="0 0 512 512" fill="none" stroke="currentColor" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M480,208H308L256,48,204,208H32l140,96L118,464,256,364,394,464,340,304Z" />
+    </svg>
+  );
+}
