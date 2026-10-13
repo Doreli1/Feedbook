@@ -326,7 +326,7 @@ const translations = {
 
     // Service screen (אי-התאמות ושירות, 2026-10-11)
     serviceTitle: 'אי-התאמות ושירות',
-    serviceSubtitle: 'קריאות שירות ואי-התאמות פתוחות — לא קשורות להכנת מנות, ולכן מופרדות ממודול ההזמנות והמטבח.',
+    serviceSubtitle: 'מענה לקריאות שירות של סועדים בזמן אמת, לצד תיעוד וטיפול באי-התאמות בהזמנה — מנה שהוחזרה, ביטול עסקה וכדומה.',
     serviceCallsSubTab: 'קריאות שירות',
     nonConformancesSubTab: 'אי-התאמות',
     serviceCallStatusOpen: 'פתוחה',
@@ -921,7 +921,7 @@ const translations = {
 
     // Service screen (2026-10-11)
     serviceTitle: 'Discrepancies & Service',
-    serviceSubtitle: 'Open service calls and discrepancies — unrelated to dish preparation, so kept separate from the orders/kitchen module.',
+    serviceSubtitle: 'Respond to diners’ service calls in real time, and document and handle order discrepancies — a returned dish, a cancelled transaction, and the like.',
     serviceCallsSubTab: 'Service calls',
     nonConformancesSubTab: 'Discrepancies',
     serviceCallStatusOpen: 'Open',
