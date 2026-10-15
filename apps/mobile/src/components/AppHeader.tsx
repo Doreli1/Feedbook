@@ -7,6 +7,7 @@ import type { Lang } from '../lib/translations';
 import { useSession } from '../lib/useSession';
 import { useNotifications } from '../lib/useNotifications';
 import { useOpenSessionReminder } from '../lib/useOpenSessionReminder';
+import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
 interface Props {
@@ -154,6 +155,7 @@ export function HeaderMailIcon() {
   const { t } = useI18n();
   const { session } = useSession();
   const { reminder, loading } = useOpenSessionReminder(session?.user.id);
+  const setTableSession = useTableSessionStore((s) => s.setTableSession);
   const [open, setOpen] = useState(false);
 
   return (
@@ -193,13 +195,33 @@ export function HeaderMailIcon() {
                   </Text>
                   <Pressable
                     onPress={() => {
+                      // Resuming, not joining — no qr_token re-scan needed.
+                      // The RPC already proved this is a real, still-open
+                      // session the caller legitimately belongs to; this
+                      // just restores the local store so OrderingHeader's
+                      // own screens have what they need, same as a real
+                      // join-session response would have set.
+                      setTableSession({
+                        sessionId: reminder.sessionId,
+                        participantId: reminder.participantId,
+                        restaurantId: reminder.restaurantId,
+                        restaurantName: reminder.restaurantName,
+                        tableId: reminder.tableId,
+                        tableNumber: reminder.tableNumber,
+                        tableType: reminder.tableType,
+                        sessionAccountNumber: reminder.sessionAccountNumber,
+                        subAccountNumber: reminder.subAccountNumber,
+                        barTicketNumber: reminder.barTicketNumber,
+                        reviewVerificationCode: reminder.reviewVerificationCode,
+                        qrToken: reminder.qrToken,
+                      });
                       setOpen(false);
-                      router.push('/scan-qr');
+                      router.replace('/menu');
                     }}
                     className="mt-3.5 items-center rounded-lg py-2.5"
                     style={{ backgroundColor: colors.royalBlue }}
                   >
-                    <Text className="text-sm font-semibold text-white">{t('activateQrScanner')}</Text>
+                    <Text className="text-sm font-semibold text-white">{t('returnToSessionButton')}</Text>
                   </Pressable>
                 </View>
               ) : (

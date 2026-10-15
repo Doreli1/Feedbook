@@ -1784,9 +1784,18 @@ export type Database = {
       get_my_open_session: {
         Args: never
         Returns: {
+          bar_ticket_number: number
+          participant_id: string
+          qr_token: string
+          restaurant_id: string
           restaurant_name: string
+          review_verification_code: string
+          session_account_number: string
           session_id: string
+          sub_account_number: string
+          table_id: string
           table_number: string
+          table_type: string
         }[]
       }
       get_reviewer_public_info: {
