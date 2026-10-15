@@ -80,20 +80,29 @@ export default function EmailAuthScreen() {
         extraScrollHeight={80}
         keyboardOpeningTime={0}
       >
-        <View className="flex-row items-center gap-2 px-4 pt-14">
+        {/* Booking.com-style navy header strip (user request 2026-10-16) — the
+            same brand blue as the primary CTA below, X instead of a back
+            arrow (this screen is reached from a fresh entry point, sign-in,
+            not a multi-step flow to step back through). First JSX child
+            renders rightmost under this app's forced RTL — X first puts it
+            on the physical right, matching the Booking reference exactly. */}
+        <View className="flex-row items-center justify-between px-4 pb-4 pt-14" style={{ backgroundColor: colors.royalBlue }}>
           <Pressable
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/sign-in'))}
             hitSlop={12}
             className="h-10 w-10 items-center justify-center"
           >
-            <Ionicons name="arrow-forward" size={22} color={colors.ink} />
+            <Ionicons name="close" size={26} color="#FFFFFF" />
           </Pressable>
-          <FeedbookWordmark size={30} color={colors.royalBlue} />
+          <FeedbookWordmark size={26} color="#FFFFFF" />
         </View>
 
-        <View className="flex-1 px-6 pt-4">
-          <Text className="mb-6 text-2xl font-bold text-[#1B2430]">
-            {mode === 'sign-in' ? t('signIn') : t('createProfile')}
+        <View className="flex-1 px-6 pt-6">
+          <Text className="mb-1 text-2xl font-bold text-[#1B2430]">
+            {mode === 'sign-in' ? t('emailAuthSignInTitle') : t('emailAuthSignUpTitle')}
+          </Text>
+          <Text className="mb-6 text-sm text-[#6E6A61]">
+            {mode === 'sign-in' ? t('emailAuthSignInSubtitle') : t('emailAuthSignUpSubtitle')}
           </Text>
 
           <View className="mb-6 flex-row rounded-xl bg-white p-1" style={{ borderColor: colors.border, borderWidth: 1 }}>
@@ -150,12 +159,7 @@ export default function EmailAuthScreen() {
             <Text className="mb-2 text-xs text-[#DC2626]">{t('passwordTooShort')}</Text>
           )}
 
-          {mode === 'sign-in' && (
-            <Pressable onPress={() => router.push('/forgot-password')} hitSlop={8} className="mb-6 items-end">
-              <Text className="text-xs text-[#1B3FA8]">{t('forgotPassword')}</Text>
-            </Pressable>
-          )}
-          {mode === 'sign-up' && <View className="mb-6" />}
+          <View className="mb-6" />
 
           {/* Gray-until-valid affordance, per Mobile UI Spec §5 M-03 rule. */}
           <Pressable
@@ -168,6 +172,15 @@ export default function EmailAuthScreen() {
               {busy ? t('busyEllipsis') : mode === 'sign-in' ? t('signIn') : t('createProfile')}
             </Text>
           </Pressable>
+
+          {/* Centered below the button, matching the Booking.com reference
+              (user request 2026-10-16) — was a small end-aligned link above
+              the button. */}
+          {mode === 'sign-in' && (
+            <Pressable onPress={() => router.push('/forgot-password')} hitSlop={8} className="mt-5 items-center">
+              <Text className="text-sm font-semibold text-[#1B3FA8]">{t('forgotPassword')}</Text>
+            </Pressable>
+          )}
         </View>
       </KeyboardAwareScrollView>
 

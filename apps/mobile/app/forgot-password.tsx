@@ -57,15 +57,19 @@ export default function ForgotPasswordScreen() {
         extraScrollHeight={80}
         keyboardOpeningTime={0}
       >
-        <View className="flex-row items-center gap-2 px-4 pt-14">
+        {/* Navy header strip matching email-auth.tsx (user request 2026-10-16)
+            — keeps the back arrow, not an X, since this is a step inside a
+            flow (forgot-password → reset-password → set-new-password), not
+            a fresh entry point the way email-auth.tsx is. */}
+        <View className="flex-row items-center gap-2 px-4 pb-4 pt-14" style={{ backgroundColor: colors.royalBlue }}>
           <Pressable
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/email-auth'))}
             hitSlop={12}
             className="h-10 w-10 items-center justify-center"
           >
-            <Ionicons name="arrow-forward" size={22} color={colors.ink} />
+            <Ionicons name="arrow-forward" size={22} color="#FFFFFF" />
           </Pressable>
-          <FeedbookWordmark size={30} color={colors.royalBlue} />
+          <FeedbookWordmark size={26} color="#FFFFFF" />
         </View>
 
         <View className="flex-1 px-6 pt-4">
