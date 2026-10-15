@@ -3,7 +3,8 @@
 //
 // Auth: the session's host participant, or staff of the owning restaurant.
 // Closes the table_session once every payment share for it is settled, and
-// frees the table back to 'available'.
+// marks the table 'awaiting_cleaning' — staff mark it 'available' again once
+// it's physically ready for new diners (TableStatusBoard.tsx).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.4";
 
@@ -117,7 +118,7 @@ Deno.serve(async (req) => {
     return errorResponse("INTERNAL_ERROR", "Failed to close session", 500);
   }
 
-  await admin.from("tables").update({ status: "available" }).eq("id", session.table_id);
+  await admin.from("tables").update({ status: "awaiting_cleaning" }).eq("id", session.table_id);
 
   return jsonResponse({ status: "closed", closed_at: closedAt }, 200);
 });

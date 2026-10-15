@@ -205,6 +205,17 @@ const translations = {
     categorySectionDrink: 'שתייה',
     categorySectionLabel: 'סוג קטגוריה',
 
+    // TableStatusBoard (2026-10-15) — PRD §5.1.3 "ניהול סטטוס שולחן", לא היה
+    // מוצג בשום מקום עד עכשיו. שלושה סטטוסים: פנוי/תפוס/ממתין לניקיון (לא
+    // "ממתין לחשבון" כפי שה-PRD המקורי ניסח — אין שלב כזה אצלנו, הסועד
+    // משלם מהנייד בלי מלצר).
+    tableStatusBoardTitle: 'מצב שולחנות',
+    tableStatusBoardSubtitle: 'תצוגה חיה — מתעדכן אוטומטית כשסועד מצטרף לשולחן או שהחשבון נסגר.',
+    tableStatusAvailable: 'פנוי',
+    tableStatusOccupied: 'תפוס',
+    tableStatusAwaitingCleaning: 'ממתין לניקיון',
+    tableMarkCleanAction: 'נוקה — סימון כפנוי',
+
     // TableManagerForm
     tableSetupTitle: 'הגדרת הושבות',
     tableStepSubtitle: 'הגדירו את מפת השולחנות של המסעדה — קיבולת, אזור עישון ומתחם סגור/פתוח לכל שולחן. אופציונלי, ניתן להוסיף גם מאוחר יותר.',
@@ -802,6 +813,14 @@ const translations = {
     categorySectionFood: 'Food',
     categorySectionDrink: 'Drinks',
     categorySectionLabel: 'Category type',
+
+    // TableStatusBoard (2026-10-15)
+    tableStatusBoardTitle: 'Table status',
+    tableStatusBoardSubtitle: 'Live view — updates automatically as a diner joins a table or the bill is closed.',
+    tableStatusAvailable: 'Available',
+    tableStatusOccupied: 'Occupied',
+    tableStatusAwaitingCleaning: 'Awaiting cleaning',
+    tableMarkCleanAction: 'Cleaned — mark available',
 
     // TableManagerForm
     tableSetupTitle: 'Seating Setup',

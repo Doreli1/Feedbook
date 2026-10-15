@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
   if (tableError || !table) {
     return errorResponse("INVALID_QR_CODE", "QR code is not valid", 400);
   }
-  if (table.status === "awaiting_payment") {
+  if (table.status === "awaiting_cleaning") {
     return errorResponse("TABLE_NOT_ACTIVE", "This table is not accepting new sessions right now", 409);
   }
 

@@ -15,6 +15,7 @@ import { ReviewsScreen } from './ReviewsScreen';
 import { ServiceScreen } from './ServiceScreen';
 import { UsersScreen } from './UsersScreen';
 import { TableManagerContent } from './TableManagerForm';
+import { TableStatusBoard } from './TableStatusBoard';
 import { useMenu } from '../lib/useMenu';
 import { useInventory } from '../lib/useInventory';
 import { useOrders } from '../lib/useOrders';
@@ -373,7 +374,10 @@ function ApprovedDashboard({
       {tab === 'reviews' && <ReviewsScreen />}
 
       {tab === 'tables' && (
-        <TableManagerContent restaurant={restaurant} tables={tables} onRefresh={refreshTables} />
+        <div className="space-y-4">
+          <TableStatusBoard tables={tables} onRefresh={refreshTables} />
+          <TableManagerContent restaurant={restaurant} tables={tables} onRefresh={refreshTables} />
+        </div>
       )}
 
       {tab === 'team' && <UsersScreen session={session} restaurantId={restaurant.id} staff={staff} onRefresh={refreshStaff} />}
