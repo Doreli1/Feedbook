@@ -3155,6 +3155,7 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   const { t, isRTL } = useI18n();
   const navigation = useNavigation();
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
+  const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
   const { data, loading } = useMenuData(restaurantId);
   const orderStats = useDishOrderStats(restaurantId);
   const { counts: presence, trackDish, untrackDish } = useDishPresence(restaurantId);
@@ -3223,6 +3224,17 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
     );
   }
 
+  // Bar menu scoping (2026-10-15, Implementation Plan §10) — a restaurant's
+  // bar can offer a curated subset of the menu (dishes.bar_orderable, set in
+  // MenuManager.tsx), not just everything or an all/nothing food/drink
+  // split. Only filters when the diner is actually at the bar table — every
+  // other table sees the unfiltered menu exactly as before.
+  const visibleDishesByCategory = isBarTable
+    ? new Map(
+        Array.from(data.dishesByCategory.entries()).map(([catId, dishes]) => [catId, dishes.filter((d) => d.bar_orderable)]),
+      )
+    : data.dishesByCategory;
+
   // Flat dishId → Dish lookup for CartModal's own item rows (2026-10-11,
   // user request) — cart line items only ever stored
   // dishId/dishName/pricing, never the dish's own photo, so this is built
@@ -3231,15 +3243,20 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   // what resolves a cart item's edit icon back to a real Dish to reopen in
   // DishDetailModal (see editingCartItem below).
   const dishById = new Map<string, Dish>();
-  for (const dishes of data.dishesByCategory.values()) {
+  for (const dishes of visibleDishesByCategory.values()) {
     for (const dish of dishes) {
       dishById.set(dish.id, dish);
     }
   }
 
-  const categoriesInSection = data.categories.filter((c) => c.section === section);
+  // A category left with zero bar-orderable dishes after filtering isn't
+  // shown at all for a bar diner — an empty category tile would be
+  // confusing with nothing to explain why.
+  const categoriesInSection = data.categories.filter(
+    (c) => c.section === section && (!isBarTable || (visibleDishesByCategory.get(c.id)?.length ?? 0) > 0),
+  );
   const activeCategory = categoryId ? data.categories.find((c) => c.id === categoryId) : null;
-  const dishesInActiveCategory = activeCategory ? (data.dishesByCategory.get(activeCategory.id) ?? []) : [];
+  const dishesInActiveCategory = activeCategory ? (visibleDishesByCategory.get(activeCategory.id) ?? []) : [];
   // Filtered + sorted view of the category's dish list (2026-10-01, per
   // explicit request) — categoryOrdersToday below still reads from the full
   // (unfiltered) dishesInActiveCategory, since the "ביקוש גבוה" ratio is

@@ -68,6 +68,9 @@ export function MenuBuilderForm({ session, restaurant, categories, dishes, dishS
           ingredients={ingredients}
           onRefresh={onRefresh}
           onDraftChange={setHasDraft}
+          // Table setup (including the bar preset) is a later wizard step
+          // (onSeating) — nothing can exist yet at this point in onboarding.
+          hasBar={false}
         />
 
         {!canContinue && <p className="mb-4 mt-6 text-xs text-muted-foreground">{t('menuMinimumNotMet')}</p>}

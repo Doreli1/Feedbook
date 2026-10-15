@@ -358,6 +358,7 @@ export type Database = {
       dishes: {
         Row: {
           allergens: string[]
+          bar_orderable: boolean
           category_id: string
           created_at: string
           description: string | null
@@ -381,6 +382,7 @@ export type Database = {
         }
         Insert: {
           allergens?: string[]
+          bar_orderable?: boolean
           category_id: string
           created_at?: string
           description?: string | null
@@ -404,6 +406,7 @@ export type Database = {
         }
         Update: {
           allergens?: string[]
+          bar_orderable?: boolean
           category_id?: string
           created_at?: string
           description?: string | null

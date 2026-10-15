@@ -67,9 +67,15 @@ interface MenuManagerProps {
   // in-progress dish edits nested inside CategoryCard/DishForm below) — a
   // real but partial signal, not full coverage of every possible draft here.
   onDraftChange?: (hasDraft: boolean) => void;
+  // Gates the entire "זמין בבר" UI (per-dish checkbox + per-category bulk
+  // toggle) — 2026-10-15, Implementation Plan §10's activation-signal
+  // decision: no separate flag, derive straight from whether this
+  // restaurant currently has an active table_type='bar' row. A restaurant
+  // with no bar never sees a control for a feature that can't apply to it.
+  hasBar: boolean;
 }
 
-export function MenuManager({ restaurantId, categories, dishes, dishSizeOptions, ingredients, onRefresh, onDraftChange }: MenuManagerProps) {
+export function MenuManager({ restaurantId, categories, dishes, dishSizeOptions, ingredients, onRefresh, onDraftChange, hasBar }: MenuManagerProps) {
   const { t } = useI18n();
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategorySection, setNewCategorySection] = useState<'food' | 'drink'>('food');
@@ -129,6 +135,7 @@ export function MenuManager({ restaurantId, categories, dishes, dishSizeOptions,
             ingredients={ingredients}
             onRefresh={onRefresh}
             onDeleteCategory={() => void handleDeleteCategory(category.id)}
+            hasBar={hasBar}
           />
         ))}
       </div>
@@ -218,6 +225,7 @@ function CategoryCard({
   ingredients,
   onRefresh,
   onDeleteCategory,
+  hasBar,
 }: {
   category: MenuCategory;
   dishes: Dish[];
@@ -225,6 +233,7 @@ function CategoryCard({
   ingredients: Ingredient[];
   onRefresh: () => void;
   onDeleteCategory: () => void;
+  hasBar: boolean;
 }) {
   const { t, dir } = useI18n();
   const [addingDish, setAddingDish] = useState(false);
@@ -250,6 +259,21 @@ function CategoryCard({
   async function changeSection(section: 'food' | 'drink') {
     if (section === category.section) return;
     await supabase.from('menu_categories').update({ section }).eq('id', category.id);
+    onRefresh();
+  }
+
+  // UI-only convenience (2026-10-15) — not a separate schema concept per
+  // Implementation Plan §10's own reasoning: updates the same per-dish
+  // bar_orderable field for every dish in this category in one call,
+  // instead of a layered category-default/dish-override inheritance model
+  // that would add complexity without real benefit for what's usually a
+  // short bar menu.
+  async function setAllBarOrderable(value: boolean) {
+    if (dishes.length === 0) return;
+    await supabase
+      .from('dishes')
+      .update({ bar_orderable: value })
+      .in('id', dishes.map((d) => d.id));
     onRefresh();
   }
 
@@ -345,6 +369,31 @@ function CategoryCard({
 
       {expanded && (
         <>
+          {hasBar && dishes.length > 0 && (
+            <div className="mb-2 flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">{t('dishBarOrderableBulkLabel')}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void setAllBarOrderable(true);
+                }}
+                className="rounded border border-border px-2 py-1 font-medium text-accent hover:bg-accent-soft"
+              >
+                {t('dishBarOrderableBulkOn')}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void setAllBarOrderable(false);
+                }}
+                className="rounded border border-border px-2 py-1 font-medium text-muted-foreground hover:bg-danger-soft hover:text-danger"
+              >
+                {t('dishBarOrderableBulkOff')}
+              </button>
+            </div>
+          )}
           <div className="space-y-2">
             {dishes.map((dish) =>
               editingDishId === dish.id ? (
@@ -356,6 +405,7 @@ function CategoryCard({
                   restaurantId={category.restaurant_id}
                   ingredients={ingredients}
                   existingSizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
+                  hasBar={hasBar}
                   onDone={() => {
                     setEditingDishId(null);
                     onRefresh();
@@ -382,6 +432,7 @@ function CategoryCard({
               restaurantId={category.restaurant_id}
               ingredients={ingredients}
               existingSizeOptions={[]}
+              hasBar={hasBar}
               onDone={() => {
                 setAddingDish(false);
                 onRefresh();
@@ -1183,6 +1234,7 @@ function DishForm({
   restaurantId,
   ingredients,
   existingSizeOptions,
+  hasBar,
   onDone,
   onCancel,
 }: {
@@ -1192,6 +1244,7 @@ function DishForm({
   restaurantId: string;
   ingredients: Ingredient[];
   existingSizeOptions: DishSizeOption[];
+  hasBar: boolean;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -1201,6 +1254,7 @@ function DishForm({
   const [price, setPrice] = useState(dish ? String(dish.price) : '');
   const [description, setDescription] = useState(dish?.description ?? '');
   const [feedstarsEligible, setFeedstarsEligible] = useState(dish?.feedstars_eligible ?? false);
+  const [barOrderable, setBarOrderable] = useState(dish?.bar_orderable ?? true);
   const [discountPercent, setDiscountPercent] = useState(dish && dish.discount_percent > 0 ? String(dish.discount_percent) : '');
   // Discount mechanism choice (2026-10-01, per explicit request): 'percent'
   // (existing flat-percentage-off) or 'fixed_price' — staff types the final
@@ -1797,6 +1851,7 @@ function DishForm({
       price: priceValue,
       photo_urls: photoUrls,
       feedstars_eligible: feedstarsEligible,
+      bar_orderable: barOrderable,
       // Mode-exclusive (2026-10-01): only the active mode's field is ever
       // sent as non-default — a percent-mode dish always saves with
       // discount_fixed_price null, a fixed_price-mode dish always saves with
@@ -2215,6 +2270,17 @@ function DishForm({
         />
         {t(isDrink ? 'dishFeedstarsEligibleLabelDrink' : 'dishFeedstarsEligibleLabel')}
       </label>
+      {hasBar && (
+        <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={barOrderable}
+            onChange={(e) => setBarOrderable(e.target.checked)}
+            className="h-4 w-4 rounded border-border"
+          />
+          {t('dishBarOrderableLabel')}
+        </label>
+      )}
       <div className="mb-3">
         <label className="mb-1 block text-sm font-semibold text-ink">{t('dishDiscountLabel')}</label>
         {/* Mode toggle (2026-10-01, per explicit request) — same segmented-

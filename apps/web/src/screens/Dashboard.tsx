@@ -343,6 +343,7 @@ function ApprovedDashboard({
             dishSizeOptions={dishSizeOptions}
             ingredients={ingredients}
             onRefresh={refreshMenu}
+            hasBar={tables.some((t) => t.table_type === 'bar')}
           />
         </div>
       )}

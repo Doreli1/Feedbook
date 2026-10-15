@@ -190,6 +190,12 @@ const translations = {
     dishFeedstarsEligibleLabel: 'המנה משתתפת בתוכנית ההטבות Feedstars',
     dishFeedstarsEligibleLabelDrink: 'השתייה משתתפת בתוכנית ההטבות Feedstars',
     dishFeedstarsBadge: 'Feedstars',
+    // bar_orderable (2026-10-15) — מוצג רק למסעדה עם שורת בר פעילה
+    // (Implementation Plan §10, תנאי ההפעלה).
+    dishBarOrderableLabel: 'ניתן להזמין גם מהבר',
+    dishBarOrderableBulkLabel: 'זמינות בבר לכל הקטגוריה:',
+    dishBarOrderableBulkOn: 'הפעלה',
+    dishBarOrderableBulkOff: 'כיבוי',
     dishDiscountLabel: 'הנחה (לא חובה)',
     dishDiscountHint: 'אם מוגדר, באפליקציה יוצג המחיר המקורי עם קו חוצה לצידו המחיר המוזל ואחוז ההנחה.',
     dishDiscountModePercent: 'לפי אחוז',
@@ -799,6 +805,10 @@ const translations = {
     dishFeedstarsEligibleLabel: 'This dish participates in the Feedstars benefits program',
     dishFeedstarsEligibleLabelDrink: 'This drink participates in the Feedstars benefits program',
     dishFeedstarsBadge: 'Feedstars',
+    dishBarOrderableLabel: 'Also orderable from the bar',
+    dishBarOrderableBulkLabel: 'Bar availability for this whole category:',
+    dishBarOrderableBulkOn: 'Turn on',
+    dishBarOrderableBulkOff: 'Turn off',
     dishDiscountLabel: 'Discount (optional)',
     dishDiscountHint: 'When set, the app shows the original price crossed out next to the discounted price and the discount percentage.',
     dishDiscountModePercent: 'By percentage',
