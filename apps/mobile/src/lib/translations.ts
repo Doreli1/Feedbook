@@ -318,6 +318,13 @@ const translations = {
     // Order alerts bell (2026-09-19) — order placed / cancelled notifications
     notificationsTitle: 'ההתראות שלכם',
     notificationsEmpty: 'אין התראות חדשות.',
+
+    // Mail icon — account/promo messages, including the open-visit reminder
+    mailTitle: 'ההודעות שלכם',
+    mailEmpty: 'אין הודעות חדשות.',
+    openSessionReminderPrefix: 'יש לכם ביקור פעיל במסעדת ',
+    openSessionReminderMiddle: ', שולחן ',
+    openSessionReminderSuffix: ', שעדיין לא נסגר. רוצים לחזור אליו?',
     callWaiterButton: 'הזמינו שירות',
     callWaiterConfirmTitle: 'הקריאה נשלחה!',
     callWaiterConfirmMessage: 'צוות המסעדה קיבל את הפנייה ויגיע אליכם בהקדם.',
@@ -659,6 +666,13 @@ const translations = {
     // Order alerts bell (2026-09-19) — order placed / cancelled notifications
     notificationsTitle: 'Your alerts',
     notificationsEmpty: 'No new alerts.',
+
+    // Mail icon — account/promo messages, including the open-visit reminder
+    mailTitle: 'Your messages',
+    mailEmpty: 'No new messages.',
+    openSessionReminderPrefix: 'You have an active visit at ',
+    openSessionReminderMiddle: ', table ',
+    openSessionReminderSuffix: ", that hasn't been closed yet. Want to go back?",
     callWaiterButton: 'Request service',
     callWaiterConfirmTitle: 'Your call was sent!',
     callWaiterConfirmMessage: 'The restaurant staff has been notified and will be with you shortly.',

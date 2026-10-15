@@ -1781,6 +1781,14 @@ export type Database = {
           views_today: number
         }[]
       }
+      get_my_open_session: {
+        Args: never
+        Returns: {
+          restaurant_name: string
+          session_id: string
+          table_number: string
+        }[]
+      }
       get_reviewer_public_info: {
         Args: { p_user_ids: string[] }
         Returns: {

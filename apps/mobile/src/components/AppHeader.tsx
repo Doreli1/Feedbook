@@ -1,10 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../lib/i18n';
 import type { Lang } from '../lib/translations';
 import { useSession } from '../lib/useSession';
 import { useNotifications } from '../lib/useNotifications';
+import { useOpenSessionReminder } from '../lib/useOpenSessionReminder';
 import { colors } from '../theme';
 
 interface Props {
@@ -142,14 +144,72 @@ export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-ve
   );
 }
 
-export function HeaderMailIcon({ unread }: { unread?: boolean }) {
+// Account/promo messages (not order events — see HeaderBellIcon's own
+// comment on that split). Self-contained like HeaderBellIcon, now with a
+// real first message: the open-visit reminder (2026-10-16, user request) —
+// see useOpenSessionReminder.ts for why this needs its own security
+// definer RPC rather than a plain client query.
+export function HeaderMailIcon() {
+  const router = useRouter();
+  const { t } = useI18n();
+  const { session } = useSession();
+  const { reminder, loading } = useOpenSessionReminder(session?.user.id);
+  const [open, setOpen] = useState(false);
+
   return (
-    <View>
-      <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
-      {unread && (
-        <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
-      )}
-    </View>
+    <>
+      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
+        <View>
+          <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
+          {reminder && (
+            <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
+          )}
+        </View>
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
+          <View className="mt-24 items-end px-4">
+            <Pressable
+              onPress={(e) => e.stopPropagation()}
+              className="w-80 overflow-hidden rounded-2xl bg-white"
+              style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 }}
+            >
+              <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
+                {t('mailTitle')}
+              </Text>
+              {loading ? (
+                <View className="items-center py-8">
+                  <ActivityIndicator color={colors.royalBlue} />
+                </View>
+              ) : reminder ? (
+                <View className="px-4 py-4">
+                  <Text className="text-sm leading-5 text-[#1B2430]">
+                    {t('openSessionReminderPrefix')}
+                    <Text style={{ fontWeight: '700' }}>{reminder.restaurantName}</Text>
+                    {t('openSessionReminderMiddle')}
+                    <Text style={{ fontWeight: '700' }}>{reminder.tableNumber}</Text>
+                    {t('openSessionReminderSuffix')}
+                  </Text>
+                  <Pressable
+                    onPress={() => {
+                      setOpen(false);
+                      router.push('/scan-qr');
+                    }}
+                    className="mt-3.5 items-center rounded-lg py-2.5"
+                    style={{ backgroundColor: colors.royalBlue }}
+                  >
+                    <Text className="text-sm font-semibold text-white">{t('activateQrScanner')}</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Text className="px-4 py-6 text-center text-sm text-[#9CA3AF]">{t('mailEmpty')}</Text>
+              )}
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
