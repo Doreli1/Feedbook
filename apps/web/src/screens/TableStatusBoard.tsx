@@ -55,7 +55,14 @@ export function TableStatusBoard({ tables, onRefresh }: Props) {
     onRefresh();
   }
 
-  const sorted = [...tables].sort((a, b) => a.table_number.localeCompare(b.table_number, undefined, { numeric: true }));
+  // The bar is a shared singleton row (any number of diners join/leave
+  // independently all day, no capacity cap — see TableManagerForm.tsx) —
+  // occupied/available/awaiting_cleaning doesn't map cleanly onto it the way
+  // it does a regular table, so it's excluded here (2026-10-15, user
+  // decision) and stays visible only in the configuration list below.
+  const sorted = tables
+    .filter((table) => table.table_type !== 'bar')
+    .sort((a, b) => a.table_number.localeCompare(b.table_number, undefined, { numeric: true }));
 
   return (
     <div className="card p-6">
