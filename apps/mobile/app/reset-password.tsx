@@ -83,7 +83,18 @@ export default function ResetPasswordScreen() {
 
           <Text className="mb-1.5 text-xs font-semibold text-[#6E6A61]">{t('resetCode')}</Text>
           <Pressable
-            onPress={() => inputRef.current?.focus()}
+            onPress={() => {
+              // Real bug (2026-10-16, user report): dismissing the keyboard
+              // (swipe-down/system back) leaves this input still logically
+              // focused in React's eyes even though the native keyboard is
+              // gone — a known Android RN quirk where calling .focus() on an
+              // already-"focused" input is a no-op, so tapping the boxes did
+              // nothing. Explicitly blurring first forces a real focus
+              // transition the next frame, which does bring the keyboard
+              // back.
+              inputRef.current?.blur();
+              setTimeout(() => inputRef.current?.focus(), 50);
+            }}
             className="mb-1 justify-center gap-2"
             // A numeric code always reads left-to-right, in Hebrew too — RN
             // mirrors a plain 'row' under forced RTL (I18nManager.isRTL),
