@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
 
   const { data: session, error: sessionError } = await admin
     .from("table_sessions")
-    .select("id, table_id, status")
+    .select("id, table_id, restaurant_id, status, tables(table_type)")
     .eq("id", sessionId)
     .maybeSingle();
   if (sessionError || !session || session.status !== "open") {
@@ -135,6 +135,16 @@ Deno.serve(async (req) => {
     return errorResponse("INVALID_QR_CODE", "QR code does not match this table session", 403);
   }
 
+  // The shared bar's personal "account" is the same running pickup-ticket
+  // number (0001-9999, resets daily) printed on the diner's own ticket —
+  // not the usual random 6-digit sub_account_number — so unrelated bar
+  // diners sharing one table_session (see scan-qr/index.ts's own comment)
+  // each still get a real, private personal account (2026-10-15, user
+  // decision). Assigned once here, per participant, not per order — every
+  // order they place afterwards reuses this same number
+  // (place_order_transaction looks it up instead of minting a fresh one).
+  const isBar = session.tables?.table_type === "bar";
+
   // Idempotency: with proper back/forward navigation now enabled in the app
   // (2026-09-10), a user can legitimately land on the "join" action for a
   // session they already joined (e.g. back to add-participants, forward
@@ -149,7 +159,7 @@ Deno.serve(async (req) => {
   // exist already.
   const { data: existingParticipants } = await admin
     .from("session_participants")
-    .select("id, sub_account_number, review_verification_code, is_host, joined_at")
+    .select("id, sub_account_number, bar_ticket_number, review_verification_code, is_host, joined_at")
     .eq("session_id", sessionId)
     .eq("user_id", callerId)
     .order("joined_at", { ascending: true })
@@ -163,9 +173,16 @@ Deno.serve(async (req) => {
     .select("id", { count: "exact", head: true })
     .eq("session_id", sessionId);
 
+  let barTicketNumber: number | null = null;
+  if (isBar) {
+    const { data: ticket } = await admin.rpc("next_bar_ticket_number", { p_restaurant_id: session.restaurant_id });
+    barTicketNumber = typeof ticket === "number" ? ticket : null;
+  }
+
   let participant: {
     id: string;
     sub_account_number: string;
+    bar_ticket_number: number | null;
     review_verification_code: string;
     is_host: boolean;
     joined_at: string;
@@ -177,10 +194,11 @@ Deno.serve(async (req) => {
         session_id: sessionId,
         user_id: callerId,
         sub_account_number: randomSubAccountNumber(),
+        bar_ticket_number: barTicketNumber,
         review_verification_code: randomReviewVerificationCode(),
         is_host: (existingCount ?? 0) === 0,
       })
-      .select("id, sub_account_number, review_verification_code, is_host, joined_at")
+      .select("id, sub_account_number, bar_ticket_number, review_verification_code, is_host, joined_at")
       .single();
     if (!error) {
       participant = data;
@@ -197,7 +215,7 @@ Deno.serve(async (req) => {
       // this call still returns the real participant instead of a 500.
       const { data: existing } = await admin
         .from("session_participants")
-        .select("id, sub_account_number, review_verification_code, is_host, joined_at")
+        .select("id, sub_account_number, bar_ticket_number, review_verification_code, is_host, joined_at")
         .eq("session_id", sessionId)
         .eq("user_id", callerId)
         .order("joined_at", { ascending: true })

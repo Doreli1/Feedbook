@@ -173,7 +173,7 @@ export default function AddParticipantsScreen() {
     }
 
     const { data, error: invokeError } = await supabase.functions.invoke<{
-      participant: { id: string; sub_account_number: string; review_verification_code: string; is_host: boolean };
+      participant: { id: string; sub_account_number: string; bar_ticket_number: number | null; review_verification_code: string; is_host: boolean };
     }>('join-session', { body: { session_id: params.sessionId, invited_by_participant_id: null, qr_token: params.qrToken } });
     // participant.id (the row's own UUID) was already part of this response
     // shape — only sub_account_number/review_verification_code were being
@@ -199,6 +199,7 @@ export default function AddParticipantsScreen() {
       tableType: params.tableType || null,
       sessionAccountNumber: params.sessionAccountNumber,
       subAccountNumber: data.participant.sub_account_number,
+      barTicketNumber: data.participant.bar_ticket_number,
       reviewVerificationCode: data.participant.review_verification_code,
       qrToken: params.qrToken,
     });

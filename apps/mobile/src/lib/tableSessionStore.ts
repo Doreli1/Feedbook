@@ -39,6 +39,15 @@ interface TableSessionState {
   tableType: string | null;
   sessionAccountNumber: string | null;
   subAccountNumber: string | null;
+  // The shared bar's personal account (2026-10-15) — the same running
+  // pickup-ticket number (0001-9999, resets daily) printed on the diner's
+  // own ticket, assigned once at join-session and reused by every order
+  // they place. null for a regular table, where subAccountNumber above is
+  // the real personal account instead. See AccountScreen.tsx for why: bar
+  // diners share one table_session with total strangers (no capacity cap,
+  // no relationship between them), so the usual general/personal account
+  // pair doesn't apply the same way.
+  barTicketNumber: number | null;
   reviewVerificationCode: string | null;
   // qr_token itself, not just its presence — re-entering add-participants
   // mid-session (the "+" button on the "ניהול חשבון" tab, 2026-10-10) needs
@@ -63,6 +72,7 @@ interface TableSessionState {
     tableType: string | null;
     sessionAccountNumber: string;
     subAccountNumber: string;
+    barTicketNumber: number | null;
     reviewVerificationCode: string;
     qrToken: string;
   }) => void;
@@ -81,6 +91,7 @@ export const useTableSessionStore = create<TableSessionState>()(
       tableType: null,
       sessionAccountNumber: null,
       subAccountNumber: null,
+      barTicketNumber: null,
       reviewVerificationCode: null,
       qrToken: null,
       hasHydrated: false,
@@ -91,8 +102,8 @@ export const useTableSessionStore = create<TableSessionState>()(
       name: 'feedbook-table-session',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => {
-        const { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, tableType, sessionAccountNumber, subAccountNumber, reviewVerificationCode, qrToken } = state;
-        return { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, tableType, sessionAccountNumber, subAccountNumber, reviewVerificationCode, qrToken };
+        const { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, tableType, sessionAccountNumber, subAccountNumber, barTicketNumber, reviewVerificationCode, qrToken } = state;
+        return { sessionId, participantId, restaurantId, restaurantName, tableId, tableNumber, tableType, sessionAccountNumber, subAccountNumber, barTicketNumber, reviewVerificationCode, qrToken };
       },
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

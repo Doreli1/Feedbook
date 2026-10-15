@@ -1438,6 +1438,7 @@ export type Database = {
       }
       session_participants: {
         Row: {
+          bar_ticket_number: number | null
           id: string
           is_host: boolean
           joined_at: string
@@ -1448,6 +1449,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          bar_ticket_number?: number | null
           id?: string
           is_host?: boolean
           joined_at?: string
@@ -1458,6 +1460,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          bar_ticket_number?: number | null
           id?: string
           is_host?: boolean
           joined_at?: string
@@ -1814,32 +1817,19 @@ export type Database = {
         Args: { p_order_item_id: string }
         Returns: undefined
       }
-      place_order_transaction:
-        | {
-            Args: {
-              p_items: Json
-              p_participant_id: string
-              p_session_id: string
-            }
-            Returns: {
-              bar_ticket_number: number
-              inventory_alerts: Json
-              order_id: string
-            }[]
-          }
-        | {
-            Args: {
-              p_items: Json
-              p_participant_id: string
-              p_session_id: string
-              p_special_request?: string
-            }
-            Returns: {
-              bar_ticket_number: number
-              inventory_alerts: Json
-              order_id: string
-            }[]
-          }
+      place_order_transaction: {
+        Args: {
+          p_items: Json
+          p_participant_id: string
+          p_session_id: string
+          p_special_request?: string
+        }
+        Returns: {
+          bar_ticket_number: number
+          inventory_alerts: Json
+          order_id: string
+        }[]
+      }
       receive_purchase_order: { Args: { p_po_id: string }; Returns: undefined }
       record_cancellation_inventory_decision: {
         Args: { p_order_item_id: string; p_restock: boolean }

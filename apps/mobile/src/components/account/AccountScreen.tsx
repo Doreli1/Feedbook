@@ -181,13 +181,23 @@ function StripCell({ label, value, icon }: { label: string; value: string; icon?
 export function AccountScreen() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
-  const [subTab, setSubTab] = useState<AccountSubTab>('general');
+  const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
+  // A bar session is shared by any number of unrelated diners (no capacity
+  // cap, no relationship between them — see scan-qr/index.ts's own
+  // comment), so "חשבון כללי" (everyone's items together) never applies to
+  // it the way it does a real table of friends (2026-10-15, user decision):
+  // always start on — and stay locked to — the personal view.
+  const [subTab, setSubTab] = useState<AccountSubTab>(isBarTable ? 'personal' : 'general');
   const [infoOpen, setInfoOpen] = useState(false);
   const [billComingSoonOpen, setBillComingSoonOpen] = useState(false);
   const tableNumber = useTableSessionStore((s) => s.tableNumber);
-  const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
   const sessionAccountNumber = useTableSessionStore((s) => s.sessionAccountNumber);
   const subAccountNumber = useTableSessionStore((s) => s.subAccountNumber);
+  // The bar's personal "account" is its running pickup-ticket number
+  // (0001-9999), not the usual random 6-digit sub_account_number — see
+  // tableSessionStore.ts's own comment.
+  const barTicketNumber = useTableSessionStore((s) => s.barTicketNumber);
+  const personalAccountDisplay = isBarTable ? (barTicketNumber != null ? String(barTicketNumber).padStart(4, '0') : '—') : (subAccountNumber ?? '—');
   const reviewVerificationCode = useTableSessionStore((s) => s.reviewVerificationCode);
   const sessionId = useTableSessionStore((s) => s.sessionId);
   const participantId = useTableSessionStore((s) => s.participantId);
@@ -198,7 +208,11 @@ export function AccountScreen() {
   // subscriptions to the same session's data.
   const { items } = useAccountItems(sessionId);
   const { participants } = useSessionParticipants(sessionId);
-  const visibleItems = subTab === 'personal' ? items.filter((i) => i.participantId === participantId) : items;
+  // Forced personal-only for a bar regardless of subTab state (defensive —
+  // subTab is never actually set to 'general' for a bar since that tab
+  // isn't rendered below, but this keeps the filter itself the single
+  // source of truth rather than relying only on hidden UI).
+  const visibleItems = isBarTable || subTab === 'personal' ? items.filter((i) => i.participantId === participantId) : items;
   const total = visibleItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
 
   const infoRows: {
@@ -215,6 +229,10 @@ export function AccountScreen() {
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <ParticipantsRow participants={participants} />
 
+      {/* The general/personal toggle itself is meaningless for a bar — only
+          personal ever applies (see isBarTable comments above) — so it's
+          hidden entirely rather than shown with one dead/disabled option. */}
+      {!isBarTable && (
       <View className="flex-row border-b bg-white" style={{ borderColor: colors.border }}>
         {(
           // Order matters under native RTL (I18nManager.forceRTL) — first
@@ -241,6 +259,7 @@ export function AccountScreen() {
           );
         })}
       </View>
+      )}
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24 }}>
         <View className="px-4 pt-4">
@@ -260,7 +279,7 @@ export function AccountScreen() {
               <View className="w-px" style={{ backgroundColor: colors.border }} />
               <StripCell label={t('accountStripGeneralLabel')} value={sessionAccountNumber ?? '—'} />
               <View className="w-px" style={{ backgroundColor: colors.border }} />
-              <StripCell label={t('accountStripPersonalLabel')} value={subAccountNumber ?? '—'} />
+              <StripCell label={t('accountStripPersonalLabel')} value={personalAccountDisplay} />
               <View className="w-px" style={{ backgroundColor: colors.border }} />
               <StripCell label={t('accountStripCodeLabel')} value={reviewVerificationCode ?? '—'} icon="lock-closed" />
             </View>
