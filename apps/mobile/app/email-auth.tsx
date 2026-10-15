@@ -88,7 +88,7 @@ export default function EmailAuthScreen() {
           >
             <Ionicons name="arrow-forward" size={22} color={colors.ink} />
           </Pressable>
-          <FeedbookWordmark size={20} color={colors.ink} />
+          <FeedbookWordmark size={30} color={colors.royalBlue} />
         </View>
 
         <View className="flex-1 px-6 pt-4">
