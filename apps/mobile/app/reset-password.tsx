@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { I18nManager, Pressable, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,32 +8,28 @@ import { useI18n } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
 
-// Second half of the forgot-password flow started in forgot-password.tsx —
-// see that file's comment for why this is a typed-code screen rather than
-// an emailed link. verifyOtp({ type: 'recovery' }) fires a PASSWORD_RECOVERY
-// auth event (not SIGNED_IN), so the root layout's global
-// onAuthStateChange listener (app/_layout.tsx) doesn't redirect away before
-// the password is actually set; updateUser() afterwards fires USER_UPDATED,
-// equally ignored by that listener, so this screen navigates on manually
-// once both calls succeed.
+const CODE_LENGTH = 6;
+
+// Second screen of the forgot-password flow started in forgot-password.tsx
+// — code entry only. Verifying the code here (not bundling it with the new-
+// password form on one screen, per the user's explicit request 2026-10-15)
+// establishes the PASSWORD_RECOVERY session; set-new-password.tsx is a
+// separate screen reached only after that succeeds. See that file's own
+// comment for why neither screen causes the root layout's global
+// onAuthStateChange listener (app/_layout.tsx) to redirect away early.
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const { t } = useI18n();
   const { email } = useLocalSearchParams<{ email?: string }>();
+  const inputRef = useRef<TextInput>(null);
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
 
-  const codeValid = /^\d{6}$/.test(code.trim());
-  const passwordValid = password.length >= 6;
-  const passwordsMatch = confirm.length > 0 && password === confirm;
-  const canSubmit = codeValid && passwordValid && passwordsMatch && !busy && !!email;
+  const codeValid = /^\d{6}$/.test(code);
+  const canSubmit = codeValid && !busy && !!email;
 
   async function handleSubmit() {
     setAttempted(true);
@@ -41,24 +37,13 @@ export default function ResetPasswordScreen() {
     setBusy(true);
     setError(null);
 
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email,
-      token: code.trim(),
-      type: 'recovery',
-    });
+    const { error: verifyError } = await supabase.auth.verifyOtp({ email, token: code, type: 'recovery' });
+    setBusy(false);
     if (verifyError) {
-      setBusy(false);
       setError(verifyError.message);
       return;
     }
-
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    setBusy(false);
-    if (updateError) {
-      setError(updateError.message);
-      return;
-    }
-    router.replace('/profile');
+    router.push('/set-new-password');
   }
 
   async function handleResend() {
@@ -91,70 +76,49 @@ export default function ResetPasswordScreen() {
 
         <View className="flex-1 px-6 pt-4">
           <Text className="mb-1 text-2xl font-bold text-[#1B2430]">{t('enterResetCodeTitle')}</Text>
-          <Text className="mb-6 text-sm text-[#6E6A61]">
-            {email ? t('resetCodeSentMessage') : t('enterResetCodeSubtitle')}
-          </Text>
+          <Text className="mb-6 text-sm text-[#6E6A61]">{t('resetCodeSentMessage')}</Text>
 
           <Text className="mb-1.5 text-xs font-semibold text-[#6E6A61]">{t('resetCode')}</Text>
-          <TextInput
-            value={code}
-            onChangeText={(v) => setCode(v.replace(/[^\d]/g, '').slice(0, 6))}
-            keyboardType="number-pad"
-            maxLength={6}
-            placeholder="000000"
-            className="mb-1 rounded-xl border border-[#E3DED2] bg-white px-4 py-3.5 text-base text-[#1B2430]"
-            style={{ letterSpacing: 4, textAlign: 'center' }}
-          />
-          {attempted && !codeValid && code.length > 0 && (
-            <Text className="mb-2 text-xs text-[#DC2626]">{t('resetCodeInvalid')}</Text>
-          )}
-          <View className="mb-4" />
-
-          <Text className="mb-1.5 text-xs font-semibold text-[#6E6A61]">{t('newPassword')}</Text>
-          <View className="relative mb-1">
+          <Pressable
+            onPress={() => inputRef.current?.focus()}
+            className="mb-1 justify-center gap-2"
+            // A numeric code always reads left-to-right, in Hebrew too — RN
+            // mirrors a plain 'row' under forced RTL (I18nManager.isRTL),
+            // same as every other flex-row layout in this app, so this
+            // cancels that mirroring back to a fixed left-to-right order
+            // instead of showing the digits reversed.
+            style={{ flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row' }}
+          >
+            {Array.from({ length: CODE_LENGTH }).map((_, i) => (
+              <View
+                key={i}
+                className="h-14 w-11 items-center justify-center rounded-xl border bg-white"
+                style={{ borderColor: i === code.length ? colors.royalBlue : '#E3DED2', borderWidth: i === code.length ? 2 : 1 }}
+              >
+                <Text className="text-xl font-semibold text-[#1B2430]">{code[i] ?? '_'}</Text>
+              </View>
+            ))}
+            {/* The real input — invisible, captures typing/paste/autofill; the
+                boxes above are purely a display driven by `code`. iOS reads
+                textContentType="oneTimeCode" to offer the mailed code for
+                autofill from the Mail app (same API also covers SMS), the
+                same way it would a text message — there's no Android
+                equivalent for an email-delivered code, but the system's own
+                copy/paste suggestion still offers a code the user copied
+                from Gmail manually. */}
             <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              textContentType="newPassword"
-              className="rounded-xl border border-[#E3DED2] bg-white py-3.5 pe-12 ps-4 text-base text-[#1B2430]"
+              ref={inputRef}
+              value={code}
+              onChangeText={(v) => setCode(v.replace(/[^\d]/g, '').slice(0, CODE_LENGTH))}
+              keyboardType="number-pad"
+              maxLength={CODE_LENGTH}
+              textContentType="oneTimeCode"
+              autoFocus
+              style={{ position: 'absolute', opacity: 0, width: 1, height: 1 }}
             />
-            <Pressable
-              onPress={() => setShowPassword((v) => !v)}
-              hitSlop={12}
-              className="absolute inset-y-0 end-3 items-center justify-center"
-              accessibilityLabel={showPassword ? t('hidePassword') : t('showPassword')}
-            >
-              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
-            </Pressable>
-          </View>
-          {attempted && !passwordValid && (
-            <Text className="mb-2 text-xs text-[#DC2626]">{t('passwordTooShort')}</Text>
-          )}
-          <View className="mb-4" />
-
-          <Text className="mb-1.5 text-xs font-semibold text-[#6E6A61]">{t('confirmNewPassword')}</Text>
-          <View className="relative mb-1">
-            <TextInput
-              value={confirm}
-              onChangeText={setConfirm}
-              secureTextEntry={!showConfirm}
-              autoCapitalize="none"
-              textContentType="newPassword"
-              className="rounded-xl border border-[#E3DED2] bg-white py-3.5 pe-12 ps-4 text-base text-[#1B2430]"
-            />
-            <Pressable
-              onPress={() => setShowConfirm((v) => !v)}
-              hitSlop={12}
-              className="absolute inset-y-0 end-3 items-center justify-center"
-              accessibilityLabel={showConfirm ? t('hidePassword') : t('showPassword')}
-            >
-              <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
-            </Pressable>
-          </View>
-          {attempted && confirm.length > 0 && !passwordsMatch && (
-            <Text className="mb-2 text-xs text-[#DC2626]">{t('passwordsDontMatch')}</Text>
+          </Pressable>
+          {attempted && !codeValid && (
+            <Text className="mb-2 text-center text-xs text-[#DC2626]">{t('resetCodeInvalid')}</Text>
           )}
           <View className="mb-6" />
 
@@ -165,7 +129,7 @@ export default function ResetPasswordScreen() {
             style={{ backgroundColor: canSubmit ? colors.royalBlue : '#C7C2B4' }}
           >
             <Text className="text-base font-semibold text-white">
-              {busy ? t('busyEllipsis') : t('updatePassword')}
+              {busy ? t('busyEllipsis') : t('continueLabel')}
             </Text>
           </Pressable>
 
