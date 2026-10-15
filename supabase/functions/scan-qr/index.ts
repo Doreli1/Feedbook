@@ -94,13 +94,23 @@ Deno.serve(async (req) => {
   if (tableError || !table) {
     return errorResponse("INVALID_QR_CODE", "QR code is not valid", 400);
   }
-  if (table.status === "awaiting_cleaning") {
+
+  // The shared bar (table_type='bar') never participates in occupied/
+  // available/awaiting_cleaning tracking (2026-10-15, user decision) — any
+  // number of diners join and leave independently all day with no concept
+  // of "the bar is occupied", and someone can place a single one-off order
+  // without ever "sitting" at it at all. tables.status is left untouched
+  // for it, so it's not a reliable signal here — look for an existing open
+  // session directly instead of gating on status the way a real table does.
+  const isBar = table.table_type === "bar";
+
+  if (!isBar && table.status === "awaiting_cleaning") {
     return errorResponse("TABLE_NOT_ACTIVE", "This table is not accepting new sessions right now", 409);
   }
 
   let session: { id: string; session_account_number: string; status: string } | null = null;
 
-  if (table.status === "occupied") {
+  if (isBar || table.status === "occupied") {
     const { data: existing } = await admin
       .from("table_sessions")
       .select("id, session_account_number, status")
@@ -134,7 +144,9 @@ Deno.serve(async (req) => {
       return errorResponse("INTERNAL_ERROR", "Failed to open a table session", 500);
     }
     session = inserted;
-    await admin.from("tables").update({ status: "occupied" }).eq("id", table.id);
+    if (!isBar) {
+      await admin.from("tables").update({ status: "occupied" }).eq("id", table.id);
+    }
   }
 
   return jsonResponse(

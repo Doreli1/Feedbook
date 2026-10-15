@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
 
   const { data: session, error: sessionError } = await admin
     .from("table_sessions")
-    .select("id, table_id, restaurant_id, status")
+    .select("id, table_id, restaurant_id, status, tables(table_type)")
     .eq("id", sessionId)
     .maybeSingle();
   if (sessionError || !session) {
@@ -118,7 +118,11 @@ Deno.serve(async (req) => {
     return errorResponse("INTERNAL_ERROR", "Failed to close session", 500);
   }
 
-  await admin.from("tables").update({ status: "awaiting_cleaning" }).eq("id", session.table_id);
+  // The shared bar never participates in status tracking (2026-10-15, user
+  // decision, see scan-qr's own comment) — leave tables.status untouched.
+  if (session.tables?.table_type !== "bar") {
+    await admin.from("tables").update({ status: "awaiting_cleaning" }).eq("id", session.table_id);
+  }
 
   return jsonResponse({ status: "closed", closed_at: closedAt }, 200);
 });
