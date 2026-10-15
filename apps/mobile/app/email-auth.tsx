@@ -147,7 +147,13 @@ export default function EmailAuthScreen() {
           {attempted && !passwordValid && (
             <Text className="mb-2 text-xs text-[#DC2626]">{t('passwordTooShort')}</Text>
           )}
-          <View className="mb-6" />
+
+          {mode === 'sign-in' && (
+            <Pressable onPress={() => router.push('/forgot-password')} hitSlop={8} className="mb-6 items-end">
+              <Text className="text-xs text-[#1B3FA8]">{t('forgotPassword')}</Text>
+            </Pressable>
+          )}
+          {mode === 'sign-up' && <View className="mb-6" />}
 
           {/* Gray-until-valid affordance, per Mobile UI Spec §5 M-03 rule. */}
           <Pressable

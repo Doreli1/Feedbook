@@ -261,6 +261,16 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# Mobile has no clickable-link flow (no deep-link/redirect handling built) —
+# a diner recovering their password instead types the {{ .Token }} OTP code
+# shown here directly into the app (email-auth.tsx), verified via
+# supabase.auth.verifyOtp({ email, token, type: 'recovery' }). Web Admin
+# keeps using the {{ .ConfirmationURL }} link unchanged — both coexist in
+# the same template since the same `recovery` email type serves either app.
+[auth.email.template.recovery]
+subject = "Reset your password"
+content_path = "./supabase/templates/recovery.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
