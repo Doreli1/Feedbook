@@ -4,6 +4,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorModal } from '../src/components/ErrorModal';
+import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
 import { useI18n } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
@@ -56,7 +57,7 @@ export default function SetNewPasswordScreen() {
         extraScrollHeight={80}
         keyboardOpeningTime={0}
       >
-        <View className="flex-row items-center px-4 pt-14">
+        <View className="flex-row items-center gap-2 px-4 pt-14">
           <Pressable
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/email-auth'))}
             hitSlop={12}
@@ -64,6 +65,7 @@ export default function SetNewPasswordScreen() {
           >
             <Ionicons name="arrow-forward" size={22} color={colors.ink} />
           </Pressable>
+          <FeedbookWordmark size={20} color={colors.ink} />
         </View>
 
         <View className="flex-1 px-6 pt-4">
