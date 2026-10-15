@@ -44,7 +44,15 @@ export default function ResetPasswordScreen() {
       setError(verifyError.message);
       return;
     }
-    router.push('/set-new-password');
+    // Straight back into the app, not a forced set-new-password screen
+    // (changed 2026-10-16, user request): verifyOtp already establishes a
+    // real, fully usable session — the old password still "works" until the
+    // user actively changes it (now a voluntary action from profile.tsx),
+    // but there's no reason to block re-entry on that. Routes through "/"
+    // rather than hardcoding "/profile" so Splash's own
+    // subAccountNumber-aware redirect (app/index.tsx) decides where to
+    // land, instead of duplicating that logic here.
+    router.replace('/');
   }
 
   async function handleResend() {
@@ -155,7 +163,7 @@ export default function ResetPasswordScreen() {
 
       <ErrorModal
         visible={error !== null}
-        title={t('resetPasswordFailedTitle')}
+        title={t('codeVerificationFailedTitle')}
         message={error ?? ''}
         dismissLabel={t('gotIt')}
         onDismiss={() => setError(null)}

@@ -9,15 +9,16 @@ import { useI18n } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
 
-// Third and final screen of the forgot-password flow — only reachable
-// after reset-password.tsx's verifyOtp() call already established a
-// PASSWORD_RECOVERY session, so updateUser() below needs no email/code of
-// its own, just the new password. No deep-link/email param here by design
-// (split out from reset-password.tsx 2026-10-15, user request) — the two
-// steps are unrelated concerns (proving the code vs. choosing a password)
-// and unlike Web Admin's SetNewPassword.tsx there's no MFA/AAL2 complexity
-// to handle (diners have no MFA — see useAuth.ts's own comment on that, web
-// side only), so this stays a plain form.
+// A voluntary password change, reached from profile.tsx — NOT part of the
+// forgot-password flow (changed 2026-10-16, user request): verifyOtp()
+// already establishes a real, fully usable session on its own, so
+// reset-password.tsx now routes straight back into the app instead of
+// forcing this screen. updateUser() below only ever needs a normal
+// authenticated session — no email/code of its own, just the new password
+// — which both callers (this one and the old recovery path) already
+// satisfy identically. Unlike Web Admin's SetNewPassword.tsx there's no
+// MFA/AAL2 complexity to handle (diners have no MFA — see useAuth.ts's own
+// comment on that, web side only), so this stays a plain form.
 export default function SetNewPasswordScreen() {
   const router = useRouter();
   const { t } = useI18n();

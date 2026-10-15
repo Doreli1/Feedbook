@@ -134,6 +134,18 @@ export default function ProfileScreen() {
             <Ionicons name="pencil-outline" size={22} color={colors.textMuted} />
             <Text className="flex-1 text-base text-[#1B2430]">{t('editProfile')}</Text>
           </Pressable>
+          {/* Voluntary password change (2026-10-16, user request) — forgot-
+              password's code verification now logs the diner straight back
+              in instead of forcing a new password on them, so this is where
+              that choice lives instead: optional, whenever they want it. */}
+          <Pressable
+            onPress={() => router.push('/set-new-password')}
+            className="flex-row items-center gap-3 border-t px-4 py-4"
+            style={{ borderColor: colors.border }}
+          >
+            <Ionicons name="key-outline" size={22} color={colors.textMuted} />
+            <Text className="flex-1 text-base text-[#1B2430]">{t('changePassword')}</Text>
+          </Pressable>
         </View>
 
         <View className="overflow-hidden rounded-xl bg-white" style={{ borderColor: colors.border, borderWidth: 1 }}>
