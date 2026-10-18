@@ -595,21 +595,14 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           {saveState === 'error' && <span className="text-danger">{errorMessage}</span>}
         </div>
 
-        {/* Two compact buttons side by side once there's a plain "חזרה" to
-            pair it with (short labels now — "שמירה"/"חזרה" — so stacked
-            full-width buttons read as oversized); the plain wizard-continue
+        {/* Two compact, narrow buttons side by side once there's a plain
+            "חזרה" to pair it with (short labels — "שמירה"/"חזרה"); the back
+            button comes first in JSX so it lands at the physical right
+            (RTL) and "שמירה" at the physical left. The plain wizard-continue
             case (no onExit, no second button, longer "המשך" label) keeps
             the original single full-width button. */}
         <div className={onExit ? 'flex gap-3' : undefined}>
-          <button
-            onClick={() => void handleContinue()}
-            disabled={!restaurantId}
-            className={`rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground ${onExit ? 'flex-1' : 'w-full'}`}
-          >
-            {primaryLabel ?? t('continue')}
-          </button>
-
-          {/* A plain, non-"save" way out — the primary button above always
+          {/* A plain, non-"save" way out — the primary button below always
               reads as a save action, which left no neutral exit; this calls
               the same flush-then-leave logic as the logo/back-button, just
               framed as "back", not "save". Only shown where there's a
@@ -619,11 +612,19 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
             <button
               type="button"
               onClick={handleExit}
-              className="flex-1 rounded border border-border py-2 text-sm font-medium text-ink hover:bg-surface-2"
+              className="w-20 rounded border border-border py-2 text-sm font-medium text-ink hover:bg-surface-2"
             >
               {t('backToDashboard')}
             </button>
           )}
+
+          <button
+            onClick={() => void handleContinue()}
+            disabled={!restaurantId}
+            className={`rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground ${onExit ? 'w-20' : 'w-full'}`}
+          >
+            {primaryLabel ?? t('continue')}
+          </button>
         </div>
       </div>
     </WizardShell>
