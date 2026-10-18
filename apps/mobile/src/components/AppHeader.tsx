@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
-import Popover, { PopoverPlacement } from 'react-native-popover-view';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../lib/i18n';
@@ -11,15 +10,48 @@ import { useOpenSessionReminder } from '../lib/useOpenSessionReminder';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
-// Shared by HeaderMailIcon/HeaderBellIcon (2026-10-18, user request: a real
-// speech-bubble anchored to whichever icon opened it, not a panel docked
-// near the top-right corner). Two hand-rolled attempts at this broke on
-// device (a measureInWindow-based version rendered fully off-screen) —
-// react-native-popover-view does the anchor measurement, screen-edge
-// clamping and the pointer arrow itself, which is what those attempts were
-// trying to reimplement by hand.
-const POPOVER_BACKGROUND_STYLE = { backgroundColor: 'rgba(0,0,0,0.4)' };
-const POPOVER_STYLE = { width: 320, borderRadius: 16, overflow: 'hidden' as const };
+// Shared by HeaderMailIcon/HeaderBellIcon — a speech-bubble look (pointer
+// triangle) on top of the flex-based "docked near the top-right" layout
+// both already used. Two other approaches were tried and reverted
+// (2026-10-18): a measureInWindow-based version rendered fully off-screen,
+// and react-native-popover-view's own auto-positioning landed badly off to
+// the side under this app's forced-RTL layout (I18nManager.forceRTL) —
+// RTL + auto-measuring popover libraries is evidently a combination not
+// well exercised upstream. Yoga's own flex layout is what's reliable here;
+// only the decorative triangle is hand-added on top of it.
+function BubblePanel({
+  widthClassName = 'w-80',
+  maxHeight,
+  children,
+}: {
+  widthClassName?: string;
+  maxHeight?: number;
+  children: ReactNode;
+}) {
+  return (
+    <View className="mt-24 items-end px-4">
+      <View>
+        <View
+          style={{
+            position: 'absolute',
+            top: -6,
+            right: 24,
+            width: 12,
+            height: 12,
+            backgroundColor: '#FFFFFF',
+            transform: [{ rotate: '45deg' }],
+          }}
+        />
+        <View
+          className={`${widthClassName} overflow-hidden rounded-2xl bg-white`}
+          style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, maxHeight }}
+        >
+          {children}
+        </View>
+      </View>
+    </View>
+  );
+}
 
 interface Props {
   // First child in a `flex-row` renders on the physical right in this
@@ -232,52 +264,53 @@ export function HeaderMailIcon() {
   }
 
   return (
-    <Popover
-      isVisible={open}
-      onRequestClose={() => setOpen(false)}
-      placement={PopoverPlacement.BOTTOM}
-      popoverStyle={POPOVER_STYLE}
-      backgroundStyle={POPOVER_BACKGROUND_STYLE}
-      from={
-        <Pressable onPress={() => setOpen(true)} hitSlop={10}>
-          <View>
-            <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
-            {hasPendingReminder && (
-              <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
-            )}
-          </View>
-        </Pressable>
-      }
-    >
-      <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
-        {t('mailTitle')}
-      </Text>
-      {loading ? (
-        <View className="items-center py-8">
-          <ActivityIndicator color={colors.royalBlue} />
+    <>
+      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
+        <View>
+          <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
+          {hasPendingReminder && (
+            <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
+          )}
         </View>
-      ) : hasPendingReminder && reminder ? (
-        // Same row shape as HeaderBellIcon's notification list (dot + body
-        // text), per explicit request — this "inbox" only ever holds at
-        // most this one item today, but it should still read as one row in
-        // a list, not a one-off card+button.
-        <Pressable onPress={handleReturn} className="flex-row items-start px-4 py-3" style={{ gap: 8 }}>
-          <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />
-          <Text className="flex-1 text-sm leading-5 text-[#1B2430]">
-            {t('openSessionReminderPrefix')}
-            <Text style={{ fontWeight: '700' }}>{reminder.restaurantName}</Text>
-            {t('openSessionReminderMiddle')}
-            <Text style={{ fontWeight: '700' }}>{reminder.tableNumber}</Text>
-            {t('openSessionReminderSuffix')}
-            <Text style={{ color: colors.skyLink, textDecorationLine: 'underline' }} onPress={handleReturn}>
-              {t('returnToSessionLink')}
-            </Text>
-          </Text>
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
+          <BubblePanel>
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
+                {t('mailTitle')}
+              </Text>
+              {loading ? (
+                <View className="items-center py-8">
+                  <ActivityIndicator color={colors.royalBlue} />
+                </View>
+              ) : hasPendingReminder && reminder ? (
+                // Same row shape as HeaderBellIcon's notification list (dot +
+                // body text), per explicit request — this "inbox" only ever
+                // holds at most this one item today, but it should still
+                // read as one row in a list, not a one-off card+button.
+                <Pressable onPress={handleReturn} className="flex-row items-start px-4 py-3" style={{ gap: 8 }}>
+                  <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />
+                  <Text className="flex-1 text-sm leading-5 text-[#1B2430]">
+                    {t('openSessionReminderPrefix')}
+                    <Text style={{ fontWeight: '700' }}>{reminder.restaurantName}</Text>
+                    {t('openSessionReminderMiddle')}
+                    <Text style={{ fontWeight: '700' }}>{reminder.tableNumber}</Text>
+                    {t('openSessionReminderSuffix')}
+                    <Text style={{ color: colors.skyLink, textDecorationLine: 'underline' }} onPress={handleReturn}>
+                      {t('returnToSessionLink')}
+                    </Text>
+                  </Text>
+                </Pressable>
+              ) : (
+                <Text className="px-4 py-6 text-center text-sm text-[#9CA3AF]">{t('mailEmpty')}</Text>
+              )}
+            </Pressable>
+          </BubblePanel>
         </Pressable>
-      ) : (
-        <Text className="px-4 py-6 text-center text-sm text-[#9CA3AF]">{t('mailEmpty')}</Text>
-      )}
-    </Popover>
+      </Modal>
+    </>
   );
 }
 
@@ -297,67 +330,72 @@ export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId
   const [open, setOpen] = useState(false);
 
   return (
-    <Popover
-      isVisible={open}
-      onRequestClose={() => setOpen(false)}
-      placement={PopoverPlacement.BOTTOM}
-      popoverStyle={POPOVER_STYLE}
-      backgroundStyle={POPOVER_BACKGROUND_STYLE}
-      from={
-        <Pressable onPress={() => setOpen(true)} hitSlop={10}>
-          <View>
-            <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
-            {unreadCount > 0 && (
-              <View
-                className="absolute -end-1.5 -top-1.5 min-w-[16px] items-center justify-center rounded-full px-1"
-                style={{ height: 16, backgroundColor: colors.danger }}
-              >
-                <Text className="text-[10px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</Text>
-              </View>
-            )}
-          </View>
-        </Pressable>
-      }
-    >
-      <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
-        {t('notificationsTitle')}
-      </Text>
-      {loading ? (
-        <View className="items-center py-8">
-          <ActivityIndicator color={colors.royalBlue} />
-        </View>
-      ) : notifications.length === 0 ? (
-        <Text className="px-4 py-6 text-center text-sm text-[#9CA3AF]">{t('notificationsEmpty')}</Text>
-      ) : (
-        <View style={{ maxHeight: 340 }}>
-          {notifications.map((n) => (
-            <Pressable
-              key={n.id}
-              onPress={() => {
-                if (n.readAt === null) void markRead(n.id);
-                if (n.relatedOrderId || n.relatedOrderItemId) {
-                  setOpen(false);
-                  onNavigate?.({ orderId: n.relatedOrderId, orderItemId: n.relatedOrderItemId });
-                }
-              }}
-              className="border-b px-4 py-3"
-              style={{ borderColor: colors.border }}
+    <>
+      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
+        <View>
+          <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
+          {unreadCount > 0 && (
+            <View
+              className="absolute -end-1.5 -top-1.5 min-w-[16px] items-center justify-center rounded-full px-1"
+              style={{ height: 16, backgroundColor: colors.danger }}
             >
-              <View className="flex-row items-start" style={{ gap: 8 }}>
-                {n.readAt === null && <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />}
-                <View className="flex-1">
-                  <Text className="text-sm" style={{ fontWeight: n.readAt === null ? '700' : '400', color: n.readAt === null ? '#1B2430' : '#6E6A61' }}>
-                    {n.title}
-                  </Text>
-                  <Text className="mt-0.5 text-xs text-[#6E6A61]">{n.body}</Text>
-                  <Text className="mt-1 text-[10px] text-[#9CA3AF]">{new Date(n.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                </View>
-              </View>
-            </Pressable>
-          ))}
+              <Text className="text-[10px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</Text>
+            </View>
+          )}
         </View>
-      )}
-    </Popover>
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
+          <BubblePanel maxHeight={384}>
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
+                {t('notificationsTitle')}
+              </Text>
+              {loading ? (
+                <View className="items-center py-8">
+                  <ActivityIndicator color={colors.royalBlue} />
+                </View>
+              ) : notifications.length === 0 ? (
+                <Text className="px-4 py-6 text-center text-sm text-[#9CA3AF]">{t('notificationsEmpty')}</Text>
+              ) : (
+                // A plain View with maxHeight only clips overflow, it
+                // doesn't scroll — older notifications past the visible
+                // area were simply unreachable (reported gap). A real
+                // ScrollView fixes that.
+                <ScrollView style={{ maxHeight: 340 }} nestedScrollEnabled>
+                  {notifications.map((n) => (
+                    <Pressable
+                      key={n.id}
+                      onPress={() => {
+                        if (n.readAt === null) void markRead(n.id);
+                        if (n.relatedOrderId || n.relatedOrderItemId) {
+                          setOpen(false);
+                          onNavigate?.({ orderId: n.relatedOrderId, orderItemId: n.relatedOrderItemId });
+                        }
+                      }}
+                      className="border-b px-4 py-3"
+                      style={{ borderColor: colors.border }}
+                    >
+                      <View className="flex-row items-start" style={{ gap: 8 }}>
+                        {n.readAt === null && <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />}
+                        <View className="flex-1">
+                          <Text className="text-sm" style={{ fontWeight: n.readAt === null ? '700' : '400', color: n.readAt === null ? '#1B2430' : '#6E6A61' }}>
+                            {n.title}
+                          </Text>
+                          <Text className="mt-0.5 text-xs text-[#6E6A61]">{n.body}</Text>
+                          <Text className="mt-1 text-[10px] text-[#9CA3AF]">{new Date(n.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+            </Pressable>
+          </BubblePanel>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
