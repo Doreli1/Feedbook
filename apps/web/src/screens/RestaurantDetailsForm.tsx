@@ -340,8 +340,8 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       onExit={onExit && handleExit}
     >
       <div className="card p-8">
-        <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
-        <p className="mb-6 text-sm text-muted-foreground">{t('restaurantDetailsSubtitle')}</p>
+        <h1 className="mb-1 text-2xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
+        <p className="mb-6 text-base text-muted-foreground">{t('restaurantDetailsSubtitle')}</p>
 
         {/* Back to the original underline-tab structure (2026-10-18, user
             feedback on the segmented-control pill tried right before this),
