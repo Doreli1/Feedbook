@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { Image, Linking, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { AppHeader, HeaderMenu } from '../src/components/AppHeader';
+import { AppHeader, HeaderBackButton, HeaderMenu } from '../src/components/AppHeader';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
+import { goBackOrHome } from '../src/lib/goBackOrHome';
+import { supabase } from '../src/lib/supabase';
 import { useI18n } from '../src/lib/i18n';
 import type { TranslationKey } from '../src/lib/translations';
 import { colors } from '../src/theme';
@@ -21,6 +23,18 @@ import { colors } from '../src/theme';
 // image exists for this screen in the UI mockup folder (it jumps straight
 // from "5-QR scan" to "6.1-AddFriends") — the layout below is this app's
 // own reasonable reading of the written spec, not a pixel target.
+//
+// Also reachable standalone (2026-10-18, user request) — a diner already
+// mid-visit can reopen this same screen from the ordering header's "⋮"
+// menu ("עיינו בפרטי המסעדה"), not just once right after scanning. That
+// entry point (AppHeader.tsx's HeaderMenu) passes only restaurantId/
+// restaurantName/tableNumber plus `standalone=1`; the rest of the fields
+// below are then fetched fresh from `restaurants` (public_read_restaurants
+// RLS already allows any authenticated diner to read an approved
+// restaurant's full row) instead of relying on the scan-qr response, which
+// could be stale by the time a diner reopens this mid-visit. See the merged
+// `info` object below — every other usage in this file reads from it, never
+// from `params` directly, so the two entry points render identically.
 //
 // Kosher badge terminology is locked by Content Guidelines §3's terminology
 // table ("מאושרת כשרות" / "לא מאושרת כשרות" — never "כשר" alone) and the
@@ -125,21 +139,93 @@ export default function RestaurantDetailsScreen() {
     sessionId: string;
     sessionAccountNumber: string;
     qrToken: string;
+    standalone: string;
   }>();
+
+  const isStandalone = params.standalone === '1';
 
   const [certificateVisible, setCertificateVisible] = useState(false);
   const [certificateZoomVisible, setCertificateZoomVisible] = useState(false);
   const [weekExpanded, setWeekExpanded] = useState(false);
+  const [fetched, setFetched] = useState<{
+    logoUrl: string;
+    description: string;
+    cuisineTagsRaw: string;
+    cancellationWindowMinutes: string;
+    address: string;
+    phone: string;
+    hoursRaw: string;
+    kosherStatus: string;
+    kosherCertificateUrl: string;
+  } | null>(null);
 
-  const isCertified = params.kosherStatus === 'certified';
-  const hasCertificate = isCertified && !!params.kosherCertificateUrl;
+  useEffect(() => {
+    if (!isStandalone || !params.restaurantId) return;
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('restaurants')
+        .select('logo_url, description, cuisine_tags, cancellation_window_minutes, address, phone, hours, kosher_status, kosher_certificate_url')
+        .eq('id', params.restaurantId)
+        .single();
+      if (cancelled || !data) return;
+      setFetched({
+        logoUrl: data.logo_url ?? '',
+        description: data.description ?? '',
+        cuisineTagsRaw: JSON.stringify(data.cuisine_tags ?? []),
+        cancellationWindowMinutes: data.cancellation_window_minutes == null ? '' : String(data.cancellation_window_minutes),
+        address: data.address ?? '',
+        phone: data.phone ?? '',
+        hoursRaw: JSON.stringify(data.hours ?? {}),
+        kosherStatus: data.kosher_status ?? 'not_certified',
+        kosherCertificateUrl: data.kosher_certificate_url ?? '',
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isStandalone, params.restaurantId]);
+
+  // Every render below reads from this merged object, never from `params`
+  // directly, so the scan-qr flow and the standalone menu entry point share
+  // one rendering path.
+  const info = isStandalone
+    ? {
+        logoUrl: fetched?.logoUrl ?? '',
+        description: fetched?.description ?? '',
+        cuisineTagsRaw: fetched?.cuisineTagsRaw ?? '[]',
+        cancellationWindowMinutes: fetched?.cancellationWindowMinutes ?? '',
+        address: fetched?.address ?? '',
+        phone: fetched?.phone ?? '',
+        hoursRaw: fetched?.hoursRaw ?? '',
+        kosherStatus: fetched?.kosherStatus ?? 'not_certified',
+        kosherCertificateUrl: fetched?.kosherCertificateUrl ?? '',
+      }
+    : {
+        logoUrl: params.restaurantLogoUrl ?? '',
+        description: params.restaurantDescription ?? '',
+        cuisineTagsRaw: params.cuisineTags ?? '[]',
+        cancellationWindowMinutes: params.cancellationWindowMinutes ?? '',
+        address: params.restaurantAddress ?? '',
+        phone: params.restaurantPhone ?? '',
+        hoursRaw: params.restaurantHours ?? '',
+        kosherStatus: params.kosherStatus ?? 'not_certified',
+        kosherCertificateUrl: params.kosherCertificateUrl ?? '',
+      };
+
+  // Only true while the standalone fetch is still in flight — the scan-qr
+  // flow already has everything synchronously from params.
+  const stillLoading = isStandalone && !fetched;
+
+  const isCertified = info.kosherStatus === 'certified';
+  const hasCertificate = isCertified && !!info.kosherCertificateUrl;
   const dayLabels = DAY_LABELS[lang];
-  const hourRules = parseHourRules(params.restaurantHours ?? '');
+  const hourRules = parseHourRules(info.hoursRaw ?? '');
   const todayLines = getTodayHourLines(hourRules, isCertified);
   const weekLines = getWeekHourLines(hourRules, dayLabels, isCertified, t('closedLabel'));
   const cuisineTags: string[] = (() => {
     try {
-      return JSON.parse(params.cuisineTags || '[]') as string[];
+      return JSON.parse(info.cuisineTagsRaw || '[]') as string[];
     } catch {
       return [];
     }
@@ -156,7 +242,7 @@ export default function RestaurantDetailsScreen() {
   }
 
   function handleCall() {
-    if (params.restaurantPhone) void Linking.openURL(`tel:${params.restaurantPhone}`);
+    if (info.phone) void Linking.openURL(`tel:${info.phone}`);
   }
 
   function handleContinue() {
@@ -177,35 +263,62 @@ export default function RestaurantDetailsScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
-      <AppHeader right={<FeedbookWordmark size={24} />} left={<HeaderMenu />} />
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+      <AppHeader
+        right={
+          isStandalone ? (
+            <>
+              <HeaderBackButton onPress={() => goBackOrHome(router)} />
+              <FeedbookWordmark size={24} />
+            </>
+          ) : (
+            <FeedbookWordmark size={24} />
+          )
+        }
+        left={<HeaderMenu />}
+      />
+      {stillLoading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={colors.royalBlue} />
+        </View>
+      ) : (
+      <ScrollView contentContainerStyle={{ paddingBottom: isStandalone ? insets.bottom + 24 : 24 }}>
         <View className="items-center px-6 pb-4 pt-6">
           <View
             className="h-32 w-32 items-center justify-center overflow-hidden rounded-full"
             style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }}
           >
-            {params.restaurantLogoUrl ? (
-              <Image source={{ uri: params.restaurantLogoUrl }} className="h-32 w-32" resizeMode="cover" />
+            {info.logoUrl ? (
+              <Image source={{ uri: info.logoUrl }} className="h-32 w-32" resizeMode="cover" />
             ) : (
               <Ionicons name="storefront-outline" size={44} color={colors.textMuted} />
             )}
           </View>
           <Text className="mt-3 text-center text-2xl font-bold text-[#1B2430]">{params.restaurantName}</Text>
-          <Text className="mt-0.5 text-base text-[#6E6A61]">
-            {t('tableLabel')} {params.tableNumber}
-          </Text>
+          {!!params.tableNumber && (
+            <Text className="mt-0.5 text-base text-[#6E6A61]">
+              {t('tableLabel')} {params.tableNumber}
+            </Text>
+          )}
         </View>
 
+        {/* Certified: solid green/white, same treatment as the menu's own
+            discount badges (user's explicit request, 2026-10-18) — not
+            certified keeps the previous muted outline pill, since there's
+            no equivalent "badge" to match for a negative declaration. */}
         <Pressable
           onPress={handleBadgePress}
           className="mb-4 flex-row items-center gap-2 self-center rounded-full px-3 py-1.5"
-          style={{ backgroundColor: isCertified ? colors.successSoft : colors.surface, borderWidth: 1, borderColor: isCertified ? colors.success : colors.border }}
+          style={
+            isCertified
+              ? { backgroundColor: colors.discountGreenDark }
+              : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }
+          }
         >
-          <Ionicons name={isCertified ? 'checkmark-circle' : 'close-circle-outline'} size={16} color={isCertified ? colors.success : colors.textMuted} />
-          <Text className="text-base font-semibold" style={{ color: isCertified ? colors.success : colors.textMuted }}>
+          <Ionicons name={isCertified ? 'checkmark-circle' : 'close-circle-outline'} size={16} color={isCertified ? '#FFFFFF' : colors.textMuted} />
+          <Text className="text-base font-semibold" style={{ color: isCertified ? '#FFFFFF' : colors.textMuted }}>
             {isCertified ? t('kosherCertified') : t('kosherNotCertified')}
           </Text>
-          {hasCertificate && <Ionicons name="chevron-back" size={14} color={colors.success} />}
+          {hasCertificate && <Ionicons name="chevron-back" size={14} color="#FFFFFF" />}
         </Pressable>
 
         {cuisineTags.length > 0 && (
@@ -218,8 +331,8 @@ export default function RestaurantDetailsScreen() {
           </View>
         )}
 
-        {!!params.restaurantDescription && (
-          <Text className="mb-4 px-6 text-center text-base leading-6 text-[#6E6A61]">{params.restaurantDescription}</Text>
+        {!!info.description && (
+          <Text className="mb-4 px-6 text-center text-base leading-6 text-[#6E6A61]">{info.description}</Text>
         )}
 
         <View className="mx-6 mb-3 rounded-xl bg-white p-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
@@ -244,17 +357,17 @@ export default function RestaurantDetailsScreen() {
             </View>
           )}
 
-          {!!params.restaurantAddress && (
+          {!!info.address && (
             <View className="flex-row items-start gap-3 border-t py-2" style={{ borderColor: colors.border }}>
               <Ionicons name="location-outline" size={18} color={colors.textMuted} />
-              <Text className="flex-1 text-base text-[#1B2430]">{params.restaurantAddress}</Text>
+              <Text className="flex-1 text-base text-[#1B2430]">{info.address}</Text>
             </View>
           )}
 
-          {!!params.restaurantPhone && (
+          {!!info.phone && (
             <Pressable onPress={handleCall} className="flex-row items-start gap-3 border-t py-2" style={{ borderColor: colors.border }}>
               <Ionicons name="call-outline" size={18} color={colors.textMuted} />
-              <Text className="flex-1 text-base text-[#1B3FA8]">{params.restaurantPhone}</Text>
+              <Text className="flex-1 text-base text-[#1B3FA8]">{info.phone}</Text>
             </Pressable>
           )}
         </View>
@@ -267,31 +380,37 @@ export default function RestaurantDetailsScreen() {
         <View className="mx-6 rounded-xl bg-white p-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
           <Text className="mb-2 text-base font-semibold text-[#1B2430]">{t('cancellationPolicyTitle')}</Text>
           <Text className="mb-2 text-sm leading-6 text-[#1B2430]">
-            {params.cancellationWindowMinutes === ''
+            {info.cancellationWindowMinutes === ''
               ? t('cancellationWindowUnset')
-              : params.cancellationWindowMinutes === '0'
+              : info.cancellationWindowMinutes === '0'
                 ? t('cancellationNotAllowed')
-                : `${t('cancellationWindowPrefix')} ${params.cancellationWindowMinutes} ${t('cancellationWindowSuffix')}`}
+                : `${t('cancellationWindowPrefix')} ${info.cancellationWindowMinutes} ${t('cancellationWindowSuffix')}`}
           </Text>
           <Text className="text-sm leading-6 text-[#6E6A61]">{t('cancellationWindowVariesNote')}</Text>
         </View>
       </ScrollView>
+      )}
 
-      <View className="px-6 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
-        <Pressable onPress={handleContinue} className="items-center rounded-xl py-4" style={{ backgroundColor: colors.royalBlue }}>
-          <Text className="text-lg font-semibold text-white">{t('continueLabel')}</Text>
-        </Pressable>
-      </View>
+      {/* Only the scan-qr flow continues on into add-participants — opened
+          standalone mid-visit, the diner has already joined and there's
+          nowhere to "continue" to. */}
+      {!isStandalone && !stillLoading && (
+        <View className="px-6 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
+          <Pressable onPress={handleContinue} className="items-center rounded-xl py-4" style={{ backgroundColor: colors.royalBlue }}>
+            <Text className="text-lg font-semibold text-white">{t('continueLabel')}</Text>
+          </Pressable>
+        </View>
+      )}
 
       <Modal visible={certificateVisible} transparent animationType="fade" onRequestClose={() => setCertificateVisible(false)}>
         <View className="flex-1 items-center justify-center bg-black/60 px-6">
           <View className="w-full max-w-sm rounded-2xl bg-white p-5">
             <Text className="mb-3 text-center text-lg font-bold text-[#1B2430]">{t('kosherCertificateTitle')}</Text>
 
-            {params.kosherCertificateUrl && !isPdfUrl(params.kosherCertificateUrl) ? (
+            {info.kosherCertificateUrl && !isPdfUrl(info.kosherCertificateUrl) ? (
               <Pressable onPress={() => setCertificateZoomVisible(true)}>
                 <Image
-                  source={{ uri: params.kosherCertificateUrl }}
+                  source={{ uri: info.kosherCertificateUrl }}
                   style={{ width: '100%', height: 260, borderRadius: 10, backgroundColor: colors.background }}
                   resizeMode="contain"
                 />
@@ -304,7 +423,7 @@ export default function RestaurantDetailsScreen() {
               </Pressable>
             ) : (
               <Pressable
-                onPress={() => params.kosherCertificateUrl && void Linking.openURL(params.kosherCertificateUrl)}
+                onPress={() => info.kosherCertificateUrl && void Linking.openURL(info.kosherCertificateUrl)}
                 className="items-center rounded-lg py-3"
                 style={{ backgroundColor: colors.background }}
               >
@@ -323,9 +442,9 @@ export default function RestaurantDetailsScreen() {
 
       <Modal visible={certificateZoomVisible} animationType="fade" onRequestClose={() => setCertificateZoomVisible(false)}>
         <View className="flex-1 items-center justify-center bg-black">
-          {params.kosherCertificateUrl && (
+          {info.kosherCertificateUrl && (
             <Image
-              source={{ uri: params.kosherCertificateUrl }}
+              source={{ uri: info.kosherCertificateUrl }}
               style={{ width: '100%', height: '100%' }}
               resizeMode="contain"
             />

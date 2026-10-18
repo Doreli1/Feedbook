@@ -8,6 +8,7 @@ import { TrashIcon } from '../components/Icons';
 import { OverheadExpensesForm } from '../components/OverheadExpensesForm';
 import { useOverheadExpenses } from '../lib/useOverheadExpenses';
 import { KosherCertificateUpload } from '../components/KosherCertificateUpload';
+import { Toggle } from '../components/Toggle';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
@@ -235,6 +236,12 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
   }
 
   const isCertified = restaurant?.kosher_status === 'certified';
+  // Local-only reveal state for the "כשרות" toggle below — off by default
+  // for a not-yet-certified restaurant, so the (required) upload field stays
+  // hidden until the owner explicitly opts in. Never needs syncing back from
+  // isCertified: once certified the toggle itself is hidden entirely (see
+  // the JSX below), so this value only matters in the not-yet-certified case.
+  const [kosherEnabled, setKosherEnabled] = useState(isCertified);
 
   // Proactive UI guard in front of the real DB constraint
   // (cuisine_tags_kosher_exclusive) — a certified restaurant can pick only
@@ -424,11 +431,28 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
             — only in the edit-from-Dashboard context (restaurant truthy),
             same gating as the overhead-expenses sub-tab: a brand-new draft
             restaurant has no id yet for the upload Edge Function to attach
-            a certificate to. */}
+            a certificate to.
+            Toggle mirrors MenuManager's own "off by default, reveals a
+            required section once on" pattern (user's explicit request) —
+            once actually certified the toggle is hidden and the certified
+            badge/remove button (inside KosherCertificateUpload) is the only
+            way back, since un-toggling here never deletes anything itself. */}
         {restaurant && (
           <>
-            <label className="mb-1 block text-sm font-bold text-ink">{t('kosherSectionHeading')}</label>
-            <KosherCertificateUpload session={session} restaurant={restaurant} onUpdated={() => onSaved?.()} />
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label className="block text-sm font-bold text-ink">{t('kosherSectionHeading')}</label>
+              {!isCertified && (
+                <Toggle checked={kosherEnabled} onChange={setKosherEnabled} label={t('kosherSectionHeading')} />
+              )}
+            </div>
+            {(isCertified || kosherEnabled) && (
+              <KosherCertificateUpload
+                session={session}
+                restaurant={restaurant}
+                onUpdated={() => onSaved?.()}
+                required={!isCertified}
+              />
+            )}
           </>
         )}
 

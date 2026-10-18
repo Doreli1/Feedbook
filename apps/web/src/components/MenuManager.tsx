@@ -13,6 +13,7 @@ import type {
 } from '@feedbook/types';
 import { TrashIcon, PencilIcon, SparklesIcon, InfoIcon, CloseIcon, ChevronDownIcon } from './Icons';
 import { Tooltip } from './Tooltip';
+import { Toggle } from './Toggle';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { ingredientStockStatus } from '../lib/ingredientStatus';
@@ -187,34 +188,6 @@ function SectionToggle({ value, onChange }: { value: 'food' | 'drink'; onChange:
         {t('categorySectionDrink')}
       </button>
     </div>
-  );
-}
-
-// An iOS-style on/off switch (chosen by the user, replacing a plain
-// checkbox) for gating an optional dish-form section behind one visible
-// control: off by default, and only reveals the section's own editor once
-// switched on. The knob's position is driven by `margin-inline-start`
-// rather than a `translateX` transform — that's the one CSS property here
-// that both animates smoothly AND is direction-aware on its own, so the
-// same code slides the knob the physically-correct way in both RTL and LTR
-// without reading `dir` explicitly (a `translateX` sign would need to flip
-// per direction by hand, the exact class of bug documented for this app's
-// RTL back-icon fix).
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={`inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-border-strong'}`}
-    >
-      <span
-        className="h-4 w-4 rounded-full bg-white shadow transition-[margin-inline-start] duration-150"
-        style={{ marginInlineStart: checked ? '1.125rem' : '0.125rem' }}
-      />
-    </button>
   );
 }
 

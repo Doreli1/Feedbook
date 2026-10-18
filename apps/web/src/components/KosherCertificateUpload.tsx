@@ -14,6 +14,11 @@ interface Props {
   // save elsewhere in this app) so isCertified/kosher_certificate_url, both
   // read straight off the restaurant prop here, pick up the change.
   onUpdated: () => void;
+  // Set by RestaurantDetailsForm.tsx when its own "כשרות" toggle is on but
+  // no certificate has been uploaded yet — marks the field as mandatory
+  // (asterisk + hint) without blocking the rest of the screen's autosave,
+  // which has no natural hook for a hard cross-field gate.
+  required?: boolean;
 }
 
 // Extracted from the registration wizard's own KosherStatusForm.tsx
@@ -21,7 +26,7 @@ interface Props {
 // live inside the post-approval Restaurant Details screen, not just the
 // one-time onboarding step — a restaurant can newly become certified, or
 // need to replace an expired certificate, long after onboarding.
-export function KosherCertificateUpload({ session, restaurant, onUpdated }: Props) {
+export function KosherCertificateUpload({ session, restaurant, onUpdated, required = false }: Props) {
   const { t } = useI18n();
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +115,10 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated }: Prop
         </div>
       ) : (
         <div className="mb-3">
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('kosherUploadLabel')}</label>
+          <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+            {t('kosherUploadLabel')}
+            {required && <span className="text-danger"> *</span>}
+          </label>
           {/* A real upload-field look (dashed dropzone + icon), not just a
               plain button — reported as reading like a leftover wizard
               yes/no answer rather than a file field once it moved into the
@@ -119,11 +127,14 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated }: Prop
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploadState === 'uploading'}
-            className="flex w-full flex-col items-center justify-center gap-1.5 rounded border-2 border-dashed border-border py-6 text-sm text-muted-foreground transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent disabled:opacity-50"
+            className={`flex w-full flex-col items-center justify-center gap-1.5 rounded border-2 border-dashed py-6 text-sm transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent disabled:opacity-50 ${
+              required ? 'border-danger text-danger' : 'border-border text-muted-foreground'
+            }`}
           >
             <UploadIcon className="h-6 w-6" />
             <span className="font-medium">{uploadState === 'uploading' ? t('kosherUploading') : t('kosherYesUpload')}</span>
           </button>
+          {required && <p className="mt-1 text-xs text-danger">{t('kosherRequiredHint')}</p>}
           <input
             ref={fileInputRef}
             type="file"

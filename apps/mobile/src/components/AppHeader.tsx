@@ -82,9 +82,16 @@ function LanguageFlag({ emoji }: { emoji: string }) {
 // same "show the future map, keep it inert" approach already used for
 // profile's locked rows, not a stray dead button).
 export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-vertical' | 'menu-outline' }) {
+  const router = useRouter();
   const { lang, setLang, t, isRTL } = useI18n();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'menu' | 'language'>('menu');
+  // Only a diner with a live table (restaurantId set) has a restaurant to
+  // view details for — pre-scan screens (sign-in, profile with no active
+  // visit) never show this row.
+  const restaurantId = useTableSessionStore((s) => s.restaurantId);
+  const restaurantName = useTableSessionStore((s) => s.restaurantName);
+  const tableNumber = useTableSessionStore((s) => s.tableNumber);
 
   function close() {
     setOpen(false);
@@ -103,6 +110,27 @@ export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-ve
             <Pressable onPress={(e) => e.stopPropagation()} className="w-56 overflow-hidden rounded-2xl bg-white" style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 }}>
               {view === 'menu' ? (
                 <>
+                  {/* Reopens app/restaurant-details.tsx standalone, by
+                      restaurantId, for a diner mid-visit — previously that
+                      screen was reachable only once, right after scanning
+                      (2026-10-18, user request). */}
+                  {!!restaurantId && (
+                    <Pressable
+                      onPress={() => {
+                        close();
+                        router.push({
+                          pathname: '/restaurant-details',
+                          params: { restaurantId, restaurantName: restaurantName ?? '', tableNumber: tableNumber ?? '', standalone: '1' },
+                        });
+                      }}
+                      className="flex-row items-center gap-3 border-b px-4 py-3.5"
+                      style={{ borderColor: colors.border }}
+                    >
+                      <Ionicons name="storefront-outline" size={20} color={colors.textMuted} />
+                      <Text className="flex-1 text-sm text-[#1B2430]">{t('restaurantDetailsMenuItem')}</Text>
+                      <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={16} color={colors.textMuted} />
+                    </Pressable>
+                  )}
                   <Pressable onPress={() => setView('language')} className="flex-row items-center gap-3 border-b px-4 py-3.5" style={{ borderColor: colors.border }}>
                     <Ionicons name="language-outline" size={20} color={colors.textMuted} />
                     <Text className="flex-1 text-sm text-[#1B2430]">{t('languageMenuItem')}</Text>

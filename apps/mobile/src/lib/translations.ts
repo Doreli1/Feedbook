@@ -20,6 +20,7 @@ const translations = {
     tableLabel: 'שולחן',
 
     // Header menu (⋮)
+    restaurantDetailsMenuItem: 'עיינו בפרטי המסעדה',
     languageMenuItem: 'שפה',
     currencyMenuItem: 'מטבע',
     comingSoon: 'בקרוב',
@@ -404,6 +405,7 @@ const translations = {
     or: 'or',
     tableLabel: 'Table',
 
+    restaurantDetailsMenuItem: 'View restaurant details',
     languageMenuItem: 'Language',
     currencyMenuItem: 'Currency',
     comingSoon: 'Coming soon',
