@@ -168,49 +168,51 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, address, phone, hourRules, logoFile, description, cuisineTags, cancellationWindow, vatRate]);
 
-  function handleStepClick(target: number) {
+  // Shared by every exit path below — clears the pending debounce timer and
+  // fires the save immediately instead of waiting out the rest of the
+  // 1200ms, so leaving mid-typing never silently drops the last keystrokes.
+  function flushPendingSave() {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       if (hasRequiredFields) void save();
     }
+  }
+
+  function handleStepClick(target: number) {
+    flushPendingSave();
     onStepClick?.(target);
   }
 
   function handleExit() {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      if (hasRequiredFields) void save();
-    }
+    flushPendingSave();
     onExit?.();
   }
 
-  // Always points at the latest handleExit — a plain render-time assignment
-  // (not inside an effect), so the popstate listener below never closes over
-  // a stale hasRequiredFields/onExit from whichever render first mounted it.
-  const handleExitRef = useRef(handleExit);
-  handleExitRef.current = handleExit;
+  // Always points at the latest flushPendingSave — a plain render-time
+  // assignment (not inside an effect), so the popstate listener below never
+  // closes over a stale hasRequiredFields from whichever render first
+  // mounted it.
+  const flushPendingSaveRef = useRef(flushPendingSave);
+  flushPendingSaveRef.current = flushPendingSave;
 
-  // Lets the browser/OS back button leave this screen too (reported gap:
-  // the only way out used to be the explicit save button) — pushes one
-  // history entry for the life of this screen and treats a back-button
-  // press the same as the logo/exit click (flush pending autosave, then
-  // hand back to the Dashboard). Only when onExit exists, i.e. this is the
-  // "edit an existing restaurant from the Dashboard" context (App.tsx) —
-  // the wizard's own step 1 has no dashboard to pop back to.
+  // App.tsx owns pushState/popstate for this screen (a single always-on
+  // listener there keeps the physical back AND forward buttons in sync with
+  // editingDetails, rather than only working while this component happens
+  // to be mounted). This listener's only job is the one thing that still
+  // has to happen locally: flush a pending autosave before the physical
+  // back button unmounts this screen out from under it — App.tsx's own
+  // handler fires in the same synchronous dispatch but doesn't know about
+  // this screen's debounce timer. Only wired when onExit exists, i.e. this
+  // is the "edit an existing restaurant from the Dashboard" context — the
+  // wizard's own step 1 isn't on App.tsx's history stack at all.
   useEffect(() => {
     if (!onExit) return;
-    window.history.pushState({ feedbookScreen: 'restaurant-details-edit' }, '');
     function onPopState() {
-      handleExitRef.current();
+      flushPendingSaveRef.current();
     }
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-    // Runs once per mount of this screen, not per onExit identity change —
-    // the parent passes a fresh inline closure on every render, and
-    // re-running this on every one of those would push a new history entry
-    // each time, requiring multiple back-presses to actually leave.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [onExit]);
 
   // Same flush as handleStepClick, but awaited: "continue" unmounts this
   // screen immediately after, so a fire-and-forget save here would race the
@@ -593,29 +595,36 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           {saveState === 'error' && <span className="text-danger">{errorMessage}</span>}
         </div>
 
-        <button
-          onClick={() => void handleContinue()}
-          disabled={!restaurantId}
-          className="w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground"
-        >
-          {primaryLabel ?? t('continue')}
-        </button>
-
-        {/* A plain, non-"save" way out — the primary button above always
-            reads as a save action (primaryLabel is "saveAndReturnToDashboard"
-            here), which left no neutral exit; this calls the same
-            flush-then-leave logic as the logo/back-button, just framed as
-            "back", not "save". Only shown where there's a dashboard to
-            return to (see onExit's own doc comment on the Props interface). */}
-        {onExit && (
+        {/* Two compact buttons side by side once there's a plain "חזרה" to
+            pair it with (short labels now — "שמירה"/"חזרה" — so stacked
+            full-width buttons read as oversized); the plain wizard-continue
+            case (no onExit, no second button, longer "המשך" label) keeps
+            the original single full-width button. */}
+        <div className={onExit ? 'flex gap-3' : undefined}>
           <button
-            type="button"
-            onClick={handleExit}
-            className="mt-2 w-full rounded border border-border py-2 text-sm font-medium text-ink hover:bg-surface-2"
+            onClick={() => void handleContinue()}
+            disabled={!restaurantId}
+            className={`rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground ${onExit ? 'flex-1' : 'w-full'}`}
           >
-            {t('backToDashboard')}
+            {primaryLabel ?? t('continue')}
           </button>
-        )}
+
+          {/* A plain, non-"save" way out — the primary button above always
+              reads as a save action, which left no neutral exit; this calls
+              the same flush-then-leave logic as the logo/back-button, just
+              framed as "back", not "save". Only shown where there's a
+              dashboard to return to (see onExit's own doc comment on the
+              Props interface). */}
+          {onExit && (
+            <button
+              type="button"
+              onClick={handleExit}
+              className="flex-1 rounded border border-border py-2 text-sm font-medium text-ink hover:bg-surface-2"
+            >
+              {t('backToDashboard')}
+            </button>
+          )}
+        </div>
       </div>
     </WizardShell>
   );

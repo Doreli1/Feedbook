@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from './lib/useAuth';
 import { useOwnRestaurants } from './lib/useOwnRestaurants';
 import { useActiveRestaurantId } from './lib/useActiveRestaurantId';
@@ -10,6 +10,17 @@ import { MfaChallenge } from './screens/MfaChallenge';
 import { RegistrationWizard } from './screens/RegistrationWizard';
 import { RestaurantDetailsForm } from './screens/RestaurantDetailsForm';
 import { Dashboard } from './screens/Dashboard';
+
+// A plain string marker on the browser history entry, not a real route —
+// this app has no router/URL scheme (see Dashboard.tsx's own tab state for
+// the same convention), so the entry's pathname never changes, only this
+// state payload. Lets the physical back/forward buttons walk in and out of
+// the Restaurant Details edit screen like any other browser navigation,
+// instead of leaving the app's own state out of sync with the browser's
+// history position (reported gap: forward-after-back did nothing, since the
+// old popstate listener only existed while that screen happened to be
+// mounted).
+const EDITING_DETAILS_HISTORY_MARKER = 'restaurant-details-edit';
 
 function LoadingScreen() {
   const { t } = useI18n();
@@ -33,6 +44,36 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
   // distinct from the wizard's own step 1 (onboarding_status === 'draft'),
   // which is a different route below and doesn't need this flag at all.
   const [editingDetails, setEditingDetails] = useState(false);
+
+  // Single always-on listener (not scoped to while the edit screen happens
+  // to be mounted) — the source of truth for editingDetails becomes "are we
+  // physically sitting on the pushed history entry", so back AND forward
+  // both just fall out of this one sync instead of needing separate
+  // handling. refresh is a stable useCallback (keyed on the session's own
+  // user id — see useOwnRestaurants.ts), safe to depend on directly.
+  useEffect(() => {
+    function onPopState(event: PopStateEvent) {
+      const isEditing = (event.state as { feedbookScreen?: string } | null)?.feedbookScreen === EDITING_DETAILS_HISTORY_MARKER;
+      setEditingDetails(isEditing);
+      if (!isEditing) void refresh();
+    }
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [refresh]);
+
+  function openEditingDetails() {
+    window.history.pushState({ feedbookScreen: EDITING_DETAILS_HISTORY_MARKER }, '');
+    setEditingDetails(true);
+  }
+
+  // Both the primary save button and the plain "back" button call this —
+  // going through the same history.back() → popstate → setEditingDetails
+  // pipeline physically pressing Back does, instead of flipping the boolean
+  // directly. Keeps the browser's own history position and the app's state
+  // from ever drifting apart (that drift was the forward-button bug).
+  function closeEditingDetails() {
+    window.history.back();
+  }
 
   if (loading) return <LoadingScreen />;
 
@@ -67,15 +108,9 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
         session={session}
         restaurant={activeRestaurant}
         onSaved={() => void refresh()}
-        onNext={() => {
-          setEditingDetails(false);
-          void refresh();
-        }}
+        onNext={closeEditingDetails}
         primaryLabel={t('saveAndReturnToDashboard')}
-        onExit={() => {
-          setEditingDetails(false);
-          void refresh();
-        }}
+        onExit={closeEditingDetails}
       />
     );
   }
@@ -87,7 +122,7 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
       restaurants={restaurants}
       onSwitchRestaurant={setActiveId}
       onAddRestaurant={() => setStartingNew(true)}
-      onEditDetails={() => setEditingDetails(true)}
+      onEditDetails={openEditingDetails}
     />
   );
 }
