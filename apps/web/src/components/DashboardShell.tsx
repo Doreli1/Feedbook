@@ -65,6 +65,11 @@ interface Props {
   notifications: TopBarNotification[];
   onSignOut: () => void;
   onEditDetails: () => void;
+  // Clicking the Feedbook logo always returns to this screen's own "home"
+  // tab (overview) — matches the wordmark's role elsewhere in the app as a
+  // "back to the main screen" affordance (WizardShell's onExit), even
+  // though here there's no screen to leave, just a tab to reset to.
+  onLogoClick: () => void;
   restaurants: Restaurant[];
   activeRestaurantId: string;
   onSwitchRestaurant: (id: string) => void;
@@ -90,6 +95,7 @@ export function DashboardShell({
   notifications,
   onSignOut,
   onEditDetails,
+  onLogoClick,
   restaurants,
   activeRestaurantId,
   onSwitchRestaurant,
@@ -106,6 +112,7 @@ export function DashboardShell({
         notifications={notifications}
         onSignOut={onSignOut}
         onEditDetails={onEditDetails}
+        onLogoClick={onLogoClick}
         restaurants={restaurants}
         activeRestaurantId={activeRestaurantId}
         onSwitchRestaurant={onSwitchRestaurant}

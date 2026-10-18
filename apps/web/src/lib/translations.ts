@@ -311,6 +311,7 @@ const translations = {
     dashboardComingSoon: 'ניהול תפריטים, שולחנות והזמנות עדיין בבנייה — יתווספו כאן בהמשך.',
     editRestaurantDetails: 'עריכת פרטי מסעדה',
     saveAndReturnToDashboard: 'שמירה וחזרה',
+    backToDashboard: 'חזרה לדשבורד',
 
     // DashboardShell (post-approval nav)
     dashboardTabOverview: 'בקרת מסעדה',
@@ -923,6 +924,7 @@ const translations = {
     dashboardComingSoon: 'Menu, table, and order management are still being built — they will be added here soon.',
     editRestaurantDetails: 'Edit restaurant details',
     saveAndReturnToDashboard: 'Save and return',
+    backToDashboard: 'Back to dashboard',
 
     // DashboardShell (post-approval nav)
     dashboardTabOverview: 'Restaurant Control',

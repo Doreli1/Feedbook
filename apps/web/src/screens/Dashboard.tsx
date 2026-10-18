@@ -290,6 +290,7 @@ function ApprovedDashboard({
       notifications={notifications}
       onSignOut={() => void supabase.auth.signOut()}
       onEditDetails={onEditDetails}
+      onLogoClick={() => setTab('overview')}
       restaurants={restaurants}
       activeRestaurantId={restaurant.id}
       onSwitchRestaurant={onSwitchRestaurant}

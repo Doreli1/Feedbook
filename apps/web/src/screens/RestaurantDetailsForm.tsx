@@ -184,6 +184,34 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     onExit?.();
   }
 
+  // Always points at the latest handleExit — a plain render-time assignment
+  // (not inside an effect), so the popstate listener below never closes over
+  // a stale hasRequiredFields/onExit from whichever render first mounted it.
+  const handleExitRef = useRef(handleExit);
+  handleExitRef.current = handleExit;
+
+  // Lets the browser/OS back button leave this screen too (reported gap:
+  // the only way out used to be the explicit save button) — pushes one
+  // history entry for the life of this screen and treats a back-button
+  // press the same as the logo/exit click (flush pending autosave, then
+  // hand back to the Dashboard). Only when onExit exists, i.e. this is the
+  // "edit an existing restaurant from the Dashboard" context (App.tsx) —
+  // the wizard's own step 1 has no dashboard to pop back to.
+  useEffect(() => {
+    if (!onExit) return;
+    window.history.pushState({ feedbookScreen: 'restaurant-details-edit' }, '');
+    function onPopState() {
+      handleExitRef.current();
+    }
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+    // Runs once per mount of this screen, not per onExit identity change —
+    // the parent passes a fresh inline closure on every render, and
+    // re-running this on every one of those would push a new history entry
+    // each time, requiring multiple back-presses to actually leave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Same flush as handleStepClick, but awaited: "continue" unmounts this
   // screen immediately after, so a fire-and-forget save here would race the
   // unmount and could get cancelled by the debounce effect's own cleanup.
@@ -572,6 +600,22 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         >
           {primaryLabel ?? t('continue')}
         </button>
+
+        {/* A plain, non-"save" way out — the primary button above always
+            reads as a save action (primaryLabel is "saveAndReturnToDashboard"
+            here), which left no neutral exit; this calls the same
+            flush-then-leave logic as the logo/back-button, just framed as
+            "back", not "save". Only shown where there's a dashboard to
+            return to (see onExit's own doc comment on the Props interface). */}
+        {onExit && (
+          <button
+            type="button"
+            onClick={handleExit}
+            className="mt-2 w-full rounded border border-border py-2 text-sm font-medium text-ink hover:bg-surface-2"
+          >
+            {t('backToDashboard')}
+          </button>
+        )}
       </div>
     </WizardShell>
   );

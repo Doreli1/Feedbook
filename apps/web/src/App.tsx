@@ -72,6 +72,10 @@ function AuthenticatedRouter({ session }: { session: NonNullable<ReturnType<type
           void refresh();
         }}
         primaryLabel={t('saveAndReturnToDashboard')}
+        onExit={() => {
+          setEditingDetails(false);
+          void refresh();
+        }}
       />
     );
   }
