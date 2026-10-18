@@ -2,8 +2,12 @@ import { useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Restaurant } from '@feedbook/types';
 import { Tooltip } from './Tooltip';
-import { TrashIcon, UploadIcon } from './Icons';
+import { TrashIcon, UploadIcon, CheckIcon } from './Icons';
 import { useI18n } from '../lib/i18n';
+
+function isPdfUrl(url: string): boolean {
+  return url.toLowerCase().endsWith('.pdf');
+}
 
 type UploadState = 'idle' | 'uploading' | 'error';
 
@@ -96,68 +100,58 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
     onUpdated();
   }
 
+  const certificateUrl = restaurant.kosher_certificate_url;
+
   return (
     <>
-      {isCertified ? (
-        <div className="mb-3 flex items-center justify-between gap-2 rounded border border-success bg-success-soft px-3 py-3 text-sm text-success">
-          {t('kosherCertified')}
-          {/* Replacing a certificate previously required removing the old
-              one first (the only action shown here was the trash button),
-              which read as "no way to upload a new one" (reported gap,
-              2026-10-18) — this re-uses the same upload endpoint, which
-              already upserts and overwrites on a POST either way. */}
-          <div className="flex shrink-0 items-center gap-1">
-            <Tooltip content={t('kosherReplace')}>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadState === 'uploading'}
-                aria-label={t('kosherReplace')}
-                className="rounded p-1.5 text-success hover:bg-accent-soft hover:text-accent disabled:opacity-50"
-              >
-                <UploadIcon className="h-4 w-4" />
-              </button>
-            </Tooltip>
-            <Tooltip content={t('kosherRemove')}>
-              <button
-                type="button"
-                onClick={() => void handleRemove()}
-                disabled={uploadState === 'uploading'}
-                aria-label={t('kosherRemove')}
-                className="rounded p-1.5 text-success hover:bg-danger-soft hover:text-danger disabled:opacity-50"
-              >
-                <TrashIcon className="h-4 w-4" />
-              </button>
-            </Tooltip>
-          </div>
-        </div>
-      ) : (
-        <div className="mb-3">
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">
-            {t('kosherUploadLabel')}
-            {required && <span className="text-danger"> *</span>}
-          </label>
-          {/* A real upload-field look (dashed dropzone + icon), not just a
-              plain button — reported as reading like a leftover wizard
-              yes/no answer rather than a file field once it moved into the
-              Restaurant Details screen, where there's no question above it. */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadState === 'uploading'}
-            className={`flex w-full flex-col items-center justify-center gap-1.5 rounded border-2 border-dashed py-6 text-sm transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent disabled:opacity-50 ${
-              required ? 'border-danger text-danger' : 'border-border text-muted-foreground'
-            }`}
-          >
-            <UploadIcon className="h-6 w-6" />
-            <span className="font-medium">{uploadState === 'uploading' ? t('kosherUploading') : t('kosherYesUpload')}</span>
-          </button>
-          {required && <p className="mt-1 text-xs text-danger">{t('kosherRequiredHint')}</p>}
-        </div>
-      )}
-
-      {/* Shared by both branches above — the certified branch's "replace"
-          button also triggers this same hidden input. */}
+      <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+        {t('kosherUploadLabel')}
+        {required && <span className="text-danger"> *</span>}
+      </label>
+      {/* Same shape as the dish-photo upload tiles (MenuManager.tsx) — the
+          file itself shown inside the tile, not a separate thumbnail next
+          to a text button (2026-10-18, per explicit request). Clicking the
+          tile always opens the file picker, whether replacing an existing
+          certificate or uploading the first one; the corner remove button
+          only appears once there's something to remove. */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadState === 'uploading'}
+          className={`flex h-32 w-full items-center justify-center overflow-hidden rounded border-2 border-dashed transition-colors hover:border-accent disabled:opacity-50 ${
+            required && !isCertified ? 'border-danger' : 'border-border'
+          }`}
+        >
+          {uploadState === 'uploading' ? (
+            <span className="text-sm text-muted-foreground">{t('kosherUploading')}</span>
+          ) : isCertified && certificateUrl ? (
+            isPdfUrl(certificateUrl) ? (
+              <span className="text-sm font-semibold text-muted-foreground">PDF</span>
+            ) : (
+              <img src={certificateUrl} alt="" className="h-full w-full object-contain" />
+            )
+          ) : (
+            <span className="flex flex-col items-center gap-1.5 text-sm text-muted-foreground hover:text-accent">
+              <UploadIcon className="h-6 w-6" />
+              <span className="font-medium">{t('kosherYesUpload')}</span>
+            </span>
+          )}
+        </button>
+        {isCertified && (
+          <Tooltip content={t('kosherRemove')}>
+            <button
+              type="button"
+              onClick={() => void handleRemove()}
+              disabled={uploadState === 'uploading'}
+              aria-label={t('kosherRemove')}
+              className="absolute -end-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-danger text-white hover:opacity-90 disabled:opacity-50"
+            >
+              <TrashIcon className="h-3 w-3" />
+            </button>
+          </Tooltip>
+        )}
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -166,11 +160,21 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
         onChange={(e) => void handleFileChange(e)}
       />
 
+      {/* Below the tile, decoupled from it — confirms the restaurant's
+          actual kosher status rather than being the only way to tell. */}
+      {isCertified && (
+        <div className="mt-2 flex items-center gap-1.5 text-sm font-medium text-success">
+          <CheckIcon className="h-4 w-4" />
+          <span>{t('kosherCertified')}</span>
+        </div>
+      )}
+      {required && !isCertified && <p className="mt-1 text-xs text-danger">{t('kosherRequiredHint')}</p>}
+
       {error && (
-        <div className="mb-3 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>
+        <div className="mt-2 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>
       )}
 
-      <p className="mb-4 text-xs text-muted-foreground">{t('kosherDisclaimer')}</p>
+      <p className="mb-4 mt-2 text-xs text-muted-foreground">{t('kosherDisclaimer')}</p>
     </>
   );
 }
