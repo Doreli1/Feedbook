@@ -6,7 +6,6 @@ import { AppHeader } from '../components/AppHeader';
 import { DashboardShell, type DashboardTab } from '../components/DashboardShell';
 import { MenuManager } from '../components/MenuManager';
 import { ProfitabilityCard } from '../components/ProfitabilityCard';
-import { OverheadExpensesForm } from '../components/OverheadExpensesForm';
 import { AccountsScreen } from './AccountsScreen';
 import { IngredientsScreen } from './IngredientsScreen';
 import { KitchenScreen } from './KitchenScreen';
@@ -121,7 +120,7 @@ function ApprovedDashboard({
   const [tab, setTab] = useState<DashboardTab>('overview');
   const { categories, dishes, dishIngredients, dishSizeOptions, refresh: refreshMenu } = useMenu(restaurant.id);
   const { ingredients, purchaseOrders, refresh: refreshInventory } = useInventory(restaurant.id);
-  const { expenses: overheadExpenses, totalMonthlyOverhead, dishesSoldInWindow, saveExpenses: saveOverheadExpenses } = useOverheadExpenses(restaurant.id);
+  const { totalMonthlyOverhead, dishesSoldInWindow } = useOverheadExpenses(restaurant.id);
   const { items: orderItems, refresh: refreshOrders } = useOrders(restaurant.id);
   const { calls: waiterCalls, refresh: refreshWaiterCalls, resolve: resolveWaiterCall } = useWaiterCalls(restaurant.id);
   const { staff, refresh: refreshStaff } = useStaff(restaurant.id);
@@ -306,8 +305,6 @@ function ApprovedDashboard({
             totalMonthlyOverhead={totalMonthlyOverhead}
             dishesSoldInWindow={dishesSoldInWindow}
           />
-
-          <OverheadExpensesForm expenses={overheadExpenses} onSave={saveOverheadExpenses} />
 
           <div className="card p-6">
             <h2 className="mb-3 text-sm font-semibold text-ink">{t('lowStockAlertsHeading')}</h2>
