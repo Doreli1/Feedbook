@@ -25,6 +25,17 @@ export function TrashIcon({ className = 'h-4 w-4' }: { className?: string }) {
   );
 }
 
+// Cloud with an up-arrow — the upload affordance for a file/scan field
+// (KosherCertificateUpload.tsx).
+export function UploadIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M5.5 14.5a3 3 0 0 1-.5-5.95 4 4 0 0 1 7.6-2 3.5 3.5 0 0 1 2.4 6.45" />
+      <path d="M10 15.5v-6M7.5 11.75 10 9.25l2.5 2.5" />
+    </svg>
+  );
+}
+
 export function InfoIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>

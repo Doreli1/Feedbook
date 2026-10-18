@@ -99,9 +99,12 @@ const translations = {
     kosherStepTitle: 'סטטוס כשרות',
     kosherStepSubtitle: 'אופציונלי — ניתן לדלג ולהוסיף מאוחר יותר.',
     kosherQuestion: 'האם המסעדה מאושרת כשרות?',
-    kosherYesUpload: 'כן, יש לי תעודה',
+    // Neutral upload-field wording (2026-10-18) — this button is now shared
+    // with the post-approval Restaurant Details screen too, where there's
+    // no yes/no question above it for "כן, יש לי תעודה" to answer.
+    kosherYesUpload: 'העלאת קובץ / סריקה',
     kosherSkip: 'דלג/י בינתיים',
-    kosherUploadLabel: 'העלאת תעודת כשרות (JPG, PNG או PDF, עד 10MB)',
+    kosherUploadLabel: 'קובץ תעודת הכשרות (JPG, PNG או PDF, עד 10MB)',
     kosherUploading: 'מעלה…',
     kosherCertified: 'המסעדה מאושרת כשרות ✓',
     kosherRemove: 'הסרת תעודה',
@@ -719,9 +722,9 @@ const translations = {
     kosherStepTitle: 'Kosher Status',
     kosherStepSubtitle: "Optional — you can skip this and add it later.",
     kosherQuestion: 'Is the restaurant kosher-certified?',
-    kosherYesUpload: 'Yes, I have a certificate',
+    kosherYesUpload: 'Upload file / scan',
     kosherSkip: 'Skip for now',
-    kosherUploadLabel: 'Upload kosher certificate (JPG, PNG, or PDF, up to 10MB)',
+    kosherUploadLabel: 'Kosher certificate file (JPG, PNG, or PDF, up to 10MB)',
     kosherUploading: 'Uploading…',
     kosherCertified: 'Restaurant is kosher-certified ✓',
     kosherRemove: 'Remove certificate',

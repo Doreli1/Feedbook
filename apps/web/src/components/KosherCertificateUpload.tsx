@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Restaurant } from '@feedbook/types';
 import { Tooltip } from './Tooltip';
-import { TrashIcon } from './Icons';
+import { TrashIcon, UploadIcon } from './Icons';
 import { useI18n } from '../lib/i18n';
 
 type UploadState = 'idle' | 'uploading' | 'error';
@@ -111,13 +111,18 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated }: Prop
       ) : (
         <div className="mb-3">
           <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('kosherUploadLabel')}</label>
+          {/* A real upload-field look (dashed dropzone + icon), not just a
+              plain button — reported as reading like a leftover wizard
+              yes/no answer rather than a file field once it moved into the
+              Restaurant Details screen, where there's no question above it. */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploadState === 'uploading'}
-            className="w-full rounded border border-border py-2 text-sm text-accent hover:bg-accent-soft disabled:text-muted-foreground"
+            className="flex w-full flex-col items-center justify-center gap-1.5 rounded border-2 border-dashed border-border py-6 text-sm text-muted-foreground transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent disabled:opacity-50"
           >
-            {uploadState === 'uploading' ? t('kosherUploading') : t('kosherYesUpload')}
+            <UploadIcon className="h-6 w-6" />
+            <span className="font-medium">{uploadState === 'uploading' ? t('kosherUploading') : t('kosherYesUpload')}</span>
           </button>
           <input
             ref={fileInputRef}
