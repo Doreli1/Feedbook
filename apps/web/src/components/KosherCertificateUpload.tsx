@@ -114,47 +114,56 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
           tile always opens the file picker, whether replacing an existing
           certificate or uploading the first one; the corner remove button
           only appears once there's something to remove. */}
-      {/* justify-start puts the tile at the physical right under this app's
-          RTL (confirmed against the Save/Back row earlier on this same
-          screen, which needed justify-end for the opposite, physical-left
-          placement — logical-property "end" is left in RTL, not right). */}
-      <div className="relative flex justify-start">
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploadState === 'uploading'}
-          aria-label={t('kosherYesUpload')}
-          className={`group flex h-24 w-24 items-center justify-center overflow-hidden rounded border-2 border-dashed bg-surface transition-colors hover:border-accent disabled:opacity-50 ${
-            required && !isCertified ? 'border-danger' : 'border-border'
-          }`}
-        >
-          {uploadState === 'uploading' ? (
-            <span className="text-xs text-muted-foreground">{t('kosherUploading')}</span>
-          ) : isCertified && certificateUrl ? (
-            isPdfUrl(certificateUrl) ? (
-              <span className="text-sm font-semibold text-muted-foreground">PDF</span>
+      {/* justify-start puts the inner wrapper at the physical right under
+          this app's RTL (confirmed against the Save/Back row earlier on
+          this same screen, which needed justify-end for the opposite,
+          physical-left placement — logical-property "end" is left in RTL,
+          not right). The relative/absolute pair for the remove button
+          lives on an inline-block inner wrapper, not this outer flex div —
+          a flex div with no explicit width stretches to its parent's full
+          width even with justify-start, so an absolutely-positioned child
+          of *this* div would anchor to that full-width box's own corner,
+          not the button's (reported: remove button stayed on the left
+          while the tile itself correctly moved right). */}
+      <div className="flex justify-start">
+        <div className="relative inline-block">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadState === 'uploading'}
+            aria-label={t('kosherYesUpload')}
+            className={`group flex h-24 w-24 items-center justify-center overflow-hidden rounded border-2 border-dashed bg-surface transition-colors hover:border-accent disabled:opacity-50 ${
+              required && !isCertified ? 'border-danger' : 'border-border'
+            }`}
+          >
+            {uploadState === 'uploading' ? (
+              <span className="text-xs text-muted-foreground">{t('kosherUploading')}</span>
+            ) : isCertified && certificateUrl ? (
+              isPdfUrl(certificateUrl) ? (
+                <span className="text-sm font-semibold text-muted-foreground">PDF</span>
+              ) : (
+                <img src={certificateUrl} alt="" className="h-full w-full object-contain" />
+              )
             ) : (
-              <img src={certificateUrl} alt="" className="h-full w-full object-contain" />
-            )
-          ) : (
-            // Plain "+" like the dish-photo add control elsewhere in this
-            // app, rather than a cloud-upload icon + caption.
-            <span className="text-3xl font-light leading-none text-muted-foreground group-hover:text-accent">+</span>
+              // Plain "+" like the dish-photo add control elsewhere in this
+              // app, rather than a cloud-upload icon + caption.
+              <span className="text-3xl font-light leading-none text-muted-foreground group-hover:text-accent">+</span>
+            )}
+          </button>
+          {isCertified && (
+            <Tooltip content={t('kosherRemove')}>
+              <button
+                type="button"
+                onClick={() => void handleRemove()}
+                disabled={uploadState === 'uploading'}
+                aria-label={t('kosherRemove')}
+                className="absolute -end-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-danger text-white hover:opacity-90 disabled:opacity-50"
+              >
+                <TrashIcon className="h-3 w-3" />
+              </button>
+            </Tooltip>
           )}
-        </button>
-        {isCertified && (
-          <Tooltip content={t('kosherRemove')}>
-            <button
-              type="button"
-              onClick={() => void handleRemove()}
-              disabled={uploadState === 'uploading'}
-              aria-label={t('kosherRemove')}
-              className="absolute -end-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-danger text-white hover:opacity-90 disabled:opacity-50"
-            >
-              <TrashIcon className="h-3 w-3" />
-            </button>
-          </Tooltip>
-        )}
+        </div>
       </div>
       <input
         ref={fileInputRef}
@@ -169,7 +178,7 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
       {isCertified && (
         <div className="mt-2 flex items-center gap-1.5 text-sm font-medium text-success">
           <CheckIcon className="h-4 w-4" />
-          <span>{t('kosherCertified')}</span>
+          <span>{t('kosherCertifiedLabel')}</span>
         </div>
       )}
       {required && !isCertified && <p className="mt-1 text-xs text-danger">{t('kosherRequiredHint')}</p>}

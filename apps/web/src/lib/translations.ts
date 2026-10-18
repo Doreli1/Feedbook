@@ -107,6 +107,12 @@ const translations = {
     kosherUploadLabel: 'קובץ תעודת הכשרות (JPG, PNG או PDF, עד 10MB)',
     kosherUploading: 'מעלה…',
     kosherCertified: 'המסעדה מאושרת כשרות ✓',
+    // Same text without the trailing "✓" — used next to a separate CheckIcon
+    // in KosherCertificateUpload.tsx, where the Unicode mark would duplicate
+    // the icon right beside it (2026-10-18, per explicit request). The
+    // ReviewSubmitForm.tsx usage of kosherCertified above has no icon of its
+    // own, so it keeps the "✓" baked into the text.
+    kosherCertifiedLabel: 'המסעדה מאושרת כשרות',
     kosherRemove: 'הסרת תעודה',
     kosherSectionHeading: 'כשרות',
     kosherRequiredHint: 'שדה חובה — יש להעלות תעודת כשרות כדי שהמסעדה תסומן כמאושרת.',
@@ -728,6 +734,7 @@ const translations = {
     kosherUploadLabel: 'Kosher certificate file (JPG, PNG, or PDF, up to 10MB)',
     kosherUploading: 'Uploading…',
     kosherCertified: 'Restaurant is kosher-certified ✓',
+    kosherCertifiedLabel: 'Restaurant is kosher-certified',
     kosherRemove: 'Remove certificate',
     kosherSectionHeading: 'Kosher certification',
     kosherRequiredHint: 'Required — upload a kosher certificate for the restaurant to be marked as certified.',
