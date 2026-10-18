@@ -597,11 +597,13 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
 
         {/* Two compact, narrow buttons side by side once there's a plain
             "חזרה" to pair it with (short labels — "שמירה"/"חזרה"); the back
-            button comes first in JSX so it lands at the physical right
-            (RTL) and "שמירה" at the physical left. The plain wizard-continue
-            case (no onExit, no second button, longer "המשך" label) keeps
-            the original single full-width button. */}
-        <div className={onExit ? 'flex gap-3' : undefined}>
+            button comes first in JSX so it lands at the physical right of
+            the pair, with "שמירה" to its left — and justify-end pushes the
+            whole pair to the card's physical left edge instead of the
+            default flex-start (physical right under RTL). The plain
+            wizard-continue case (no onExit, no second button, longer
+            "המשך" label) keeps the original single full-width button. */}
+        <div className={onExit ? 'flex justify-end gap-3' : undefined}>
           {/* A plain, non-"save" way out — the primary button below always
               reads as a save action, which left no neutral exit; this calls
               the same flush-then-leave logic as the logo/back-button, just
