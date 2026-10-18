@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Dimensions, Modal, Pressable, Text, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../lib/i18n';
@@ -11,71 +11,43 @@ import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
 // Shared by HeaderMailIcon/HeaderBellIcon (2026-10-18, user request): a
-// speech-bubble dropdown anchored to the exact icon that opened it, instead
-// of a generic panel just docked near the screen's top-right corner.
-// `measureInWindow` gives the icon's real on-screen rect (RN has no DOM
-// getBoundingClientRect/portal equivalent), from which the panel's distance
-// from the screen's right edge, and the pointer triangle's offset within
-// the panel, are derived — see the comment on BUBBLE_WIDTH below for why
-// the triangle math is this simple.
-interface BubbleCoords {
-  top: number;
-  right: number;
-  iconWidth: number;
-}
-
-const BUBBLE_ARROW_SIZE = 12;
-
-function useBubbleAnchor() {
-  const anchorRef = useRef<View>(null);
-  const [coords, setCoords] = useState<BubbleCoords | null>(null);
-
-  function openAt(setOpen: (v: boolean) => void) {
-    anchorRef.current?.measureInWindow((x, y, width, height) => {
-      const screenWidth = Dimensions.get('window').width;
-      setCoords({ top: y + height + 10, right: screenWidth - (x + width), iconWidth: width });
-      setOpen(true);
-    });
-  }
-
-  return { anchorRef, coords, openAt };
-}
-
-// The panel's `right` is pinned to the icon's own right edge (see openAt
-// above), so the triangle's offset from the panel's right edge reduces to
-// a constant — half the icon's width minus half the arrow's — independent
-// of the icon's actual screen position. Points up at the icon it belongs
-// to without needing the panel's own rendered width.
+// speech-bubble look for both dropdowns — a small pointer triangle above the
+// panel — on top of the same flex-based "docked near the top-right" layout
+// these already used before (mt-24 items-end px-4), rather than computing
+// pixel coordinates from measureInWindow. An earlier version anchored the
+// panel precisely under the pressed icon via measureInWindow, but that
+// broke badly on-device (panel rendered off-screen) — Yoga's own flex
+// layout is what's actually reliable here, so sizing/positioning stays on
+// it; only the decorative triangle is new.
 function BubblePanel({
-  coords,
   widthClassName = 'w-80',
   maxHeight,
   children,
 }: {
-  coords: BubbleCoords | null;
   widthClassName?: string;
   maxHeight?: number;
   children: ReactNode;
 }) {
-  if (!coords) return null;
   return (
-    <View style={{ position: 'absolute', top: coords.top, right: coords.right }}>
-      <View
-        style={{
-          position: 'absolute',
-          top: -BUBBLE_ARROW_SIZE / 2,
-          right: coords.iconWidth / 2 - BUBBLE_ARROW_SIZE / 2,
-          width: BUBBLE_ARROW_SIZE,
-          height: BUBBLE_ARROW_SIZE,
-          backgroundColor: '#FFFFFF',
-          transform: [{ rotate: '45deg' }],
-        }}
-      />
-      <View
-        className={`${widthClassName} overflow-hidden rounded-2xl bg-white`}
-        style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, maxHeight }}
-      >
-        {children}
+    <View className="mt-24 items-end px-4">
+      <View>
+        <View
+          style={{
+            position: 'absolute',
+            top: -6,
+            right: 24,
+            width: 12,
+            height: 12,
+            backgroundColor: '#FFFFFF',
+            transform: [{ rotate: '45deg' }],
+          }}
+        />
+        <View
+          className={`${widthClassName} overflow-hidden rounded-2xl bg-white`}
+          style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, maxHeight }}
+        >
+          {children}
+        </View>
       </View>
     </View>
   );
@@ -257,7 +229,6 @@ export function HeaderMailIcon() {
   const currentSessionId = useTableSessionStore((s) => s.sessionId);
   const setTableSession = useTableSessionStore((s) => s.setTableSession);
   const [open, setOpen] = useState(false);
-  const { anchorRef, coords, openAt } = useBubbleAnchor();
 
   // The RPC finds this diner's most-recently-joined still-open session
   // regardless of whether they're currently sitting in it — so without this
@@ -294,20 +265,18 @@ export function HeaderMailIcon() {
 
   return (
     <>
-      <View ref={anchorRef} collapsable={false}>
-        <Pressable onPress={() => openAt(setOpen)} hitSlop={10}>
-          <View>
-            <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
-            {hasPendingReminder && (
-              <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
-            )}
-          </View>
-        </Pressable>
-      </View>
+      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
+        <View>
+          <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
+          {hasPendingReminder && (
+            <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
+          )}
+        </View>
+      </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
-          <BubblePanel coords={coords}>
+          <BubblePanel>
             <Pressable onPress={(e) => e.stopPropagation()}>
               <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
                 {t('mailTitle')}
@@ -359,29 +328,26 @@ export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId
   const { session } = useSession();
   const { loading, notifications, unreadCount, markRead } = useNotifications(session?.user.id);
   const [open, setOpen] = useState(false);
-  const { anchorRef, coords, openAt } = useBubbleAnchor();
 
   return (
     <>
-      <View ref={anchorRef} collapsable={false}>
-        <Pressable onPress={() => openAt(setOpen)} hitSlop={10}>
-          <View>
-            <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
-            {unreadCount > 0 && (
-              <View
-                className="absolute -end-1.5 -top-1.5 min-w-[16px] items-center justify-center rounded-full px-1"
-                style={{ height: 16, backgroundColor: colors.danger }}
-              >
-                <Text className="text-[10px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</Text>
-              </View>
-            )}
-          </View>
-        </Pressable>
-      </View>
+      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
+        <View>
+          <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
+          {unreadCount > 0 && (
+            <View
+              className="absolute -end-1.5 -top-1.5 min-w-[16px] items-center justify-center rounded-full px-1"
+              style={{ height: 16, backgroundColor: colors.danger }}
+            >
+              <Text className="text-[10px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</Text>
+            </View>
+          )}
+        </View>
+      </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
-          <BubblePanel coords={coords} maxHeight={384}>
+          <BubblePanel maxHeight={384}>
             <Pressable onPress={(e) => e.stopPropagation()}>
               <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
                 {t('notificationsTitle')}
