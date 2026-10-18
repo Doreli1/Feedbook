@@ -36,6 +36,10 @@ export const colors = {
   // explicit request — "ירוק כהה יותר") — darker than `success` (#22C55E),
   // which stays as-is for its own existing uses (available table).
   discountGreenDark: '#15803D',
+  // Inline link text — the mail dropdown's "התחברו לחשבון שלכם" (2026-10-18,
+  // per explicit request: "תכלת", sky-blue, underlined) in place of what was
+  // a separate button before.
+  skyLink: '#0EA5E9',
 } as const;
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;

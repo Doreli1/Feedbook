@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
+import { useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Dimensions, Modal, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../lib/i18n';
@@ -9,6 +9,77 @@ import { useNotifications } from '../lib/useNotifications';
 import { useOpenSessionReminder } from '../lib/useOpenSessionReminder';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
+
+// Shared by HeaderMailIcon/HeaderBellIcon (2026-10-18, user request): a
+// speech-bubble dropdown anchored to the exact icon that opened it, instead
+// of a generic panel just docked near the screen's top-right corner.
+// `measureInWindow` gives the icon's real on-screen rect (RN has no DOM
+// getBoundingClientRect/portal equivalent), from which the panel's distance
+// from the screen's right edge, and the pointer triangle's offset within
+// the panel, are derived — see the comment on BUBBLE_WIDTH below for why
+// the triangle math is this simple.
+interface BubbleCoords {
+  top: number;
+  right: number;
+  iconWidth: number;
+}
+
+const BUBBLE_ARROW_SIZE = 12;
+
+function useBubbleAnchor() {
+  const anchorRef = useRef<View>(null);
+  const [coords, setCoords] = useState<BubbleCoords | null>(null);
+
+  function openAt(setOpen: (v: boolean) => void) {
+    anchorRef.current?.measureInWindow((x, y, width, height) => {
+      const screenWidth = Dimensions.get('window').width;
+      setCoords({ top: y + height + 10, right: screenWidth - (x + width), iconWidth: width });
+      setOpen(true);
+    });
+  }
+
+  return { anchorRef, coords, openAt };
+}
+
+// The panel's `right` is pinned to the icon's own right edge (see openAt
+// above), so the triangle's offset from the panel's right edge reduces to
+// a constant — half the icon's width minus half the arrow's — independent
+// of the icon's actual screen position. Points up at the icon it belongs
+// to without needing the panel's own rendered width.
+function BubblePanel({
+  coords,
+  widthClassName = 'w-80',
+  maxHeight,
+  children,
+}: {
+  coords: BubbleCoords | null;
+  widthClassName?: string;
+  maxHeight?: number;
+  children: ReactNode;
+}) {
+  if (!coords) return null;
+  return (
+    <View style={{ position: 'absolute', top: coords.top, right: coords.right }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: -BUBBLE_ARROW_SIZE / 2,
+          right: coords.iconWidth / 2 - BUBBLE_ARROW_SIZE / 2,
+          width: BUBBLE_ARROW_SIZE,
+          height: BUBBLE_ARROW_SIZE,
+          backgroundColor: '#FFFFFF',
+          transform: [{ rotate: '45deg' }],
+        }}
+      />
+      <View
+        className={`${widthClassName} overflow-hidden rounded-2xl bg-white`}
+        style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, maxHeight }}
+      >
+        {children}
+      </View>
+    </View>
+  );
+}
 
 interface Props {
   // First child in a `flex-row` renders on the physical right in this
@@ -183,28 +254,61 @@ export function HeaderMailIcon() {
   const { t } = useI18n();
   const { session } = useSession();
   const { reminder, loading } = useOpenSessionReminder(session?.user.id);
+  const currentSessionId = useTableSessionStore((s) => s.sessionId);
   const setTableSession = useTableSessionStore((s) => s.setTableSession);
   const [open, setOpen] = useState(false);
+  const { anchorRef, coords, openAt } = useBubbleAnchor();
+
+  // The RPC finds this diner's most-recently-joined still-open session
+  // regardless of whether they're currently sitting in it — so without this
+  // check, the reminder (and its unread dot) kept showing even right after
+  // tapping "התחברו לחשבון שלכם" and landing back in that exact session
+  // (reported gap, 2026-10-18). Comparing against the live store's own
+  // sessionId is what "already here, nothing to return to" actually means.
+  const hasPendingReminder = !!reminder && reminder.sessionId !== currentSessionId;
+
+  function handleReturn() {
+    if (!reminder) return;
+    // Resuming, not joining — no qr_token re-scan needed. The RPC already
+    // proved this is a real, still-open session the caller legitimately
+    // belongs to; this just restores the local store so OrderingHeader's
+    // own screens have what they need, same as a real join-session
+    // response would have set.
+    setTableSession({
+      sessionId: reminder.sessionId,
+      participantId: reminder.participantId,
+      restaurantId: reminder.restaurantId,
+      restaurantName: reminder.restaurantName,
+      tableId: reminder.tableId,
+      tableNumber: reminder.tableNumber,
+      tableType: reminder.tableType,
+      sessionAccountNumber: reminder.sessionAccountNumber,
+      subAccountNumber: reminder.subAccountNumber,
+      barTicketNumber: reminder.barTicketNumber,
+      reviewVerificationCode: reminder.reviewVerificationCode,
+      qrToken: reminder.qrToken,
+    });
+    setOpen(false);
+    router.replace('/menu');
+  }
 
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
-        <View>
-          <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
-          {reminder && (
-            <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
-          )}
-        </View>
-      </Pressable>
+      <View ref={anchorRef} collapsable={false}>
+        <Pressable onPress={() => openAt(setOpen)} hitSlop={10}>
+          <View>
+            <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
+            {hasPendingReminder && (
+              <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
+            )}
+          </View>
+        </Pressable>
+      </View>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
-          <View className="mt-24 items-end px-4">
-            <Pressable
-              onPress={(e) => e.stopPropagation()}
-              className="w-80 overflow-hidden rounded-2xl bg-white"
-              style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 }}
-            >
+          <BubblePanel coords={coords}>
+            <Pressable onPress={(e) => e.stopPropagation()}>
               <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
                 {t('mailTitle')}
               </Text>
@@ -212,51 +316,29 @@ export function HeaderMailIcon() {
                 <View className="items-center py-8">
                   <ActivityIndicator color={colors.royalBlue} />
                 </View>
-              ) : reminder ? (
-                <View className="px-4 py-4">
-                  <Text className="text-sm leading-5 text-[#1B2430]">
+              ) : hasPendingReminder && reminder ? (
+                // Same row shape as HeaderBellIcon's notification list (dot +
+                // body text), per explicit request — this "inbox" only ever
+                // holds at most this one item today, but it should still
+                // read as one row in a list, not a one-off card+button.
+                <Pressable onPress={handleReturn} className="flex-row items-start px-4 py-3" style={{ gap: 8 }}>
+                  <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />
+                  <Text className="flex-1 text-sm leading-5 text-[#1B2430]">
                     {t('openSessionReminderPrefix')}
                     <Text style={{ fontWeight: '700' }}>{reminder.restaurantName}</Text>
                     {t('openSessionReminderMiddle')}
                     <Text style={{ fontWeight: '700' }}>{reminder.tableNumber}</Text>
                     {t('openSessionReminderSuffix')}
+                    <Text style={{ color: colors.skyLink, textDecorationLine: 'underline' }} onPress={handleReturn}>
+                      {t('returnToSessionLink')}
+                    </Text>
                   </Text>
-                  <Pressable
-                    onPress={() => {
-                      // Resuming, not joining — no qr_token re-scan needed.
-                      // The RPC already proved this is a real, still-open
-                      // session the caller legitimately belongs to; this
-                      // just restores the local store so OrderingHeader's
-                      // own screens have what they need, same as a real
-                      // join-session response would have set.
-                      setTableSession({
-                        sessionId: reminder.sessionId,
-                        participantId: reminder.participantId,
-                        restaurantId: reminder.restaurantId,
-                        restaurantName: reminder.restaurantName,
-                        tableId: reminder.tableId,
-                        tableNumber: reminder.tableNumber,
-                        tableType: reminder.tableType,
-                        sessionAccountNumber: reminder.sessionAccountNumber,
-                        subAccountNumber: reminder.subAccountNumber,
-                        barTicketNumber: reminder.barTicketNumber,
-                        reviewVerificationCode: reminder.reviewVerificationCode,
-                        qrToken: reminder.qrToken,
-                      });
-                      setOpen(false);
-                      router.replace('/menu');
-                    }}
-                    className="mt-3.5 items-center rounded-lg py-2.5"
-                    style={{ backgroundColor: colors.royalBlue }}
-                  >
-                    <Text className="text-sm font-semibold text-white">{t('returnToSessionButton')}</Text>
-                  </Pressable>
-                </View>
+                </Pressable>
               ) : (
                 <Text className="px-4 py-6 text-center text-sm text-[#9CA3AF]">{t('mailEmpty')}</Text>
               )}
             </Pressable>
-          </View>
+          </BubblePanel>
         </Pressable>
       </Modal>
     </>
@@ -277,31 +359,30 @@ export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId
   const { session } = useSession();
   const { loading, notifications, unreadCount, markRead } = useNotifications(session?.user.id);
   const [open, setOpen] = useState(false);
+  const { anchorRef, coords, openAt } = useBubbleAnchor();
 
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
-        <View>
-          <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
-          {unreadCount > 0 && (
-            <View
-              className="absolute -end-1.5 -top-1.5 min-w-[16px] items-center justify-center rounded-full px-1"
-              style={{ height: 16, backgroundColor: colors.danger }}
-            >
-              <Text className="text-[10px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</Text>
-            </View>
-          )}
-        </View>
-      </Pressable>
+      <View ref={anchorRef} collapsable={false}>
+        <Pressable onPress={() => openAt(setOpen)} hitSlop={10}>
+          <View>
+            <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
+            {unreadCount > 0 && (
+              <View
+                className="absolute -end-1.5 -top-1.5 min-w-[16px] items-center justify-center rounded-full px-1"
+                style={{ height: 16, backgroundColor: colors.danger }}
+              >
+                <Text className="text-[10px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              </View>
+            )}
+          </View>
+        </Pressable>
+      </View>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
-          <View className="mt-24 items-end px-4">
-            <Pressable
-              onPress={(e) => e.stopPropagation()}
-              className="max-h-96 w-80 overflow-hidden rounded-2xl bg-white"
-              style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 }}
-            >
+          <BubblePanel coords={coords} maxHeight={384}>
+            <Pressable onPress={(e) => e.stopPropagation()}>
               <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
                 {t('notificationsTitle')}
               </Text>
@@ -341,7 +422,7 @@ export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId
                 </View>
               )}
             </Pressable>
-          </View>
+          </BubblePanel>
         </Pressable>
       </Modal>
     </>
