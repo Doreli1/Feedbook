@@ -1252,6 +1252,7 @@ export type Database = {
           description: string | null
           hours: Json | null
           id: string
+          kosher_certificate_expires_at: string | null
           kosher_certificate_uploaded_at: string | null
           kosher_certificate_url: string | null
           kosher_status: string
@@ -1274,6 +1275,7 @@ export type Database = {
           description?: string | null
           hours?: Json | null
           id?: string
+          kosher_certificate_expires_at?: string | null
           kosher_certificate_uploaded_at?: string | null
           kosher_certificate_url?: string | null
           kosher_status?: string
@@ -1296,6 +1298,7 @@ export type Database = {
           description?: string | null
           hours?: Json | null
           id?: string
+          kosher_certificate_expires_at?: string | null
           kosher_certificate_uploaded_at?: string | null
           kosher_certificate_url?: string | null
           kosher_status?: string
@@ -2035,4 +2038,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

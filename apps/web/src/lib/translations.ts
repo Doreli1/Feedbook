@@ -113,6 +113,9 @@ const translations = {
     // ReviewSubmitForm.tsx usage of kosherCertified above has no icon of its
     // own, so it keeps the "✓" baked into the text.
     kosherCertifiedLabel: 'המסעדה מאושרת כשרות',
+    kosherExpiryLabel: 'תוקף התעודה עד',
+    kosherExpiredWarning: 'תוקף התעודה פג — יש לחדש ולהעלות תעודה מעודכנת.',
+    kosherExpiringSoonWarning: 'תוקף התעודה יפוג בעוד {days} ימים — מומלץ לחדש בקרוב.',
     kosherRemove: 'הסרת תעודה',
     kosherSectionHeading: 'כשרות',
     kosherRequiredHint: 'שדה חובה — יש להעלות תעודת כשרות כדי שהמסעדה תסומן כמאושרת.',
@@ -735,6 +738,9 @@ const translations = {
     kosherUploading: 'Uploading…',
     kosherCertified: 'Restaurant is kosher-certified ✓',
     kosherCertifiedLabel: 'Restaurant is kosher-certified',
+    kosherExpiryLabel: 'Certificate valid until',
+    kosherExpiredWarning: 'The certificate has expired — please renew and upload an updated one.',
+    kosherExpiringSoonWarning: 'The certificate expires in {days} days — renewal is recommended soon.',
     kosherRemove: 'Remove certificate',
     kosherSectionHeading: 'Kosher certification',
     kosherRequiredHint: 'Required — upload a kosher certificate for the restaurant to be marked as certified.',
