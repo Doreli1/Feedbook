@@ -48,5 +48,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Two advisories (braces/GHSA-vfj7-8cjw-p6xm, node-forge/GHSA-86w9-cpqp-85rv)
+      # are excluded via pnpm-workspace.yaml's auditConfig.ignoreGhsas, not a
+      # blanket --ignore-unfixable here: both are transitive dev-tooling deps
+      # pulled in deep inside Expo's own CLI/Metro chain (not Feedbook's own
+      # code, not shipped to end users), and as of 2026-10-18 neither has ANY
+      # patched version published yet (upstream "Patched versions: None") —
+      # pinning via pnpm.overrides would just force an equally-vulnerable
+      # version, not fix anything. Listed by ID in the project config (not a
+      # blanket flag) so a *future* unfixable advisory still fails CI and
+      # gets looked at, instead of being silently swallowed alongside these
+      # two — revisit the ignore list once either package ships a fix.
       - name: pnpm audit (high severity and above)
         run: pnpm audit --audit-level=high

@@ -23,7 +23,16 @@ overrides:
   # the vite 8 / Rolldown issue that led us to pin vite@7 in the first place.
   # @rollup/wasm-node is Rollup's own official pure-WASM build, published for
   # exactly this kind of locked-down environment — no native binary at all.
+  brace-expansion@>=4.0.0 <5.0.10: ^5.0.10
+  brace-expansion@>=4.0.0 <5.0.11: ^5.0.11
+  brace-expansion@>=4.0.0 <5.0.12: ^5.0.12
+  compression@<1.8.2: ^1.8.2
+  decode-uri-component@<=0.4.2: ^0.5.0
+  postcss-selector-parser@<7.1.6: ^7.1.6
   rollup: "npm:@rollup/wasm-node@4.63.1"
+  shell-quote@>=1.8.4 <1.11.0: ^1.11.0
+  source-map-js@>=1.0.0 <1.2.2: ^1.2.2
+  uuid@<11.1.1: ^11.1.1
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.23'
   - '@expo/metro-file-map@57.0.3'
@@ -34,3 +43,7 @@ minimumReleaseAgeExclude:
   - '@expo/ui@57.0.17'
   - expo-glass-effect@57.0.2
   - expo-router@57.0.20
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm
+    - GHSA-86w9-cpqp-85rv
