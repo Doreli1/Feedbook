@@ -444,7 +444,8 @@ const translations = {
     profitabilityIndirectCostLabel: 'עקיף:',
     profitabilityIndirectCostUnknown: 'עקיף: אין עדיין נתוני מכירות',
     overheadHeading: 'הוצאות עקיפות חודשיות',
-    overheadSubtitle: 'שכירות, חשמל/מים, שכר עבודה, ביטוח, שיווק ואחר — משמש לחישוב העלות העקיפה למנה במסך הרווחיות.',
+    overheadSubtitle:
+      'לכל קטגוריה, הזן/י את ההוצאה החודשית הממוצעת על פני השנה האחרונה (שכירות, חשמל/מים, שכר עבודה, ביטוח, שיווק ואחר) — משמש לחישוב העלות העקיפה למנה במסך הרווחיות.',
     overheadCategoryRent: 'שכירות',
     overheadCategoryUtilities: 'חשמל ומים',
     overheadCategoryLabor: 'שכר עבודה',
@@ -1047,7 +1048,8 @@ const translations = {
     profitabilityIndirectCostLabel: 'Indirect:',
     profitabilityIndirectCostUnknown: 'Indirect: no sales data yet',
     overheadHeading: 'Monthly overhead expenses',
-    overheadSubtitle: 'Rent, utilities, labor, insurance, marketing, and other — used to compute the indirect cost per dish on the profitability screen.',
+    overheadSubtitle:
+      "For each category, enter the average monthly amount over the past year (rent, utilities, labor, insurance, marketing, and other) — used to compute the indirect cost per dish on the profitability screen.",
     overheadCategoryRent: 'Rent',
     overheadCategoryUtilities: 'Utilities',
     overheadCategoryLabor: 'Labor',

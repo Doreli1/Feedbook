@@ -343,17 +343,21 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('restaurantDetailsSubtitle')}</p>
 
+        {/* Segmented-control style (2026-10-18, user feedback: the previous
+            underline tabs read as too subtle) — the active side gets its own
+            raised, bordered pill instead of just a thin underline + color
+            change, so which sub-tab is open is unmistakable at a glance. */}
         {restaurantId && (
-          <div className="mb-6 flex gap-1 border-b border-border">
+          <div className="mb-6 inline-flex rounded-lg border border-border bg-surface-2 p-1">
             {(['details', 'overhead'] as const).map((tabKey) => (
               <button
                 key={tabKey}
                 type="button"
                 onClick={() => setSubTab(tabKey)}
-                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
                   subTab === tabKey
-                    ? 'border-accent font-semibold text-accent'
-                    : 'border-transparent text-muted-foreground hover:text-ink'
+                    ? 'bg-surface font-semibold text-accent shadow-sm'
+                    : 'text-muted-foreground hover:text-ink'
                 }`}
               >
                 {t(tabKey === 'details' ? 'restaurantDetailsSubTabDetails' : 'restaurantDetailsSubTabOverhead')}
