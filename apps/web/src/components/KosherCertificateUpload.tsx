@@ -101,17 +101,35 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
       {isCertified ? (
         <div className="mb-3 flex items-center justify-between gap-2 rounded border border-success bg-success-soft px-3 py-3 text-sm text-success">
           {t('kosherCertified')}
-          <Tooltip content={t('kosherRemove')}>
-            <button
-              type="button"
-              onClick={() => void handleRemove()}
-              disabled={uploadState === 'uploading'}
-              aria-label={t('kosherRemove')}
-              className="shrink-0 rounded p-1.5 text-success hover:bg-danger-soft hover:text-danger disabled:opacity-50"
-            >
-              <TrashIcon className="h-4 w-4" />
-            </button>
-          </Tooltip>
+          {/* Replacing a certificate previously required removing the old
+              one first (the only action shown here was the trash button),
+              which read as "no way to upload a new one" (reported gap,
+              2026-10-18) — this re-uses the same upload endpoint, which
+              already upserts and overwrites on a POST either way. */}
+          <div className="flex shrink-0 items-center gap-1">
+            <Tooltip content={t('kosherReplace')}>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadState === 'uploading'}
+                aria-label={t('kosherReplace')}
+                className="rounded p-1.5 text-success hover:bg-accent-soft hover:text-accent disabled:opacity-50"
+              >
+                <UploadIcon className="h-4 w-4" />
+              </button>
+            </Tooltip>
+            <Tooltip content={t('kosherRemove')}>
+              <button
+                type="button"
+                onClick={() => void handleRemove()}
+                disabled={uploadState === 'uploading'}
+                aria-label={t('kosherRemove')}
+                className="rounded p-1.5 text-success hover:bg-danger-soft hover:text-danger disabled:opacity-50"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          </div>
         </div>
       ) : (
         <div className="mb-3">
@@ -135,15 +153,18 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
             <span className="font-medium">{uploadState === 'uploading' ? t('kosherUploading') : t('kosherYesUpload')}</span>
           </button>
           {required && <p className="mt-1 text-xs text-danger">{t('kosherRequiredHint')}</p>}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,application/pdf"
-            className="hidden"
-            onChange={(e) => void handleFileChange(e)}
-          />
         </div>
       )}
+
+      {/* Shared by both branches above — the certified branch's "replace"
+          button also triggers this same hidden input. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,application/pdf"
+        className="hidden"
+        onChange={(e) => void handleFileChange(e)}
+      />
 
       {error && (
         <div className="mb-3 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>
