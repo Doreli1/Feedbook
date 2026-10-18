@@ -53,7 +53,36 @@ interface TrackedItem {
   barTicketNumber: number | null;
 }
 
-const EDIT_WINDOW_MINUTES = 5;
+const DEFAULT_EDIT_WINDOW_MINUTES = 5;
+
+// Real bug fixed 2026-10-18 (user report): this used to be a hardcoded 5
+// regardless of what the restaurant actually configured
+// (restaurants.cancellation_window_minutes, set in Web Admin's
+// RestaurantDetailsForm.tsx) — a restaurant that set e.g. 10 minutes still
+// had every edit/cancel button disappear at 5, both here and (more
+// importantly, since client-side gating alone was never authoritative) in
+// update-order-item's own server-side check. null (restaurant never
+// configured it) falls back to 5, matching every restaurant's behavior
+// before this fix; an explicit 0 blocks modification entirely. Same
+// one-field-fetch pattern as useRestaurantVatRate (MenuBrowser.tsx) — a
+// rarely-changed setting, not something that needs to update mid-session.
+function useRestaurantEditWindowMinutes(restaurantId: string | null) {
+  const [minutes, setMinutes] = useState(DEFAULT_EDIT_WINDOW_MINUTES);
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('restaurants').select('cancellation_window_minutes').eq('id', restaurantId).single();
+      if (!cancelled) setMinutes(data?.cancellation_window_minutes ?? DEFAULT_EDIT_WINDOW_MINUTES);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId]);
+
+  return minutes;
+}
 
 // The already-decided visual design (project memory
 // project_stage5_alignment_decisions, "Style B" comparison artifact): a
@@ -152,6 +181,7 @@ function PolicyBullet({ text }: { text: string }) {
 function OrderItemCard({
   item,
   highlighted,
+  editWindowMinutes,
   onCancelled,
   onChanged,
   onEdit,
@@ -159,6 +189,9 @@ function OrderItemCard({
 }: {
   item: TrackedItem;
   highlighted: boolean;
+  // The restaurant's own configured window (useRestaurantEditWindowMinutes),
+  // not a fixed constant — see that hook's comment.
+  editWindowMinutes: number;
   onCancelled: (id: string) => void;
   onChanged: () => void;
   // Set by the parent only when this item's dish is still on the live menu
@@ -173,10 +206,10 @@ function OrderItemCard({
   const [showReasonModal, setShowReasonModal] = useState(false);
 
   const elapsedMinutes = (Date.now() - new Date(item.placedAt).getTime()) / 60000;
-  const canModify = item.status === 'in_progress' && elapsedMinutes <= EDIT_WINDOW_MINUTES;
-  // Distinguishes "can no longer act because the 5-minute window passed"
-  // from "can no longer act because it's already ready/served/cancelled" —
-  // only the former needs an explanation, since the latter is already
+  const canModify = item.status === 'in_progress' && editWindowMinutes > 0 && elapsedMinutes <= editWindowMinutes;
+  // Distinguishes "can no longer act because the edit window passed" from
+  // "can no longer act because it's already ready/served/cancelled" — only
+  // the former needs an explanation, since the latter is already
   // self-evident from the status pill/timeline itself.
   const editWindowExpired = item.status === 'in_progress' && !canModify;
 
@@ -290,7 +323,7 @@ function OrderItemCard({
 
       {canModify && (
         <View className="mt-3" style={{ gap: 5 }}>
-          <PolicyBullet text={t('orderEditPolicyBullet').replace('{minutes}', String(EDIT_WINDOW_MINUTES))} />
+          <PolicyBullet text={t('orderEditPolicyBullet').replace('{minutes}', String(editWindowMinutes))} />
           <PolicyBullet text={t('orderFreeCancelBullet')} />
         </View>
       )}
@@ -318,7 +351,7 @@ function OrderItemCard({
             </View>
           </View>
           <Text className="flex-1 text-sm text-[#6E6A61]" style={{ lineHeight: NOTE_LINE_HEIGHT }}>
-            {t('orderEditWindowPassedNote').replace('{minutes}', String(EDIT_WINDOW_MINUTES))}
+            {t('orderEditWindowPassedNote').replace('{minutes}', String(editWindowMinutes))}
           </Text>
         </View>
       )}
@@ -415,6 +448,7 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
   // state with the Menu tab's own instance — same per-tab-fetches-what-it-
   // needs convention already used throughout this app (AccountScreen, etc).
   const { data: menuData } = useMenuData(restaurantId);
+  const editWindowMinutes = useRestaurantEditWindowMinutes(restaurantId);
   const [items, setItems] = useState<TrackedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingTrackedItem, setEditingTrackedItem] = useState<TrackedItem | null>(null);
@@ -628,6 +662,7 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
               key={item.id}
               item={item}
               highlighted={item.id === highlightedId}
+              editWindowMinutes={editWindowMinutes}
               onCancelled={(id) => setJustCancelledIds((prev) => new Set(prev).add(id))}
               onChanged={() => void fetchItems()}
               onEdit={dishById.has(item.dishId) ? () => setEditingTrackedItem(item) : undefined}

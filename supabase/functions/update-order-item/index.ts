@@ -10,8 +10,15 @@
 // Guards, both from the mockup's own documented rule ("תוכלו לבצע שינויים
 // אונליין ... ולא יאוחר מ-5 דקות אחרי ההזמנה"):
 //   - the item must still be status = 'in_progress' (ITEM_ALREADY_READY)
-//   - the edit must happen within 5 minutes of the order's placed_at
-//     (EDIT_WINDOW_EXPIRED)
+//   - the edit must happen within the restaurant's own configured
+//     cancellation_window_minutes of the order's placed_at
+//     (EDIT_WINDOW_EXPIRED) — real bug fixed 2026-10-18: this used to be a
+//     hardcoded 5 regardless of what the restaurant configured in
+//     RestaurantDetailsForm.tsx, so a restaurant that set e.g. 10 minutes
+//     still had every edit/cancel rejected at 5. null (never configured)
+//     falls back to 5, matching every restaurant's behavior before this
+//     fix; an explicit 0 blocks edits entirely, matching the
+//     cancellationNotAllowed messaging restaurant-details.tsx already has.
 //
 // "update" re-prices the item via update_order_item_transaction()
 // (20260914095000, extended 2026-10-11 to also accept quantity and
@@ -44,7 +51,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "PATCH, OPTIONS",
 };
 
-const EDIT_WINDOW_MINUTES = 5;
+const DEFAULT_EDIT_WINDOW_MINUTES = 5;
 
 function jsonResponse(body: unknown, status: number) {
   return new Response(JSON.stringify(body), {
@@ -131,7 +138,9 @@ Deno.serve(async (req) => {
 
   const { data: orderItem, error: itemError } = await admin
     .from("order_items")
-    .select("id, status, order_id, orders!inner(id, participant_id, placed_at, session_participants!inner(user_id))")
+    .select(
+      "id, status, order_id, orders!inner(id, participant_id, placed_at, session_participants!inner(user_id), table_sessions!inner(restaurants!inner(cancellation_window_minutes)))",
+    )
     .eq("id", orderItemId)
     .maybeSingle();
 
@@ -139,10 +148,17 @@ Deno.serve(async (req) => {
     return errorResponse("FORBIDDEN", "Order item not found", 403);
   }
 
-  // Supabase-js nests the joined rows under their table name; both
-  // orders/session_participants come back as single objects here since
-  // both relationships are to-one from order_items' perspective.
-  const order = orderItem.orders as unknown as { id: string; participant_id: string; placed_at: string; session_participants: { user_id: string | null } };
+  // Supabase-js nests the joined rows under their table name; all of
+  // orders/session_participants/table_sessions/restaurants come back as
+  // single objects here since every relationship is to-one from
+  // order_items' perspective.
+  const order = orderItem.orders as unknown as {
+    id: string;
+    participant_id: string;
+    placed_at: string;
+    session_participants: { user_id: string | null };
+    table_sessions: { restaurants: { cancellation_window_minutes: number | null } };
+  };
   if (!order || order.session_participants?.user_id !== callerId) {
     return errorResponse("FORBIDDEN", "Caller does not own this order item", 403);
   }
@@ -151,10 +167,12 @@ Deno.serve(async (req) => {
     return errorResponse("ITEM_ALREADY_READY", "This item can no longer be modified", 409);
   }
 
+  const configuredWindow = order.table_sessions?.restaurants?.cancellation_window_minutes;
+  const editWindowMinutes = configuredWindow ?? DEFAULT_EDIT_WINDOW_MINUTES;
   const placedAt = new Date(order.placed_at).getTime();
   const elapsedMinutes = (Date.now() - placedAt) / 60000;
-  if (elapsedMinutes > EDIT_WINDOW_MINUTES) {
-    return errorResponse("EDIT_WINDOW_EXPIRED", "The 5-minute edit window for this order has passed", 409);
+  if (editWindowMinutes <= 0 || elapsedMinutes > editWindowMinutes) {
+    return errorResponse("EDIT_WINDOW_EXPIRED", "The edit window for this order has passed", 409);
   }
 
   if (action === "cancel") {
