@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Restaurant } from '@feedbook/types';
 import { Tooltip } from './Tooltip';
-import { TrashIcon, UploadIcon, CheckIcon } from './Icons';
+import { TrashIcon, CheckIcon } from './Icons';
 import { useI18n } from '../lib/i18n';
 
 function isPdfUrl(url: string): boolean {
@@ -114,15 +114,17 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
           tile always opens the file picker, whether replacing an existing
           certificate or uploading the first one; the corner remove button
           only appears once there's something to remove. */}
-      {/* justify-end puts the tile at the physical right (per explicit
-          request) — same convention as the Save/Back button row further
-          down this screen. */}
-      <div className="relative flex justify-end">
+      {/* justify-start puts the tile at the physical right under this app's
+          RTL (confirmed against the Save/Back row earlier on this same
+          screen, which needed justify-end for the opposite, physical-left
+          placement — logical-property "end" is left in RTL, not right). */}
+      <div className="relative flex justify-start">
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadState === 'uploading'}
-          className={`flex h-24 w-24 items-center justify-center overflow-hidden rounded border-2 border-dashed transition-colors hover:border-accent disabled:opacity-50 ${
+          aria-label={t('kosherYesUpload')}
+          className={`group flex h-24 w-24 items-center justify-center overflow-hidden rounded border-2 border-dashed bg-surface transition-colors hover:border-accent disabled:opacity-50 ${
             required && !isCertified ? 'border-danger' : 'border-border'
           }`}
         >
@@ -135,10 +137,9 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
               <img src={certificateUrl} alt="" className="h-full w-full object-contain" />
             )
           ) : (
-            <span className="flex flex-col items-center gap-1 text-muted-foreground hover:text-accent">
-              <UploadIcon className="h-5 w-5" />
-              <span className="text-[11px] font-medium">{t('kosherYesUpload')}</span>
-            </span>
+            // Plain "+" like the dish-photo add control elsewhere in this
+            // app, rather than a cloud-upload icon + caption.
+            <span className="text-3xl font-light leading-none text-muted-foreground group-hover:text-accent">+</span>
           )}
         </button>
         {isCertified && (
