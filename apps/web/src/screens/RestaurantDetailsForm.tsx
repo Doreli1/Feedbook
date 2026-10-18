@@ -343,21 +343,23 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('restaurantDetailsSubtitle')}</p>
 
-        {/* Segmented-control style (2026-10-18, user feedback: the previous
-            underline tabs read as too subtle) — the active side gets its own
-            raised, bordered pill instead of just a thin underline + color
-            change, so which sub-tab is open is unmistakable at a glance. */}
+        {/* Back to the original underline-tab structure (2026-10-18, user
+            feedback on the segmented-control pill tried right before this),
+            but with a highlighted background, larger text and bolder weight
+            on the active side — same border-bottom+color idea as before,
+            just made more emphatic. Mirrors DashboardShell's own top-level
+            tab styling (border-accent + bg-accent-soft + text-accent). */}
         {restaurantId && (
-          <div className="mb-6 inline-flex rounded-lg border border-border bg-surface-2 p-1">
+          <div className="mb-6 flex gap-1 border-b border-border">
             {(['details', 'overhead'] as const).map((tabKey) => (
               <button
                 key={tabKey}
                 type="button"
                 onClick={() => setSubTab(tabKey)}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                className={`-mb-px rounded-t-md border-b-2 px-4 py-2 text-base transition-colors ${
                   subTab === tabKey
-                    ? 'bg-surface font-semibold text-accent shadow-sm'
-                    : 'text-muted-foreground hover:text-ink'
+                    ? 'border-accent bg-accent-soft font-bold text-accent'
+                    : 'border-transparent font-medium text-muted-foreground hover:bg-surface-2 hover:text-ink'
                 }`}
               >
                 {t(tabKey === 'details' ? 'restaurantDetailsSubTabDetails' : 'restaurantDetailsSubTabOverhead')}
