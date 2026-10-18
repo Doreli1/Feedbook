@@ -475,7 +475,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 7))}
             placeholder={t('phoneNumberPlaceholder')}
-            className="flex-1 rounded border border-border px-3 py-2 text-sm"
+            className="w-32 rounded border border-border px-3 py-2 text-sm"
           />
         </div>
         {phoneNumber !== '' && !isPhoneValid && (
