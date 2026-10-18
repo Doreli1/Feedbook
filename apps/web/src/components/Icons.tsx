@@ -268,3 +268,13 @@ export function ReviewsTabIcon({ className = 'h-4 w-4' }: { className?: string }
     </svg>
   );
 }
+
+export function OverheadTabIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  // Ionicons "trending-up-outline".
+  return (
+    <svg viewBox="0 0 512 512" fill="none" stroke="currentColor" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="352 144 464 144 464 256" />
+      <path d="M48,368,169.37,246.63a32,32,0,0,1,45.26,0l50.74,50.74a32,32,0,0,0,45.26,0L448,160" />
+    </svg>
+  );
+}

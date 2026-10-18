@@ -298,17 +298,6 @@ function ApprovedDashboard({
     >
       {tab === 'overview' && (
         <div className="space-y-4">
-          <ProfitabilityCard
-            dishes={dishes}
-            dishIngredients={dishIngredients}
-            ingredients={ingredients}
-            vatRatePercent={restaurant.vat_rate_percent}
-            totalMonthlyOverhead={totalMonthlyOverhead}
-            dishesSoldInWindow={dishesSoldInWindow}
-          />
-
-          <OverheadExpensesForm expenses={overheadExpenses} onSave={saveOverheadExpenses} />
-
           <div className="card p-6">
             <h2 className="mb-3 text-sm font-semibold text-ink">{t('lowStockAlertsHeading')}</h2>
             {lowStock.length === 0 ? (
@@ -333,6 +322,21 @@ function ApprovedDashboard({
       )}
 
       {tab === 'accounts' && <AccountsScreen />}
+
+      {tab === 'overhead' && (
+        <div className="space-y-4">
+          <ProfitabilityCard
+            dishes={dishes}
+            dishIngredients={dishIngredients}
+            ingredients={ingredients}
+            vatRatePercent={restaurant.vat_rate_percent}
+            totalMonthlyOverhead={totalMonthlyOverhead}
+            dishesSoldInWindow={dishesSoldInWindow}
+          />
+
+          <OverheadExpensesForm expenses={overheadExpenses} onSave={saveOverheadExpenses} />
+        </div>
+      )}
 
       {tab === 'menu' && (
         <div className="card p-6">
