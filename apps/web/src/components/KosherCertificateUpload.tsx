@@ -148,7 +148,7 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
 
   return (
     <>
-      <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+      <label className="mb-0.5 block text-xs font-semibold text-muted-foreground">
         {t('kosherUploadLabel')}
         {required && <span className="text-danger"> *</span>}
       </label>
@@ -236,7 +236,7 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
           restaurant prop stays current. */}
       {isCertified && (
         <div className="mt-3">
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('kosherExpiryLabel')}</label>
+          <label className="mb-1 block text-sm font-bold text-ink">{t('kosherExpiryLabel')}</label>
           <input
             type="date"
             value={expiryDate}
