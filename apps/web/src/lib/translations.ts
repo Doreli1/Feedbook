@@ -52,6 +52,8 @@ const translations = {
     restaurantDetailsTitle: 'פרטי המסעדה',
     restaurantDetailsSubtitle:
       'תודה שהצטרפת! נשמח להכיר את המסעדה שלך — הפרטים נשמרים אוטומטית תוך כדי מילוי.',
+    restaurantDetailsSubTabDetails: 'פרטי מסעדה',
+    restaurantDetailsSubTabOverhead: 'הוצאות עקיפות',
     restaurantName: 'שם המסעדה',
     restaurantLogo: 'לוגו המסעדה',
     logoUpload: 'העלאת לוגו',
@@ -667,6 +669,8 @@ const translations = {
     restaurantDetailsTitle: 'Restaurant Details',
     restaurantDetailsSubtitle:
       "Thanks for joining! We'd love to get to know your restaurant — details are saved automatically as you go.",
+    restaurantDetailsSubTabDetails: 'Restaurant details',
+    restaurantDetailsSubTabOverhead: 'Overhead expenses',
     restaurantName: 'Restaurant name',
     restaurantLogo: 'Restaurant logo',
     logoUpload: 'Upload logo',

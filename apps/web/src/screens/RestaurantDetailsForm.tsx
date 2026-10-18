@@ -5,6 +5,8 @@ import type { Restaurant } from '@feedbook/types';
 import { WizardShell } from '../components/WizardShell';
 import { Tooltip } from '../components/Tooltip';
 import { TrashIcon } from '../components/Icons';
+import { OverheadExpensesForm } from '../components/OverheadExpensesForm';
+import { useOverheadExpenses } from '../lib/useOverheadExpenses';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
@@ -130,6 +132,12 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const restaurantId = restaurant?.id ?? null;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sub-tab switcher, only meaningful once a real restaurant exists (the
+  // onboarding wizard's step 1, where restaurantId is still null, never
+  // shows it) — overhead expenses is operational data for an
+  // already-approved restaurant, not part of the signup flow.
+  const [subTab, setSubTab] = useState<'details' | 'overhead'>('details');
+  const { expenses, saveExpenses } = useOverheadExpenses(restaurantId ?? undefined);
 
   const isPhoneValid = phonePrefix !== '' && /^\d{7}$/.test(phoneNumber);
   const phone = isPhoneValid ? `${phonePrefix}-${phoneNumber}` : '';
@@ -305,6 +313,27 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         <h1 className="mb-1 text-xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t('restaurantDetailsSubtitle')}</p>
 
+        {restaurantId && (
+          <div className="mb-6 flex gap-1 border-b border-border">
+            {(['details', 'overhead'] as const).map((tabKey) => (
+              <button
+                key={tabKey}
+                type="button"
+                onClick={() => setSubTab(tabKey)}
+                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                  subTab === tabKey
+                    ? 'border-accent font-semibold text-accent'
+                    : 'border-transparent text-muted-foreground hover:text-ink'
+                }`}
+              >
+                {t(tabKey === 'details' ? 'restaurantDetailsSubTabDetails' : 'restaurantDetailsSubTabOverhead')}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {(!restaurantId || subTab === 'details') && (
+        <>
         <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('restaurantName')}</label>
         <input
           type="text"
@@ -522,6 +551,12 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           <span className="text-xs text-muted-foreground">%</span>
         </div>
         <p className="mb-4 text-[10px] text-muted-foreground">{t('vatRateHelp')}</p>
+        </>
+        )}
+
+        {restaurantId && subTab === 'overhead' && (
+          <OverheadExpensesForm expenses={expenses} onSave={saveExpenses} />
+        )}
 
         <div className="mb-4 min-h-5 text-xs">
           {saveState === 'incomplete' && <span className="text-muted-foreground">{t('fillRequiredFields')}</span>}
