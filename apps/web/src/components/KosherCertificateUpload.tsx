@@ -114,17 +114,20 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
           tile always opens the file picker, whether replacing an existing
           certificate or uploading the first one; the corner remove button
           only appears once there's something to remove. */}
-      <div className="relative">
+      {/* justify-end puts the tile at the physical right (per explicit
+          request) — same convention as the Save/Back button row further
+          down this screen. */}
+      <div className="relative flex justify-end">
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadState === 'uploading'}
-          className={`flex h-32 w-full items-center justify-center overflow-hidden rounded border-2 border-dashed transition-colors hover:border-accent disabled:opacity-50 ${
+          className={`flex h-24 w-24 items-center justify-center overflow-hidden rounded border-2 border-dashed transition-colors hover:border-accent disabled:opacity-50 ${
             required && !isCertified ? 'border-danger' : 'border-border'
           }`}
         >
           {uploadState === 'uploading' ? (
-            <span className="text-sm text-muted-foreground">{t('kosherUploading')}</span>
+            <span className="text-xs text-muted-foreground">{t('kosherUploading')}</span>
           ) : isCertified && certificateUrl ? (
             isPdfUrl(certificateUrl) ? (
               <span className="text-sm font-semibold text-muted-foreground">PDF</span>
@@ -132,9 +135,9 @@ export function KosherCertificateUpload({ session, restaurant, onUpdated, requir
               <img src={certificateUrl} alt="" className="h-full w-full object-contain" />
             )
           ) : (
-            <span className="flex flex-col items-center gap-1.5 text-sm text-muted-foreground hover:text-accent">
-              <UploadIcon className="h-6 w-6" />
-              <span className="font-medium">{t('kosherYesUpload')}</span>
+            <span className="flex flex-col items-center gap-1 text-muted-foreground hover:text-accent">
+              <UploadIcon className="h-5 w-5" />
+              <span className="text-[11px] font-medium">{t('kosherYesUpload')}</span>
             </span>
           )}
         </button>
