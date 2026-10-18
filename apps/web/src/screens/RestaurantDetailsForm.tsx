@@ -7,6 +7,7 @@ import { Tooltip } from '../components/Tooltip';
 import { TrashIcon } from '../components/Icons';
 import { OverheadExpensesForm } from '../components/OverheadExpensesForm';
 import { useOverheadExpenses } from '../lib/useOverheadExpenses';
+import { KosherCertificateUpload } from '../components/KosherCertificateUpload';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
@@ -370,7 +371,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
 
         {(!restaurantId || subTab === 'details') && (
         <>
-        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('restaurantName')}</label>
+        <label className="mb-1 block text-sm font-bold text-ink">{t('restaurantName')}</label>
         <input
           type="text"
           value={name}
@@ -380,7 +381,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
 
         {restaurantId && (
           <div className="mb-3">
-            <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('restaurantLogo')}</label>
+            <label className="mb-1 block text-sm font-bold text-ink">{t('restaurantLogo')}</label>
             <div className="flex items-center gap-3">
               {logoFile || logoUrl ? (
                 <img
@@ -410,7 +411,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           </div>
         )}
 
-        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('restaurantDescription')}</label>
+        <label className="mb-1 block text-sm font-bold text-ink">{t('restaurantDescription')}</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -419,7 +420,19 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           className="mb-3 w-full resize-y rounded border border-border px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('cuisineTags')}</label>
+        {/* Positioned above cuisine style per the user's request (2026-10-18)
+            — only in the edit-from-Dashboard context (restaurant truthy),
+            same gating as the overhead-expenses sub-tab: a brand-new draft
+            restaurant has no id yet for the upload Edge Function to attach
+            a certificate to. */}
+        {restaurant && (
+          <>
+            <label className="mb-1 block text-sm font-bold text-ink">{t('kosherSectionHeading')}</label>
+            <KosherCertificateUpload session={session} restaurant={restaurant} onUpdated={() => onSaved?.()} />
+          </>
+        )}
+
+        <label className="mb-1 block text-sm font-bold text-ink">{t('cuisineTags')}</label>
         <div className="mb-1 flex flex-wrap gap-2">
           {Object.entries(CUISINE_TAG_KEYS).map(([tag, key]) => {
             const selected = cuisineTags.includes(tag);
@@ -449,7 +462,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         )}
         {!isCertified && <div className="mb-3" />}
 
-        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('address')}</label>
+        <label className="mb-1 block text-sm font-bold text-ink">{t('address')}</label>
         <input
           type="text"
           value={address}
@@ -457,7 +470,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           className="mb-3 w-full rounded border border-border px-3 py-2 text-sm"
         />
 
-        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('phone')}</label>
+        <label className="mb-1 block text-sm font-bold text-ink">{t('phone')}</label>
         <div dir="ltr" className="mb-1 flex gap-2">
           <select
             value={phonePrefix}
@@ -485,7 +498,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         )}
         {(phoneNumber === '' || isPhoneValid) && <div className="mb-3" />}
 
-        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('hours')}</label>
+        <label className="mb-1 block text-sm font-bold text-ink">{t('hours')}</label>
         <div className="mb-2 space-y-2">
           {hourRules.map((rule) => (
             <div key={rule.key} className="flex flex-wrap items-center gap-1.5 rounded border border-border bg-surface-2 p-2">
@@ -558,7 +571,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           </p>
         )}
 
-        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('cancellationWindow')}</label>
+        <label className="mb-1 block text-sm font-bold text-ink">{t('cancellationWindow')}</label>
         <div className="mb-1 flex items-center gap-2">
           <input
             type="number"
@@ -572,7 +585,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         </div>
         <p className="mb-4 text-[10px] text-muted-foreground">{t('cancellationWindowHelp')}</p>
 
-        <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t('vatRateLabel')}</label>
+        <label className="mb-1 block text-sm font-bold text-ink">{t('vatRateLabel')}</label>
         <div className="mb-1 flex items-center gap-2">
           <input
             type="number"
