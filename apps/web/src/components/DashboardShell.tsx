@@ -1,11 +1,11 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Restaurant } from '@feedbook/types';
 import { TopBar, type TopBarNotification } from './TopBar';
-import { AccountsTabIcon, BellIcon, DashboardIcon, InventoryIcon, MenuTabIcon, OrdersTabIcon, OverheadTabIcon, ReviewsTabIcon, TablesTabIcon, TeamTabIcon } from './Icons';
+import { AccountsTabIcon, BellIcon, DashboardIcon, InventoryIcon, MenuTabIcon, OrdersTabIcon, ReviewsTabIcon, TablesTabIcon, TeamTabIcon } from './Icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
-export type DashboardTab = 'overview' | 'accounts' | 'overhead' | 'menu' | 'inventory' | 'orders' | 'service' | 'reviews' | 'tables' | 'team';
+export type DashboardTab = 'overview' | 'accounts' | 'menu' | 'inventory' | 'orders' | 'service' | 'reviews' | 'tables' | 'team';
 
 // Stage 6/7 prep (2026-10-13, user request): "חשבונות" placed right after
 // "בקרת מסעדה" (overview) — it's billing/financial, closer in kind to the
@@ -14,17 +14,10 @@ export type DashboardTab = 'overview' | 'accounts' | 'overhead' | 'menu' | 'inve
 // Both render as skeleton/coming-soon screens for now, same convention
 // already established for ServiceScreen's own "אי-התאמות" sub-tab — real
 // payment (Stage 6) and review (Stage 7) logic isn't built yet.
-//
-// "overhead" (2026-10-18, user request) placed right after it — moved out
-// of the overview tab, where ProfitabilityCard + OverheadExpensesForm used
-// to sit buried among low-stock alerts and other unrelated cards; this is
-// a real, already-built feature (unlike accounts/reviews above), just
-// relocated to its own tab.
-const TABS: DashboardTab[] = ['overview', 'accounts', 'overhead', 'menu', 'inventory', 'orders', 'service', 'reviews', 'tables', 'team'];
+const TABS: DashboardTab[] = ['overview', 'accounts', 'menu', 'inventory', 'orders', 'service', 'reviews', 'tables', 'team'];
 const TAB_LABEL_KEYS: Record<DashboardTab, TranslationKey> = {
   overview: 'dashboardTabOverview',
   accounts: 'dashboardTabAccounts',
-  overhead: 'dashboardTabOverhead',
   menu: 'dashboardTabMenu',
   inventory: 'dashboardTabInventory',
   orders: 'dashboardTabOrders',
@@ -40,7 +33,6 @@ const TAB_LABEL_KEYS: Record<DashboardTab, TranslationKey> = {
 const TAB_ICONS: Record<DashboardTab, ComponentType<{ className?: string }>> = {
   overview: DashboardIcon,
   accounts: AccountsTabIcon,
-  overhead: OverheadTabIcon,
   menu: MenuTabIcon,
   inventory: InventoryIcon,
   orders: OrdersTabIcon,
