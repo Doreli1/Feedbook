@@ -326,7 +326,8 @@ export function HeaderMailIcon() {
 export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId: string | null; orderItemId: string | null }) => void }) {
   const { t } = useI18n();
   const { session } = useSession();
-  const { loading, notifications, unreadCount, markRead } = useNotifications(session?.user.id);
+  const currentSessionId = useTableSessionStore((s) => s.sessionId);
+  const { loading, notifications, unreadCount, markRead } = useNotifications(session?.user.id, currentSessionId);
   const [open, setOpen] = useState(false);
 
   return (

@@ -33,12 +33,23 @@ interface RawRow {
 // same per-notification (not mark-all-on-open) read semantics. Fed by
 // place_order_transaction ("your order was placed") and
 // notify_order_item_cancelled ("your order was cancelled").
-export function useNotifications(userId: string | undefined) {
+//
+// Also scoped to the diner's current sessionId (2026-10-19, real gap
+// reported: re-joining the same table for a new visit still showed order
+// events from a forgotten earlier visit, since this only ever filtered by
+// user_id). session_id is null on notifications sent before this column
+// existed (20261019080000_notifications_session_scoped.sql) — those never
+// match and simply stop appearing, which is the right outcome for rows
+// with no session to scope them to, rather than leaving them as permanent
+// cross-session noise. HeaderBellIcon only renders inside the ordering
+// flow, where a live sessionId always exists; without one this returns
+// nothing instead of falling back to the old unscoped-by-session behavior.
+export function useNotifications(userId: string | undefined, sessionId: string | null | undefined) {
   const [notifications, setNotifications] = useState<DinerNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (!userId) {
+    if (!userId || !sessionId) {
       setNotifications([]);
       setLoading(false);
       return;
@@ -47,6 +58,7 @@ export function useNotifications(userId: string | undefined) {
       .from('notifications')
       .select('id, type, title, body, sent_at, read_at, related_order_id, related_order_item_id')
       .eq('user_id', userId)
+      .eq('session_id', sessionId)
       .order('sent_at', { ascending: false })
       .limit(50)
       .returns<RawRow[]>();
@@ -64,7 +76,7 @@ export function useNotifications(userId: string | undefined) {
       })),
     );
     setLoading(false);
-  }, [userId]);
+  }, [userId, sessionId]);
 
   useEffect(() => {
     setLoading(true);
@@ -72,13 +84,21 @@ export function useNotifications(userId: string | undefined) {
   }, [refresh]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !sessionId) return;
+    // Filtered to this session too — a channel scoped only to user_id would
+    // still fire (and trigger a refetch) for a different, unrelated
+    // session's events, the same cross-session bleed this hook's own query
+    // filter now avoids.
     const channel = supabase
-      .channel(`notifications-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => void refresh())
+      .channel(`notifications-${userId}-${sessionId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId},session_id=eq.${sessionId}` },
+        () => void refresh(),
+      )
       .subscribe();
     return () => void supabase.removeChannel(channel);
-  }, [userId, refresh]);
+  }, [userId, sessionId, refresh]);
 
   const markRead = useCallback(async (id: string) => {
     const readAt = new Date().toISOString();

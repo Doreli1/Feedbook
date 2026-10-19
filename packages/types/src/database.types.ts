@@ -807,6 +807,7 @@ export type Database = {
           related_order_id: string | null
           related_order_item_id: string | null
           sent_at: string
+          session_id: string | null
           staff_id: string | null
           title: string
           type: string
@@ -819,6 +820,7 @@ export type Database = {
           related_order_id?: string | null
           related_order_item_id?: string | null
           sent_at?: string
+          session_id?: string | null
           staff_id?: string | null
           title: string
           type: string
@@ -831,6 +833,7 @@ export type Database = {
           related_order_id?: string | null
           related_order_item_id?: string | null
           sent_at?: string
+          session_id?: string | null
           staff_id?: string | null
           title?: string
           type?: string
@@ -849,6 +852,13 @@ export type Database = {
             columns: ["related_order_item_id"]
             isOneToOne: false
             referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "table_sessions"
             referencedColumns: ["id"]
           },
           {
@@ -2038,3 +2048,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
