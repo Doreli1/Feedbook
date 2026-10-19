@@ -37,7 +37,7 @@ export function OrderingScreen() {
   // OrderTracker so it can highlight the specific item, requested
   // 2026-09-19 right after the notification feature itself.
   const [orderFocus, setOrderFocus] = useState<{ orderId: string | null; orderItemId: string | null } | null>(null);
-  const bodyOpacity = useRef(new Animated.Value(1)).current;
+  const [bodyOpacity] = useState(() => new Animated.Value(1));
   const subAccountNumber = useTableSessionStore((s) => s.subAccountNumber);
   const sessionId = useTableSessionStore((s) => s.sessionId);
   const participantId = useTableSessionStore((s) => s.participantId);

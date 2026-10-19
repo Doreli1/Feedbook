@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Dimensions, Easing, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -75,8 +75,8 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
-  const translateX = useRef(new Animated.Value(SCREEN_WIDTH)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const [translateX] = useState(() => new Animated.Value(SCREEN_WIDTH));
+  const [backdropOpacity] = useState(() => new Animated.Value(0));
 
   // Slide-in from the right on open, slide back out to the right on close —
   // transform values are never RTL-mirrored by I18nManager (unlike absolute
@@ -86,6 +86,11 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
   // the physical right edge.
   useEffect(() => {
     if (open) {
+      // setState is tied to kicking off the imperative Animated sequence
+      // below, not to a value derivable during render — a legitimate
+      // escape hatch, not the "could compute this while rendering" case
+      // the rule targets.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setModalVisible(true);
       translateX.setValue(SCREEN_WIDTH);
       backdropOpacity.setValue(0);

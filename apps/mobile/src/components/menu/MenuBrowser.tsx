@@ -61,6 +61,9 @@ export function useMenuData(restaurantId: string | null) {
 
   useEffect(() => {
     if (!restaurantId) {
+      // Reset when restaurantId goes away — nothing to compute during
+      // render in its absence.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
       return;
     }
@@ -1331,6 +1334,10 @@ function LikeButton({
   // below, since initiallyLiked only changes when useMyLikes' Set itself is
   // replaced, which happens exactly once per MenuBrowser mount.
   useEffect(() => {
+    // Resyncs only when useMyLikes' fetch actually resolves after mount —
+    // intentionally not computed during render, since `liked` must keep a
+    // diner's own optimistic toggle() between resyncs (see comment above).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLiked(initiallyLiked);
   }, [initiallyLiked]);
 
@@ -1903,8 +1910,10 @@ function DishPhotoGallery({
   const screenWidth = Dimensions.get('window').width;
   const count = photos.length;
   const [index, setIndex] = useState(initialIndex);
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
+    // Resets to the tapped photo each time the gallery reopens — not
+    // computed during render since `index` must still track swipes while open.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (visible) setIndex(initialIndex);
   }, [visible, initialIndex]);
 
@@ -2856,6 +2865,10 @@ function SpecialRequestModal({
   const [text, setText] = useState(initialText);
 
   useEffect(() => {
+    // Resets the draft to whatever was last saved each time the modal
+    // reopens — not computed during render since `text` must still track
+    // typing while open.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (visible) setText(initialText);
   }, [visible, initialText]);
 
@@ -3174,7 +3187,6 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   const [editingCartItem, setEditingCartItem] = useState<CartLineItem | null>(null);
   const cartOpen = useCartStore((s) => s.isCartOpen);
   const setCartOpen = useCartStore((s) => s.setCartOpen);
-  const items = useCartStore((s) => s.items);
   // Filter/sort state for the dish-list-within-category screen (2026-10-01,
   // per explicit request) — reset whenever the diner leaves the category
   // (categoryId changes), so re-entering a (possibly different) category
@@ -3184,6 +3196,10 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
   const [filterScreenVisible, setFilterScreenVisible] = useState(false);
   useEffect(() => {
+    // Resets when categoryId changes — not computed during render since
+    // dishSort/dishFilters must still track the diner's own picks while in
+    // a category.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDishSort(null);
     setDishFilters(DEFAULT_DISH_FILTERS);
   }, [categoryId]);

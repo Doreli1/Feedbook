@@ -3,6 +3,7 @@ packages:
   - "packages/*"
 allowBuilds:
   esbuild: true
+  unrs-resolver: true
 shamefullyHoist: true
 # Metro's crawler (metro-file-map) cannot reliably discover/hash files
 # reached through pnpm's .pnpm symlink store on Windows — confirmed against

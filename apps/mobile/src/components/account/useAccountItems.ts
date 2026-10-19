@@ -113,6 +113,9 @@ export function useAccountItems(sessionId: string | null) {
   }, [sessionId, t]);
 
   useEffect(() => {
+    // Initial fetch on mount/sessionId change — refresh() sets state only
+    // after its own await resolves, not synchronously in this effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
 

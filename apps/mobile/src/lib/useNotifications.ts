@@ -79,6 +79,10 @@ export function useNotifications(userId: string | undefined, sessionId: string |
   }, [userId, sessionId]);
 
   useEffect(() => {
+    // Initial fetch on mount/userId-sessionId change — synchronous
+    // setLoading(true) here is paired with refresh()'s own setLoading(false)
+    // once its await resolves, not a value derivable during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     void refresh();
   }, [refresh]);

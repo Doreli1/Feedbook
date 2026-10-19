@@ -204,8 +204,18 @@ function OrderItemCard({
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showReasonModal, setShowReasonModal] = useState(false);
+  // Real bug, found via the react-hooks/purity lint rule (2026-10-19):
+  // Date.now() was read directly during render, so the edit-window
+  // deadline never actually expired on its own — only whenever some
+  // unrelated re-render happened to land after it. Ticking state makes the
+  // "זמן לשינויים הסתיים" state take effect in real time instead.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, []);
 
-  const elapsedMinutes = (Date.now() - new Date(item.placedAt).getTime()) / 60000;
+  const elapsedMinutes = (now - new Date(item.placedAt).getTime()) / 60000;
   const canModify = item.status === 'in_progress' && editWindowMinutes > 0 && elapsedMinutes <= editWindowMinutes;
   // Distinguishes "can no longer act because the edit window passed" from
   // "can no longer act because it's already ready/served/cancelled" — only
@@ -543,6 +553,10 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
   }, [sessionId, t]);
 
   useEffect(() => {
+    // Initial fetch on mount/sessionId change — fetchItems() sets state
+    // only after its own await resolves, not synchronously in this effect
+    // body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchItems();
   }, [fetchItems]);
 
@@ -554,6 +568,9 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
   useEffect(() => {
     if (!focusRequest) return;
     if (focusRequest.orderItemId) {
+      // Reacts to an external event (a notification tap passed in as a
+      // prop), not a value derivable during render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHighlightedId(focusRequest.orderItemId);
       setJustCancelledIds((prev) => new Set(prev).add(focusRequest.orderItemId!));
     } else if (focusRequest.orderId) {

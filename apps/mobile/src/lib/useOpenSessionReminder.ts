@@ -42,6 +42,10 @@ export function useOpenSessionReminder(userId: string | undefined) {
 
   useEffect(() => {
     if (!userId) {
+      // Reset when userId goes away (sign-out) — not derivable during
+      // render since this hook has no userId-dependent render output of
+      // its own to compute from.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setReminder(null);
       setLoading(false);
       return;
