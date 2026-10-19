@@ -367,14 +367,33 @@ const translations = {
     accountTotalLabel: 'סך עלות',
     requestBillButton: 'סגרו חשבון',
     endVisitButton: 'סיימו ביקור',
-    // Split so the question clause can render bold, the rest regular
-    // weight (2026-10-19, user request) — AccountScreen.tsx renders these
-    // as two nested <Text> runs inside one tooltip bubble.
-    // Split so the question clause can render bold, the rest regular
-    // weight — AccountScreen.tsx renders these as two nested <Text> runs.
+    // Plain, unconditional line, no tooltip/bubble (2026-10-19, user
+    // request, final form after several earlier iterations).
     endVisitFreeTooltip: 'אתם יכולים לסיים את הביקור מתי שנוח לכם.',
     requestBillComingSoonTitle: 'בקרוב',
     requestBillComingSoonMessage: 'בקשת חשבון וסגירת תשלום יהיו זמינות כאן בקרוב.',
+    // "End visit without an order" flow (2026-10-19, user request):
+    // confirm → pick a reason (+ "אחר" free text) → personalized success.
+    endVisitConfirmTitle: 'סיום ביקור',
+    endVisitConfirmMessage: 'פעולה זו תסיים את הביקור שלכם במסעדה. תוכלו להמשיך ולהזמין בכל עת כל עוד לא סיימתם.',
+    endVisitConfirmContinueButton: 'המשך',
+    endVisitConfirmBackButton: 'חזור',
+    endVisitReasonTitle: 'מה הסיבה לסיום הביקור?',
+    endVisitReasonOption1: 'התפריט לא התאים לי',
+    endVisitReasonOption2: 'המחירים לא התאימו לי',
+    endVisitReasonOption3: 'הצטרפתי בטעות',
+    endVisitReasonOption4: 'רק רציתי לעיין בתפריט',
+    endVisitReasonOption5: 'התחרטתי ואני רוצה לעזוב',
+    endVisitReasonOther: 'אחר',
+    endVisitReasonOtherPlaceholder: 'כתבו כאן את הסיבה...',
+    endVisitReasonBackButton: 'חזור',
+    endVisitReasonContinueButton: 'סיימו',
+    endVisitDoneGreetingPrefix: 'תודה, ',
+    endVisitDoneGreetingFallback: 'תודה',
+    endVisitDoneMessage: 'הביקור שלכם הסתיים בהצלחה. נשמח לראותכם בפעם הבאה.',
+    endVisitFailedTitle: 'לא הצלחנו לסיים את הביקור',
+    endVisitFailedMessage: 'משהו השתבש בסיום הביקור. נסו שוב בעוד רגע.',
+    endVisitHasPendingOrdersMessage: 'התקבלה הזמנה חדשה בחשבון שלכם - לא ניתן לסיים את הביקור כרגע.',
     accountNoItemsYet: 'עדיין לא הוזמנו מנות.',
 
     // Restaurant details
@@ -726,6 +745,26 @@ const translations = {
     endVisitFreeTooltip: 'You can end your visit whenever it suits you.',
     requestBillComingSoonTitle: 'Coming soon',
     requestBillComingSoonMessage: 'Requesting the bill and closing payment will be available here soon.',
+    endVisitConfirmTitle: 'End visit',
+    endVisitConfirmMessage: 'This will end your visit to the restaurant. You can keep ordering any time until you do.',
+    endVisitConfirmContinueButton: 'Continue',
+    endVisitConfirmBackButton: 'Back',
+    endVisitReasonTitle: 'Why are you ending your visit?',
+    endVisitReasonOption1: "The menu wasn't for me",
+    endVisitReasonOption2: "The prices weren't for me",
+    endVisitReasonOption3: 'I joined by mistake',
+    endVisitReasonOption4: 'I just wanted to browse the menu',
+    endVisitReasonOption5: 'I changed my mind and want to leave',
+    endVisitReasonOther: 'Other',
+    endVisitReasonOtherPlaceholder: 'Write the reason here...',
+    endVisitReasonBackButton: 'Back',
+    endVisitReasonContinueButton: 'Finish',
+    endVisitDoneGreetingPrefix: 'Thank you, ',
+    endVisitDoneGreetingFallback: 'Thank you',
+    endVisitDoneMessage: 'Your visit has ended. We hope to see you again soon.',
+    endVisitFailedTitle: "We couldn't end your visit",
+    endVisitFailedMessage: 'Something went wrong ending your visit. Please try again in a moment.',
+    endVisitHasPendingOrdersMessage: "A new order just came in on your account — you can't end your visit right now.",
     accountNoItemsYet: 'No dishes ordered yet.',
 
     kosherCertified: 'Kosher Certified',

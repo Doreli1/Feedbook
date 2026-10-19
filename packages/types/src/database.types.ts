@@ -1459,6 +1459,8 @@ export type Database = {
           is_host: boolean
           joined_at: string
           left_at: string | null
+          left_reason: string | null
+          left_reason_other: string | null
           review_verification_code: string
           session_id: string
           sub_account_number: string
@@ -1470,6 +1472,8 @@ export type Database = {
           is_host?: boolean
           joined_at?: string
           left_at?: string | null
+          left_reason?: string | null
+          left_reason_other?: string | null
           review_verification_code: string
           session_id: string
           sub_account_number: string
@@ -1481,6 +1485,8 @@ export type Database = {
           is_host?: boolean
           joined_at?: string
           left_at?: string | null
+          left_reason?: string | null
+          left_reason_other?: string | null
           review_verification_code?: string
           session_id?: string
           sub_account_number?: string

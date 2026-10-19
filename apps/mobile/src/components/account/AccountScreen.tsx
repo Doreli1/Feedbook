@@ -4,12 +4,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CallWaiterInlineTrigger } from '../CallWaiterButton';
+import { ConfirmModal } from '../ConfirmModal';
+import { ErrorModal } from '../ErrorModal';
 import { useI18n } from '../../lib/i18n';
 import { formatPrice } from '../../lib/formatPrice';
+import { supabase } from '../../lib/supabase';
+import { extractFunctionErrorCode } from '../../lib/functionError';
 import { useTableSessionStore } from '../../lib/tableSessionStore';
 import { colors } from '../../theme';
 import { useAccountItems, type AccountItem } from './useAccountItems';
 import { useSessionParticipants, type SessionParticipant } from './useSessionParticipants';
+import { EndVisitReasonModal } from './EndVisitReasonModal';
 
 type AccountSubTab = 'general' | 'personal';
 
@@ -205,6 +210,8 @@ function StripCell({ label, value, icon }: { label: string; value: string; icon?
 export function AccountScreen() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const clearTableSession = useTableSessionStore((s) => s.clearTableSession);
   const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
   // A bar session is shared by any number of unrelated diners (no capacity
   // cap, no relationship between them — see scan-qr/index.ts's own
@@ -249,6 +256,41 @@ export function AccountScreen() {
     .filter((i) => i.participantId === participantId)
     .reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
   const hasNothingToPay = personalTotal === 0;
+
+  // "End visit without an order" flow (2026-10-19, user request): confirm
+  // → pick a reason → personalized success — see leave-session Edge
+  // Function for the real server-side action and its own zero-orders
+  // guard (never trust this screen's own hasNothingToPay alone for
+  // something that ends a diner's presence at the table).
+  const [endVisitConfirmOpen, setEndVisitConfirmOpen] = useState(false);
+  const [endVisitReasonOpen, setEndVisitReasonOpen] = useState(false);
+  const [endVisitBusy, setEndVisitBusy] = useState(false);
+  const [endVisitDoneOpen, setEndVisitDoneOpen] = useState(false);
+  const [endVisitErrorMessage, setEndVisitErrorMessage] = useState<string | null>(null);
+  const myFirstName = participants.find((p) => p.participantId === participantId)?.displayName.trim().split(/\s+/)[0] || null;
+
+  async function handleEndVisitReasonConfirm(reason: string, reasonOther: string | null) {
+    if (!sessionId || endVisitBusy) return;
+    setEndVisitBusy(true);
+    const { error } = await supabase.functions.invoke('leave-session', {
+      body: { session_id: sessionId, reason, reason_other: reasonOther },
+    });
+    setEndVisitBusy(false);
+    if (error) {
+      const code = await extractFunctionErrorCode(error);
+      setEndVisitReasonOpen(false);
+      setEndVisitErrorMessage(code === 'HAS_PENDING_ORDERS' ? t('endVisitHasPendingOrdersMessage') : t('endVisitFailedMessage'));
+      return;
+    }
+    setEndVisitReasonOpen(false);
+    setEndVisitDoneOpen(true);
+  }
+
+  function handleEndVisitDone() {
+    setEndVisitDoneOpen(false);
+    clearTableSession();
+    router.replace('/profile');
+  }
 
   const infoRows: {
     labelKey: 'accountStripTableLabel' | 'accountStripGeneralLabel' | 'personalAccountNumberLabel' | 'lockedReviewCodeLabel';
@@ -358,13 +400,58 @@ export function AccountScreen() {
             an explicit shared height is what makes them line up) — matches
             CartBarInlineTrigger/placeOrderButton (MenuBrowser.tsx) exactly. */}
         <Pressable
-          onPress={() => setBillComingSoonOpen(true)}
+          onPress={() => (hasNothingToPay ? setEndVisitConfirmOpen(true) : setBillComingSoonOpen(true))}
           className="items-center justify-center rounded-xl"
           style={{ backgroundColor: colors.royalBlue, minHeight: 48 }}
         >
           <Text className="text-lg font-semibold text-white">{t(hasNothingToPay ? 'endVisitButton' : 'requestBillButton')}</Text>
         </Pressable>
       </View>
+
+      <ConfirmModal
+        visible={endVisitConfirmOpen}
+        title={t('endVisitConfirmTitle')}
+        message={t('endVisitConfirmMessage')}
+        cancelLabel={t('endVisitConfirmBackButton')}
+        confirmLabel={t('endVisitConfirmContinueButton')}
+        onCancel={() => setEndVisitConfirmOpen(false)}
+        onConfirm={() => {
+          setEndVisitConfirmOpen(false);
+          setEndVisitReasonOpen(true);
+        }}
+      />
+
+      <EndVisitReasonModal
+        visible={endVisitReasonOpen}
+        busy={endVisitBusy}
+        onBack={() => setEndVisitReasonOpen(false)}
+        onConfirm={handleEndVisitReasonConfirm}
+      />
+
+      <Modal visible={endVisitDoneOpen} transparent animationType="fade" onRequestClose={handleEndVisitDone}>
+        <View className="flex-1 items-center justify-center bg-black/40 px-6">
+          <View className="w-full max-w-sm items-center rounded-2xl bg-white p-5">
+            <View className="mb-3 h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: colors.successSoft }}>
+              <Ionicons name="checkmark" size={26} color={colors.success} />
+            </View>
+            <Text className="mb-2 text-center text-lg font-bold text-[#1B2430]">
+              {myFirstName ? `${t('endVisitDoneGreetingPrefix')}${myFirstName}!` : t('endVisitDoneGreetingFallback')}
+            </Text>
+            <Text className="mb-5 text-center text-sm leading-5 text-[#6E6A61]">{t('endVisitDoneMessage')}</Text>
+            <Pressable onPress={handleEndVisitDone} className="w-full items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
+              <Text className="font-semibold text-white">{t('gotIt')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <ErrorModal
+        visible={endVisitErrorMessage !== null}
+        title={t('endVisitFailedTitle')}
+        message={endVisitErrorMessage ?? ''}
+        dismissLabel={t('gotIt')}
+        onDismiss={() => setEndVisitErrorMessage(null)}
+      />
 
       <Modal visible={infoOpen} transparent animationType="fade" onRequestClose={() => setInfoOpen(false)}>
         <View className="flex-1 items-center justify-center bg-black/40 px-6">
