@@ -21,6 +21,7 @@ const translations = {
 
     // Header menu (⋮)
     restaurantDetailsMenuItem: 'עיינו בפרטי המסעדה',
+    testDisconnectSessionMenuItem: 'ניתוק מהסשן (בדיקות)',
     languageMenuItem: 'שפה',
     currencyMenuItem: 'מטבע',
     comingSoon: 'בקרוב',
@@ -365,6 +366,13 @@ const translations = {
     serviceFeeDisclaimerEmphasis: 'אינם כלולים בחשבון',
     accountTotalLabel: 'סך עלות',
     requestBillButton: 'סגרו חשבון',
+    endVisitButton: 'סיימו ביקור',
+    // Split so the question clause can render bold, the rest regular
+    // weight (2026-10-19, user request) — AccountScreen.tsx renders these
+    // as two nested <Text> runs inside one tooltip bubble.
+    // Split so the question clause can render bold, the rest regular
+    // weight — AccountScreen.tsx renders these as two nested <Text> runs.
+    endVisitFreeTooltip: 'אתם יכולים לסיים את הביקור מתי שנוח לכם.',
     requestBillComingSoonTitle: 'בקרוב',
     requestBillComingSoonMessage: 'בקשת חשבון וסגירת תשלום יהיו זמינות כאן בקרוב.',
     accountNoItemsYet: 'עדיין לא הוזמנו מנות.',
@@ -406,6 +414,7 @@ const translations = {
     tableLabel: 'Table',
 
     restaurantDetailsMenuItem: 'View restaurant details',
+    testDisconnectSessionMenuItem: 'Disconnect from session (testing)',
     languageMenuItem: 'Language',
     currencyMenuItem: 'Currency',
     comingSoon: 'Coming soon',
@@ -713,6 +722,8 @@ const translations = {
     serviceFeeDisclaimerEmphasis: 'are not included in the bill',
     accountTotalLabel: 'Total',
     requestBillButton: 'Close the bill',
+    endVisitButton: 'End visit',
+    endVisitFreeTooltip: 'You can end your visit whenever it suits you.',
     requestBillComingSoonTitle: 'Coming soon',
     requestBillComingSoonMessage: 'Requesting the bill and closing payment will be available here soon.',
     accountNoItemsYet: 'No dishes ordered yet.',

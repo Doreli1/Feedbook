@@ -76,6 +76,14 @@ interface TableSessionState {
     reviewVerificationCode: string;
     qrToken: string;
   }) => void;
+  // Test-only utility (2026-10-19, user request): clears the local session
+  // state without touching the server — the table_sessions row stays
+  // `open`, exactly simulating a diner who walked away/went home without
+  // closing out, so the mail-icon "open visit" reminder (HeaderMailIcon)
+  // can be exercised without actually closing a real session first. Wired
+  // to a menu row in HeaderMenu's "⋮" dropdown, not a real diner-facing
+  // action.
+  clearTableSession: () => void;
   setHasHydrated: (hasHydrated: boolean) => void;
 }
 
@@ -96,6 +104,21 @@ export const useTableSessionStore = create<TableSessionState>()(
       qrToken: null,
       hasHydrated: false,
       setTableSession: (data) => set(data),
+      clearTableSession: () =>
+        set({
+          sessionId: null,
+          participantId: null,
+          restaurantId: null,
+          restaurantName: null,
+          tableId: null,
+          tableNumber: null,
+          tableType: null,
+          sessionAccountNumber: null,
+          subAccountNumber: null,
+          barTicketNumber: null,
+          reviewVerificationCode: null,
+          qrToken: null,
+        }),
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
     }),
     {

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { HeaderBackButton } from './AppHeader';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { useBurgerMenuStore } from '../lib/burgerMenuStore';
+import { useTableSessionStore } from '../lib/tableSessionStore';
 import { supabase } from '../lib/supabase';
 import { colors } from '../theme';
 
@@ -65,8 +67,11 @@ export function BurgerMenuButton() {
 
 export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
   const { t } = useI18n();
+  const router = useRouter();
   const open = useBurgerMenuStore((s) => s.open);
   const setOpen = useBurgerMenuStore((s) => s.setOpen);
+  const restaurantId = useTableSessionStore((s) => s.restaurantId);
+  const clearTableSession = useTableSessionStore((s) => s.clearTableSession);
   const [modalVisible, setModalVisible] = useState(false);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
@@ -192,6 +197,32 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
                   </View>
                 ))}
               </View>
+
+              {/* Test-only utility (2026-10-19, user request — this is the
+                  real "hamburger" menu, unlike AppHeader.tsx's "⋮" dropdown
+                  which an earlier attempt wrongly added this to) — clears
+                  the local session without closing anything server-side, so
+                  "diner walked away without paying" can be simulated to
+                  exercise the mail-icon open-visit reminder, instead of
+                  reaching into the DB to fake it. Not a real diner-facing
+                  feature, functional unlike the locked rows above; remove
+                  when no longer needed. */}
+              {!!restaurantId && (
+                <Pressable
+                  onPress={() => {
+                    setOpen(false);
+                    clearTableSession();
+                    router.replace('/profile');
+                  }}
+                  className="mx-4 mt-5 flex-row items-center gap-3 overflow-hidden rounded-xl bg-white px-4 py-3.5"
+                  style={{ borderColor: colors.danger, borderWidth: 1 }}
+                >
+                  <Ionicons name="construct-outline" size={20} color={colors.danger} />
+                  <Text className="flex-1 text-sm font-medium" style={{ color: colors.danger }}>
+                    {t('testDisconnectSessionMenuItem')}
+                  </Text>
+                </Pressable>
+              )}
             </ScrollView>
           </Pressable>
         </Animated.View>

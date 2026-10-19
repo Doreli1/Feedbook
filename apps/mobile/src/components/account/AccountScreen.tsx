@@ -26,23 +26,47 @@ function formatAmount(amount: number): string {
   return decimals === '00' ? groupedWhole : `${groupedWhole}.${decimals}`;
 }
 
+// The host's "מנהל/ת חשבון" status moved onto a small badge overlaid on
+// the avatar's own bottom edge, instead of a text line below it
+// (2026-10-19, user request — no name label under the avatar either, on
+// reconsideration) — a star pill with a white ring, the same "badge
+// pinned to an avatar's corner" pattern used for online/unread indicators
+// elsewhere.
 function ParticipantAvatar({ participant }: { participant: SessionParticipant }) {
-  const { t } = useI18n();
   const initial = participant.displayName.trim().charAt(0).toUpperCase() || '?';
   return (
     <View className="items-center" style={{ width: 56 }}>
-      {participant.photoUrl ? (
-        <Image source={{ uri: participant.photoUrl }} style={{ height: 44, width: 44, borderRadius: 22 }} />
-      ) : (
-        <View className="items-center justify-center" style={{ height: 44, width: 44, borderRadius: 22, backgroundColor: colors.royalBlue }}>
-          <Text className="text-sm font-bold text-white">{initial}</Text>
-        </View>
-      )}
-      {participant.isHost && (
-        <Text className="mt-1 text-center text-[10px] text-[#9CA3AF]" numberOfLines={1} adjustsFontSizeToFit>
-          {t('accountManagerLabel')}
-        </Text>
-      )}
+      <View style={{ position: 'relative' }}>
+        {participant.photoUrl ? (
+          <Image source={{ uri: participant.photoUrl }} style={{ height: 44, width: 44, borderRadius: 22 }} />
+        ) : (
+          <View className="items-center justify-center" style={{ height: 44, width: 44, borderRadius: 22, backgroundColor: colors.royalBlue }}>
+            <Text className="text-sm font-bold text-white">{initial}</Text>
+          </View>
+        )}
+        {participant.isHost && (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: -4,
+              alignSelf: 'center',
+              height: 16,
+              width: 16,
+              borderRadius: 8,
+              alignItems: 'center',
+              justifyContent: 'center',
+              // Same green as the "+" add-participant button below
+              // (2026-10-19, user request), not the royalBlue used
+              // elsewhere for host/manager emphasis.
+              backgroundColor: colors.success,
+              borderWidth: 1.5,
+              borderColor: '#FFFFFF',
+            }}
+          >
+            <Ionicons name="star" size={9} color="#FFFFFF" />
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -215,6 +239,17 @@ export function AccountScreen() {
   const visibleItems = isBarTable || subTab === 'personal' ? items.filter((i) => i.participantId === participantId) : items;
   const total = visibleItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
 
+  // Independent of subTab (2026-10-19, user request) — the bottom button's
+  // own "can this diner leave with nothing owed" state is about *their*
+  // personal balance specifically, not whichever total the table above
+  // happens to be showing (viewing "חשבון כללי" with other participants'
+  // unpaid items shouldn't make the button act as if this diner owes
+  // something themselves).
+  const personalTotal = items
+    .filter((i) => i.participantId === participantId)
+    .reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+  const hasNothingToPay = personalTotal === 0;
+
   const infoRows: {
     labelKey: 'accountStripTableLabel' | 'accountStripGeneralLabel' | 'personalAccountNumberLabel' | 'lockedReviewCodeLabel';
     explanationKey: 'accountInfoTableExplanation' | 'accountInfoGeneralExplanation' | 'personalAccountNumberExplanation' | 'lockedReviewCodeExplanation';
@@ -308,6 +343,14 @@ export function AccountScreen() {
           <Text style={{ fontWeight: '700' }}>{t('serviceFeeDisclaimerEmphasis')}</Text>
         </Text>
 
+        {/* Plain static label, always shown, no conditional logic at all
+            (2026-10-19, user request — explicitly not gated on balance or
+            order history, unlike every earlier version of this line). Same
+            shape as the service-fee disclaimer right above it. */}
+        <Text className="mb-1 text-xs leading-4" style={{ color: colors.ink }}>
+          {t('endVisitFreeTooltip')}
+        </Text>
+
         {/* minHeight 48, not py-4 (2026-10-11, user request, follow-up: an
             interim py-3 then py-2 still didn't actually match the cart-
             summary bar's thickness — padding alone can't, since this
@@ -319,7 +362,7 @@ export function AccountScreen() {
           className="items-center justify-center rounded-xl"
           style={{ backgroundColor: colors.royalBlue, minHeight: 48 }}
         >
-          <Text className="text-lg font-semibold text-white">{t('requestBillButton')}</Text>
+          <Text className="text-lg font-semibold text-white">{t(hasNothingToPay ? 'endVisitButton' : 'requestBillButton')}</Text>
         </Pressable>
       </View>
 
