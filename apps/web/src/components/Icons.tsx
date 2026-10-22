@@ -271,6 +271,18 @@ export function AccountsTabIcon({ className = 'h-4 w-4' }: { className?: string 
   );
 }
 
+// Accounts module's "אמצעי תשלום" column (2026-10-21) — plain card outline
+// with a magnetic-stripe bar, next to the credit_card payment method label.
+export function CreditCardIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="2.5" y="4.5" width="15" height="11" rx="1.5" />
+      <line x1="2.5" y1="8" x2="17.5" y2="8" strokeWidth="2" />
+      <line x1="5" y1="12.5" x2="9" y2="12.5" />
+    </svg>
+  );
+}
+
 export function ReviewsTabIcon({ className = 'h-4 w-4' }: { className?: string }) {
   // Ionicons "star-outline".
   return (
