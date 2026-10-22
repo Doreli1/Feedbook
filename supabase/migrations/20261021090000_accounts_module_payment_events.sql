@@ -14,6 +14,14 @@
 -- payment_events table — only an approved cancellation ever creates a
 -- payment_events row.
 
+-- The cloud project installs uuid-ossp into the "extensions" schema (not
+-- "public" — unlike local Docker, where it lives directly in public), and
+-- `supabase db push` runs each migration under a bare search_path=public,
+-- so the unqualified uuid_generate_v4() calls below would 42883 on push
+-- without this. Found live via a real `supabase db push` failure
+-- (2026-10-22), not anticipated in advance.
+set search_path = public, extensions;
+
 create table payment_events (
   id uuid primary key default uuid_generate_v4(),
   share_id uuid not null references payment_participant_shares (id) on delete cascade,
