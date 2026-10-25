@@ -1,14 +1,23 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useAccounts, fetchPaymentEvents, type AccountRow, type AccountOrderItem, type PaymentEvent } from '../lib/useAccounts';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
-import { ChevronDownIcon, CheckIcon, CloseIcon, ClockIcon } from '../components/Icons';
+import { ChevronDownIcon, CheckIcon, CloseIcon, ClockIcon, SearchIcon } from '../components/Icons';
+import type { RestaurantTable } from '@feedbook/types';
 
 interface Props {
   session: Session;
   restaurantId: string;
+  // Passed down from Dashboard.tsx's own useTables(restaurant.id) call
+  // (2026-10-25, fixed) — this screen used to call useTables itself too,
+  // which opened a SECOND independent Realtime subscription on the exact
+  // same channel name (tables-${restaurantId}) as Dashboard.tsx's own
+  // already-running one, same mistake the rest of this app's screens
+  // deliberately avoid (see useOrders.ts/useOrderHistory.ts's own comments
+  // on this exact centralized-fetch convention).
+  tables: RestaurantTable[];
 }
 
 type StaffRole = 'manager' | 'waiter' | 'kitchen';
@@ -45,6 +54,31 @@ function formatDate(iso: string): string {
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+// Period filter (2026-10-25, per explicit request — Feedbook's own
+// cross-restaurant monthly settlement is an explicitly separate, future
+// module; this is the restaurant owner's own period/sort/search on their
+// live accounts table). Dates are kept as plain 'YYYY-MM-DD' strings — the
+// exact value <input type="date"> both reads and writes — converted to
+// day-boundary Date objects only at filter time.
+function toYMD(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function startOfDay(ymd: string): Date {
+  return new Date(`${ymd}T00:00:00`);
+}
+
+function endOfDay(ymd: string): Date {
+  return new Date(`${ymd}T23:59:59.999`);
+}
+
+function formatYMDDisplay(ymd: string): string {
+  return startOfDay(ymd).toLocaleDateString();
 }
 
 const PAYMENT_METHOD_LABEL_KEYS: Record<'credit_card' | 'cash', TranslationKey> = {
@@ -351,7 +385,7 @@ function EventJournalTable({ sessionId }: { sessionId: string }) {
 
 // Number of columns in the master table's header row — the expand-detail
 // row (AccountDetailPanel, below) spans all of them via colSpan.
-const MASTER_COL_COUNT = 10;
+const MASTER_COL_COUNT = 12;
 
 // Full sub-account detail revealed by expanding a master row (2026-10-21,
 // per explicit request: "בפתיחה של כל שורה, יוצגו פירוט מלא של תתי חשבונות
@@ -392,17 +426,24 @@ function AccountDetailPanel({
       </div>
 
       <div className="mb-3 flex gap-1 border-b border-border">
+        {/* Hover/selection treatment matches DashboardShell's own main tab
+            bar exactly (2026-10-25, per explicit request) — bg-accent-soft
+            selected state, hover:bg-surface-2 otherwise, same transition. */}
         <button
           type="button"
           onClick={() => setInnerTab('participants')}
-          className={`px-3 py-2 text-xs font-semibold ${innerTab === 'participants' ? 'border-b-2 border-accent text-accent' : 'text-muted-foreground'}`}
+          className={`rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+            innerTab === 'participants' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
+          }`}
         >
           {t('accountsByParticipantTab')}
         </button>
         <button
           type="button"
           onClick={() => setInnerTab('events')}
-          className={`px-3 py-2 text-xs font-semibold ${innerTab === 'events' ? 'border-b-2 border-accent text-accent' : 'text-muted-foreground'}`}
+          className={`rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+            innerTab === 'events' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
+          }`}
         >
           {t('accountsEventJournalTab')}
         </button>
@@ -588,13 +629,19 @@ function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expa
                   <PaymentStatusBadge status={row.paymentStatus} />
                 </td>
                 <td className="px-3 py-3 text-sm text-ink" rowSpan={rowCount}>
-                  ₪{formatAmount(row.totalTip)}
+                  ₪{formatAmount(row.totalCredit)}
+                </td>
+                <td className="px-3 py-3 text-sm text-ink" rowSpan={rowCount}>
+                  ₪{formatAmount(row.totalCash)}
                 </td>
                 <td className="px-3 py-3" rowSpan={rowCount}>
                   <div className="flex flex-col gap-0.5 text-xs">
                     <span className="text-sm font-bold text-ink">{t('accountsSummaryTotalLabel')}: ₪{formatAmount(row.totalCost)}</span>
                     <span className="text-muted-foreground">{t('accountsSummaryTimeLabel')}: {formatTime(row.openedAt)}</span>
                   </div>
+                </td>
+                <td className="px-3 py-3 text-sm text-ink" rowSpan={rowCount}>
+                  ₪{formatAmount(row.totalTip)}
                 </td>
                 {/* Expand chevron moved to the far side (2026-10-22, per
                     explicit request) — was the first column, now the last. */}
@@ -613,14 +660,80 @@ function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expa
   );
 }
 
+// Shared by both sections below ("פתוחים כעת" and "היסטוריה") so the
+// summary-row + expand-detail pairing isn't duplicated — the only thing
+// that differs between the two sections is which rows feed in.
+function AccountRowGroup({
+  row,
+  expanded,
+  onToggle,
+  myRole,
+  onRequestCancellation,
+  onDecideCancellation,
+}: {
+  row: AccountRow;
+  expanded: boolean;
+  onToggle: () => void;
+  myRole: StaffRole | null;
+  onRequestCancellation: (orderItemId: string, reason: string) => void;
+  onDecideCancellation: (requestId: string, decision: 'approve' | 'reject') => void;
+}) {
+  return (
+    <Fragment key={row.sessionId}>
+      <AccountSummaryRows row={row} expanded={expanded} onToggle={onToggle} />
+      {expanded && (
+        <tr className="border-b border-border bg-surface-2/40">
+          <td colSpan={MASTER_COL_COUNT}>
+            <AccountDetailPanel
+              row={row}
+              myRole={myRole}
+              onRequestCancellation={onRequestCancellation}
+              onDecideCancellation={onDecideCancellation}
+            />
+          </td>
+        </tr>
+      )}
+    </Fragment>
+  );
+}
+
 // "חשבונות" module (PRD §5.1.5, App Flow §3.10, Backend Schema §6.5) —
 // replaces the honest placeholder that lived here since 2026-10-13. See
 // 12.Feedbook_Accounts_Module_Spec v3 for the full design.
-export function AccountsScreen({ session, restaurantId }: Props) {
+export function AccountsScreen({ session, restaurantId, tables }: Props) {
   const { t } = useI18n();
   const { loading, rows, requestCancellation, decideCancellation } = useAccounts(restaurantId);
   const [myRole, setMyRole] = useState<StaffRole | null>(null);
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+
+  // Two sub-tabs (2026-10-25, per explicit request — replaces the earlier
+  // single-table/two-labeled-sections design) — "פתוחים כעת" is always
+  // period-independent by definition, so splitting into real tabs instead
+  // of stacked sections also made the status filter redundant (the tab
+  // itself picks open vs. paid) — removed rather than kept alongside it.
+  const [mainTab, setMainTab] = useState<'open' | 'history'>('open');
+
+  // Period filter — only shown/applied on the "היסטוריה" tab, by closed_at
+  // (closing/payment date, not opened_at — per explicit correction: a
+  // long-open session is a monitoring gap to fix elsewhere, not something
+  // this filter should special-case). Defaults to today.
+  const today = toYMD(new Date());
+  const [periodFrom, setPeriodFrom] = useState(today);
+  const [periodTo, setPeriodTo] = useState(today);
+  const [searchText, setSearchText] = useState('');
+  // Shared by both tabs (2026-10-25, per explicit request — separates "find
+  // a table" out of the free-text search entirely, on both "פתוחים כעת" and
+  // "היסטוריה"): a closed list of this restaurant's own configured tables
+  // (passed down from Dashboard.tsx's own useTables(restaurant.id) — see
+  // Props.tables's own comment), not free text and not derived from which
+  // tables happen to appear in the currently-filtered rows.
+  const [tableFilter, setTableFilter] = useState('');
+  // History-only (2026-10-25, per explicit request) — "אשראי" shows
+  // accounts where totalCredit > 0, "מזומן" where totalCash > 0, per account
+  // (an account can be both, if diners split by method — it then matches
+  // either filter). Open accounts always have both at 0 (nothing paid yet),
+  // so this filter is only meaningful, and only shown, on the history tab.
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<'all' | 'credit' | 'cash'>('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -639,9 +752,80 @@ export function AccountsScreen({ session, restaurantId }: Props) {
     };
   }, [session.user.id, restaurantId]);
 
+  function setPreset(preset: 'today' | 'week' | 'month') {
+    const now = new Date();
+    if (preset === 'today') {
+      setPeriodFrom(today);
+      setPeriodTo(today);
+    } else if (preset === 'week') {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 6);
+      setPeriodFrom(toYMD(weekAgo));
+      setPeriodTo(today);
+    } else {
+      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      setPeriodFrom(toYMD(firstOfMonth));
+      setPeriodTo(today);
+    }
+  }
+
+  const { openRows, historyRows } = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+
+    // Table number is deliberately left out of the free-text search
+    // entirely, on both tabs (2026-10-25, per explicit correction) — the
+    // dedicated tableFilter dropdown below is the one way to find a table,
+    // on both "פתוחים כעת" and "היסטוריה", so the two controls never
+    // overlap/conflict.
+    const matchesCommonFilters = (row: AccountRow) => {
+      if (tableFilter !== '' && row.tableNumber !== tableFilter) return false;
+      if (query) {
+        const matchesAccountId = row.sessionAccountNumber.toLowerCase().includes(query);
+        // Personal account numbers live per diner (session_participants.sub_account_number
+        // / the bar's own pickup-ticket number), not on the session row itself.
+        const matchesPersonalAccount = row.participants.some((p) => p.displayNumber.toLowerCase().includes(query));
+        if (!matchesAccountId && !matchesPersonalAccount) return false;
+      }
+      return true;
+    };
+
+    const open = rows.filter((r) => r.paymentStatus === 'open' && matchesCommonFilters(r));
+
+    const rangeStart = startOfDay(periodFrom).getTime();
+    const rangeEnd = endOfDay(periodTo).getTime();
+    const history = rows
+      .filter((r) => {
+        if (r.paymentStatus !== 'paid' || !r.closedAt || !matchesCommonFilters(r)) return false;
+        if (paymentMethodFilter === 'credit' && r.totalCredit <= 0) return false;
+        if (paymentMethodFilter === 'cash' && r.totalCash <= 0) return false;
+        const closedTime = new Date(r.closedAt).getTime();
+        return closedTime >= rangeStart && closedTime <= rangeEnd;
+      })
+      .sort((a, b) => new Date(b.closedAt!).getTime() - new Date(a.closedAt!).getTime());
+
+    return { openRows: open, historyRows: history };
+  }, [rows, periodFrom, periodTo, searchText, tableFilter, paymentMethodFilter]);
+
+  const periodLabel = periodFrom === periodTo ? formatYMDDisplay(periodFrom) : `${formatYMDDisplay(periodFrom)}–${formatYMDDisplay(periodTo)}`;
+
+  function renderRowGroup(row: AccountRow) {
+    const expanded = expandedSessionId === row.sessionId;
+    return (
+      <AccountRowGroup
+        key={row.sessionId}
+        row={row}
+        expanded={expanded}
+        onToggle={() => setExpandedSessionId(expanded ? null : row.sessionId)}
+        myRole={myRole}
+        onRequestCancellation={(itemId, reason) => void requestCancellation(itemId, reason)}
+        onDecideCancellation={(requestId, decision) => void decideCancellation(requestId, decision)}
+      />
+    );
+  }
+
   return (
     <div className="card p-6">
-      <h1 className="mb-1 text-lg font-bold text-ink">{t('accountsTitle')}</h1>
+      <h1 className="mb-1 text-2xl font-bold tracking-tight text-ink">{t('accountsTitle')}</h1>
       <p className="mb-4 text-sm text-muted-foreground">{t('accountsSubtitle')}</p>
 
       {loading ? (
@@ -651,50 +835,175 @@ export function AccountsScreen({ session, restaurantId }: Props) {
           <p className="text-sm text-muted-foreground">{t('accountsNoSessionsYet')}</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnAccountId')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTable')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnItems')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnQuantity')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnUnitPrice')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnLineTotal')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSessionStatus')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTip')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSummary')}</th>
-                <th className="px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const expanded = expandedSessionId === row.sessionId;
-                return (
-                  <Fragment key={row.sessionId}>
-                    <AccountSummaryRows
-                      row={row}
-                      expanded={expanded}
-                      onToggle={() => setExpandedSessionId(expanded ? null : row.sessionId)}
-                    />
-                    {expanded && (
-                      <tr className="border-b border-border bg-surface-2/40">
-                        <td colSpan={MASTER_COL_COUNT}>
-                          <AccountDetailPanel
-                            row={row}
-                            myRole={myRole}
-                            onRequestCancellation={(itemId, reason) => void requestCancellation(itemId, reason)}
-                            onDecideCancellation={(requestId, decision) => void decideCancellation(requestId, decision)}
-                          />
+        <>
+          <div className="mb-4 flex gap-1 border-b border-border">
+            {/* Hover/selection treatment matches DashboardShell's own main
+                tab bar exactly (2026-10-25, per explicit request). */}
+            <button
+              type="button"
+              onClick={() => setMainTab('open')}
+              className={`rounded-t-md border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                mainTab === 'open' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
+              }`}
+            >
+              {t('accountsSectionOpenNow')} ({openRows.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setMainTab('history')}
+              className={`rounded-t-md border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                mainTab === 'history' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
+              }`}
+            >
+              {t('accountsSectionHistory')} ({historyRows.length})
+            </button>
+          </div>
+
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            {mainTab === 'history' && (
+              <>
+                <div className="flex gap-1">
+                  <button type="button" onClick={() => setPreset('today')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
+                    {t('accountsPeriodToday')}
+                  </button>
+                  <button type="button" onClick={() => setPreset('week')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
+                    {t('accountsPeriodWeek')}
+                  </button>
+                  <button type="button" onClick={() => setPreset('month')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
+                    {t('accountsPeriodMonth')}
+                  </button>
+                </div>
+                <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                  {t('accountsPeriodFromLabel')}
+                  <input type="date" value={periodFrom} max={periodTo} onChange={(e) => setPeriodFrom(e.target.value)} className="rounded border border-border px-2 py-1 text-sm text-ink" />
+                </label>
+                <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                  {t('accountsPeriodToLabel')}
+                  <input type="date" value={periodTo} min={periodFrom} onChange={(e) => setPeriodTo(e.target.value)} className="rounded border border-border px-2 py-1 text-sm text-ink" />
+                </label>
+              </>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterSearchLabel')}</span>
+              <div className="relative w-80">
+                <SearchIcon className="pointer-events-none absolute end-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder={t('accountsFilterSearchPlaceholderOpen')}
+                  className="w-full rounded border border-border py-1.5 ps-2 pe-8 text-sm text-ink"
+                />
+              </div>
+            </div>
+            {/* "סינון לפי:" governs the whole filter-field group (שולחן +
+                on history, אמצעי תשלום too), the same way "חיפוש לפי:"
+                governs its one search field (2026-10-25 follow-up).
+                On history, the group is a 2-row CSS grid — captions in row
+                1, controls (including the "סינון לפי:" label itself) in row
+                2 — instead of nested flex, specifically so the label is
+                centered against the CONTROLS row's own height only, not the
+                full caption+select block or its bottom edge. Flexbox
+                items-center/items-end here always centers/flushes against
+                the whole sibling block (caption+select together), which
+                pulls the single-line label up toward the captions or down
+                to the very bottom — neither matches how "חיפוש לפי:" centers
+                against its own plain, single-line field. Grid's per-row
+                sizing fixes that: row 2's height is set by the selects, and
+                the label (which has no row-1 content) centers inside that
+                same row-2 height, landing on the selects' own vertical
+                center exactly like "חיפוש לפי:" does for its input. */}
+            {mainTab === 'history' ? (
+              <div className="grid grid-cols-[auto_auto_auto] items-center gap-x-3 gap-y-0.5">
+                <div aria-hidden="true" />
+                <span className="text-xs text-muted-foreground">{t('accountsFilterTableLabel')}</span>
+                <span className="text-xs text-muted-foreground">{t('accountsFilterPaymentMethodLabel')}</span>
+
+                <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterGenericLabel')}</span>
+                <select value={tableFilter} onChange={(e) => setTableFilter(e.target.value)} className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink">
+                  <option value="">{t('accountsFilterTableAll')}</option>
+                  {tables.map((table) => (
+                    <option key={table.id} value={table.table_number}>
+                      {table.table_number}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={paymentMethodFilter}
+                  onChange={(e) => setPaymentMethodFilter(e.target.value as 'all' | 'credit' | 'cash')}
+                  className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink"
+                >
+                  <option value="all">{t('accountsFilterPaymentMethodAll')}</option>
+                  <option value="credit">{t('accountsPaymentMethodCreditCard')}</option>
+                  <option value="cash">{t('accountsPaymentMethodCash')}</option>
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterGenericLabel')}</span>
+                <select value={tableFilter} onChange={(e) => setTableFilter(e.target.value)} className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink">
+                  <option value="">{t('accountsFilterTableAll')}</option>
+                  {tables.map((table) => (
+                    <option key={table.id} value={table.table_number}>
+                      {table.table_number}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-x-auto rounded border border-border bg-surface">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-surface-2">
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnAccountId')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTable')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnItems')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnQuantity')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnUnitPrice')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnLineTotal')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSessionStatus')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnCredit')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnCash')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSummary')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTip')}</th>
+                  <th className="px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {mainTab === 'open' ? (
+                  openRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={MASTER_COL_COUNT} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                        {t('accountsNoOpenAccounts')}
+                      </td>
+                    </tr>
+                  ) : (
+                    openRows.map(renderRowGroup)
+                  )
+                ) : (
+                  <>
+                    <tr>
+                      <td colSpan={MASTER_COL_COUNT} className="bg-surface-2 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                        {periodLabel}
+                      </td>
+                    </tr>
+                    {historyRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={MASTER_COL_COUNT} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                          {t('accountsNoHistoryInPeriod')}
                         </td>
                       </tr>
+                    ) : (
+                      historyRows.map(renderRowGroup)
                     )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

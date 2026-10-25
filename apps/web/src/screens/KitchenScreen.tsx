@@ -5,7 +5,7 @@ import { useOrderHistory } from '../lib/useOrderHistory';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { BarTicketLabelModal } from '../components/BarTicketLabelModal';
-import { SyncIcon } from '../components/Icons';
+import { SyncIcon, SearchIcon } from '../components/Icons';
 
 interface KitchenFocusRequest {
   orderId: string | null;
@@ -392,13 +392,16 @@ function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1">
           <label className="mb-1 block text-xs font-medium text-ink">{t('kitchenHistoryDishNameFilterLabel')}</label>
-          <input
-            type="text"
-            value={dishNameFilter}
-            onChange={(e) => setDishNameFilter(e.target.value)}
-            placeholder={t('kitchenHistoryDishNameFilterPlaceholder')}
-            className="w-full rounded border border-border px-2 py-1.5 text-xs"
-          />
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute end-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={dishNameFilter}
+              onChange={(e) => setDishNameFilter(e.target.value)}
+              placeholder={t('kitchenHistoryDishNameFilterPlaceholder')}
+              className="w-full rounded border border-border px-2 py-1.5 ps-2 pe-7 text-xs"
+            />
+          </div>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-ink">{t('kitchenHistoryStatusFilterLabel')}</label>

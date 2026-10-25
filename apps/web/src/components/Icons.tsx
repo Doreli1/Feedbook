@@ -283,6 +283,17 @@ export function CreditCardIcon({ className = 'h-4 w-4' }: { className?: string }
   );
 }
 
+// Plain magnifying glass — the Accounts module's search-by-account/table/
+// personal-account field (2026-10-25).
+export function SearchIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="8.5" cy="8.5" r="5.5" />
+      <line x1="16.5" y1="16.5" x2="12.6" y2="12.6" />
+    </svg>
+  );
+}
+
 export function ReviewsTabIcon({ className = 'h-4 w-4' }: { className?: string }) {
   // Ionicons "star-outline".
   return (

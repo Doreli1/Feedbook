@@ -105,6 +105,14 @@ export interface AccountRow {
   // §5.1.5 lists "סך טיפ כולל" alongside the account total) — 0 today for
   // the same reason as paymentMethod above.
   totalTip: number;
+  // Credit/cash split of totalCost (2026-10-25, per explicit request) —
+  // computed bottom-up same as paymentStatus: sum of each participant's own
+  // totalCost, grouped by THEIR OWN paymentMethod (a per-diner fact, not a
+  // session-wide one — see AccountParticipant.paymentMethod's own comment).
+  // A participant with no payment method yet (null) contributes to neither.
+  // Always 0/0 today for the same reason as totalTip.
+  totalCredit: number;
+  totalCash: number;
 }
 
 interface RawRow {
@@ -212,8 +220,10 @@ export function useAccounts(restaurantId: string | undefined) {
           sessionAccountNumber: session.session_account_number,
           sessionStatus: session.status,
           // Recomputed below from the final participants list once every
-          // row has been processed — this starting value is never read.
+          // row has been processed — these starting values are never read.
           paymentStatus: 'open',
+          totalCredit: 0,
+          totalCash: 0,
           openedAt: session.opened_at,
           closedAt: session.closed_at,
           participants: [],
@@ -283,6 +293,10 @@ export function useAccounts(restaurantId: string | undefined) {
     for (const sessionRow of bySession.values()) {
       sessionRow.paymentStatus =
         sessionRow.participants.length > 0 && sessionRow.participants.every((p) => p.paymentStatus === 'paid') ? 'paid' : 'open';
+      for (const participant of sessionRow.participants) {
+        if (participant.paymentMethod === 'credit_card') sessionRow.totalCredit += participant.totalCost;
+        else if (participant.paymentMethod === 'cash') sessionRow.totalCash += participant.totalCost;
+      }
     }
 
     setRows(

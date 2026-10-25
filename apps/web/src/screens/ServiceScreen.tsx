@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { KitchenWaiterCall, WaiterCallStatus } from '../lib/useWaiterCalls';
-import { BellIcon, CheckIcon } from '../components/Icons';
+import { BellIcon, CheckIcon, SearchIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
@@ -223,13 +223,16 @@ export function ServiceScreen({ calls, onResolve }: Props) {
             <div className="mb-4 mt-3 flex flex-wrap items-end gap-3">
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-muted-foreground">{t('serviceHistoryTableFilterLabel')}</span>
-                <input
-                  type="text"
-                  value={tableFilter}
-                  onChange={(e) => setTableFilter(e.target.value)}
-                  placeholder={t('serviceHistoryTableFilterPlaceholder')}
-                  className="rounded border border-border px-2 py-1.5 text-sm text-ink"
-                />
+                <div className="relative">
+                  <SearchIcon className="pointer-events-none absolute end-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={tableFilter}
+                    onChange={(e) => setTableFilter(e.target.value)}
+                    placeholder={t('serviceHistoryTableFilterPlaceholder')}
+                    className="rounded border border-border py-1.5 ps-2 pe-8 text-sm text-ink"
+                  />
+                </div>
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-muted-foreground">{t('serviceHistoryPageSizeLabel')}</span>

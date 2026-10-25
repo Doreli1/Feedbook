@@ -330,7 +330,7 @@ function ApprovedDashboard({
         </div>
       )}
 
-      {tab === 'accounts' && <AccountsScreen session={session} restaurantId={restaurant.id} />}
+      {tab === 'accounts' && <AccountsScreen session={session} restaurantId={restaurant.id} tables={tables} />}
 
       {tab === 'menu' && (
         <div className="card p-6">
