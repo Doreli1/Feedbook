@@ -48,12 +48,17 @@ function formatCancelledAmount(amount: number): string {
   return `(₪${formatAmount(amount)})`;
 }
 
+// Forced 'he-IL' (2026-10-27, per explicit request) — DD/MM/YYYY date order
+// and 24-hour time regardless of the viewer's own browser/OS locale, which
+// otherwise defaults to whatever that machine is set to (e.g. US-style
+// MM/DD/YYYY + AM/PM) and silently varies per viewer. Matches the existing
+// precedent in KitchenScreen.tsx's own toLocaleString('he-IL') call.
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString();
+  return new Date(iso).toLocaleString('he-IL');
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
 }
 
 // Period filter (2026-10-25, per explicit request — Feedbook's own
@@ -78,7 +83,7 @@ function endOfDay(ymd: string): Date {
 }
 
 function formatYMDDisplay(ymd: string): string {
-  return startOfDay(ymd).toLocaleDateString();
+  return startOfDay(ymd).toLocaleDateString('he-IL');
 }
 
 const PAYMENT_METHOD_LABEL_KEYS: Record<'credit_card' | 'cash', TranslationKey> = {
@@ -213,7 +218,7 @@ function ParticipantItemTable({
     <div className="overflow-hidden rounded border border-border bg-surface">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border bg-surface-2">
+          <tr className="border-b border-border bg-neutral-100 dark:bg-neutral-600">
             <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnDish')}</th>
             <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnQuantity')}</th>
             <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnUnitPrice')}</th>
@@ -284,6 +289,7 @@ function ParticipantItemTable({
 // same column shape as the master table's own item columns.
 function ParticipantSummaryRow({
   participant,
+  sessionId,
   isBar,
   expanded,
   onToggle,
@@ -293,6 +299,7 @@ function ParticipantSummaryRow({
   onDecide,
 }: {
   participant: AccountRow['participants'][number];
+  sessionId: string;
   isBar: boolean;
   expanded: boolean;
   onToggle: () => void;
@@ -302,6 +309,10 @@ function ParticipantSummaryRow({
   onDecide: (requestId: string, decision: 'approve' | 'reject') => void;
 }) {
   const { t, dir } = useI18n();
+  // "הזמנות"/"יומן אירועים" now live here, per-participant (2026-10-27) —
+  // moved down from the account-level tab pair that used to sit above the
+  // whole participants table (see AccountDetailPanel's own comment).
+  const [subTab, setSubTab] = useState<'orders' | 'events'>('orders');
   return (
     <>
       <tr className="cursor-pointer border-b border-border last:border-b-0 hover:bg-surface-2" onClick={onToggle}>
@@ -326,13 +337,45 @@ function ParticipantSummaryRow({
       {expanded && (
         <tr className="border-b border-border last:border-b-0">
           <td colSpan={6} className="bg-surface-2/40 p-3" onClick={(e) => e.stopPropagation()}>
-            <ParticipantItemTable
-              participant={participant}
-              sessionClosed={sessionClosed}
-              myRole={myRole}
-              onRequestCancel={onRequestCancel}
-              onDecide={onDecide}
-            />
+            <div className="mb-3 flex gap-1 border-b border-border">
+              {/* Same hover/selection treatment as every other tab pair in
+                  this module (border-accent bg-accent-soft selected). */}
+              <button
+                type="button"
+                onClick={() => setSubTab('orders')}
+                className={`rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                  subTab === 'orders' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
+                }`}
+              >
+                {t('accountsParticipantOrdersTab')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTab('events')}
+                className={`rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                  subTab === 'events' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
+                }`}
+              >
+                {t('accountsEventJournalTab')}
+              </button>
+            </div>
+            {subTab === 'orders' ? (
+              <ParticipantItemTable
+                participant={participant}
+                sessionClosed={sessionClosed}
+                myRole={myRole}
+                onRequestCancel={onRequestCancel}
+                onDecide={onDecide}
+              />
+            ) : (
+              // Still queries by sessionId, not participantId — the DB has
+              // no payment_events.participant_id column yet (Implementation
+              // Plan §16, 2026-10-27 addendum). Always empty today either
+              // way (nothing writes to payment_events at all yet), so this
+              // isn't showing wrong data yet — it just needs a real
+              // participant-scoped fetch once that column lands.
+              <EventJournalTable sessionId={sessionId} />
+            )}
           </td>
         </tr>
       )}
@@ -361,7 +404,7 @@ function EventJournalTable({ sessionId }: { sessionId: string }) {
     <div className="overflow-hidden rounded border border-border bg-surface">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border bg-surface-2">
+          <tr className="border-b border-border bg-neutral-100 dark:bg-neutral-600">
             <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnDate')}</th>
             <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnEventType')}</th>
             <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnAmount')}</th>
@@ -404,7 +447,6 @@ function AccountDetailPanel({
   onDecideCancellation: (requestId: string, decision: 'approve' | 'reject') => void;
 }) {
   const { t } = useI18n();
-  const [innerTab, setInnerTab] = useState<'participants' | 'events'>('participants');
   const [cancelTargetItemId, setCancelTargetItemId] = useState<string | null>(null);
   const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
   // row.paymentStatus (the bottom-up aggregate), not row.sessionStatus (the
@@ -425,63 +467,42 @@ function AccountDetailPanel({
         )}
       </div>
 
-      <div className="mb-3 flex gap-1 border-b border-border">
-        {/* Hover/selection treatment matches DashboardShell's own main tab
-            bar exactly (2026-10-25, per explicit request) — bg-accent-soft
-            selected state, hover:bg-surface-2 otherwise, same transition. */}
-        <button
-          type="button"
-          onClick={() => setInnerTab('participants')}
-          className={`rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
-            innerTab === 'participants' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
-          }`}
-        >
-          {t('accountsByParticipantTab')}
-        </button>
-        <button
-          type="button"
-          onClick={() => setInnerTab('events')}
-          className={`rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
-            innerTab === 'events' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
-          }`}
-        >
-          {t('accountsEventJournalTab')}
-        </button>
+      {/* Account-level "לפי סועד"/"יומן אירועים" tab choice removed
+          (2026-10-27, per explicit request) — the personal-account table is
+          now the only view here; the event journal moved one level down,
+          into each participant row's own expansion, since every real
+          payment_events row is always tied to exactly one diner, never the
+          general account as a whole (see Implementation Plan §16). */}
+      <div className="overflow-hidden rounded border border-border bg-surface">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-neutral-100 dark:bg-neutral-600">
+              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPersonalAccountId')}</th>
+              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPaymentShare')}</th>
+              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTip')}</th>
+              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPaymentMethod')}</th>
+              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSessionStatus')}</th>
+              <th className="px-2 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {row.participants.map((p) => (
+              <ParticipantSummaryRow
+                key={p.participantId}
+                participant={p}
+                sessionId={row.sessionId}
+                isBar={row.isBar}
+                expanded={expandedParticipantId === p.participantId}
+                onToggle={() => setExpandedParticipantId(expandedParticipantId === p.participantId ? null : p.participantId)}
+                sessionClosed={sessionClosed}
+                myRole={myRole}
+                onRequestCancel={(itemId) => setCancelTargetItemId(itemId)}
+                onDecide={onDecideCancellation}
+              />
+            ))}
+          </tbody>
+        </table>
       </div>
-
-      {innerTab === 'participants' ? (
-        <div className="overflow-hidden rounded border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPersonalAccountId')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPaymentShare')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTip')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPaymentMethod')}</th>
-                <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSessionStatus')}</th>
-                <th className="px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {row.participants.map((p) => (
-                <ParticipantSummaryRow
-                  key={p.participantId}
-                  participant={p}
-                  isBar={row.isBar}
-                  expanded={expandedParticipantId === p.participantId}
-                  onToggle={() => setExpandedParticipantId(expandedParticipantId === p.participantId ? null : p.participantId)}
-                  sessionClosed={sessionClosed}
-                  myRole={myRole}
-                  onRequestCancel={(itemId) => setCancelTargetItemId(itemId)}
-                  onDecide={onDecideCancellation}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <EventJournalTable sessionId={row.sessionId} />
-      )}
 
       <CancelReasonModal
         open={cancelTargetItemId !== null}
@@ -613,9 +634,14 @@ function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expa
                 <td className="px-3 py-3 text-sm font-bold text-ink" rowSpan={rowCount}>
                   #{row.sessionAccountNumber}
                 </td>
-                <td className="px-3 py-3 text-sm text-ink" rowSpan={rowCount}>
-                  {t('tableNumberLabel')} {row.tableNumber}
-                  {row.isBar && <span className="text-muted-foreground"> ({t('accountsBarLabel')})</span>}
+                <td className="whitespace-nowrap px-3 py-3" rowSpan={rowCount}>
+                  <div className="flex flex-col gap-0.5 text-xs">
+                    <span className="text-sm text-ink">
+                      {t('tableNumberLabel')} {row.tableNumber}
+                      {row.isBar && <span className="text-muted-foreground"> ({t('accountsBarLabel')})</span>}
+                    </span>
+                    <span className="text-muted-foreground">{t('accountsSummaryTimeLabel')}: {formatTime(row.openedAt)}</span>
+                  </div>
                 </td>
               </>
             )}
@@ -634,11 +660,8 @@ function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expa
                 <td className="px-3 py-3 text-sm text-ink" rowSpan={rowCount}>
                   ₪{formatAmount(row.totalCash)}
                 </td>
-                <td className="px-3 py-3" rowSpan={rowCount}>
-                  <div className="flex flex-col gap-0.5 text-xs">
-                    <span className="text-sm font-bold text-ink">{t('accountsSummaryTotalLabel')}: ₪{formatAmount(row.totalCost)}</span>
-                    <span className="text-muted-foreground">{t('accountsSummaryTimeLabel')}: {formatTime(row.openedAt)}</span>
-                  </div>
+                <td className="px-3 py-3 text-sm font-bold text-ink" rowSpan={rowCount}>
+                  ₪{formatAmount(row.totalCost)}
                 </td>
                 <td className="px-3 py-3 text-sm text-ink" rowSpan={rowCount}>
                   ₪{formatAmount(row.totalTip)}
@@ -956,7 +979,7 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
           <div className="overflow-x-auto rounded border border-border bg-surface">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-surface-2">
+                <tr className="border-b border-border bg-neutral-100 dark:bg-neutral-600">
                   <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnAccountId')}</th>
                   <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTable')}</th>
                   <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnItems')}</th>
