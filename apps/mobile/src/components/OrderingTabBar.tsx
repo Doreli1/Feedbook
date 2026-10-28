@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from 'react-native';
-import { useI18n } from '../lib/i18n';
+import { useI18n, visualRowDirection } from '../lib/i18n';
 import { colors } from '../theme';
 
 // The persistent 3-tab strip confirmed in the Stage 5 mockups (7.1, 7.2, 9 —
@@ -23,7 +23,7 @@ const TABS: { key: OrderingTabKey; labelKey: 'menuTabLabel' | 'ordersTabLabel' |
 ];
 
 export function OrderingTabBar({ activeTab, onSelect }: { activeTab: OrderingTabKey; onSelect: (tab: OrderingTabKey) => void }) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
 
   // Amber marks the active tab — both label and underline (matching the
   // mockups' gold highlight — not one of theme.ts's named tokens, so a
@@ -36,7 +36,14 @@ export function OrderingTabBar({ activeTab, onSelect }: { activeTab: OrderingTab
     // Same blue as AppHeader itself (colors.royalBlue, not the darker
     // royalBlueDark) so the header and tab strip read as one uniform bar —
     // user request 2026-09-13.
-    <View className="flex-row" style={{ backgroundColor: colors.royalBlue }}>
+    //
+    // Real bug (2026-10-27): plain flex-row relied entirely on the native
+    // I18nManager.isRTL flag to mirror tab order for Hebrew — that flag
+    // proved unable to flip reliably on a real device even after a full
+    // app relaunch (see AppHeader.tsx's own fix, same root cause). Driven
+    // explicitly through visualRowDirection instead, so tab order is
+    // correct regardless of whether the native flag ever catches up.
+    <View style={{ flexDirection: visualRowDirection(isRTL), backgroundColor: colors.royalBlue }}>
       {TABS.map((tab) => {
         const active = activeTab === tab.key;
         return (

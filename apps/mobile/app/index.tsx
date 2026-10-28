@@ -4,22 +4,23 @@ import { useSession } from '../src/lib/useSession';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
 import { useI18n } from '../src/lib/i18n';
 import { useTableSessionStore } from '../src/lib/tableSessionStore';
+import { colors } from '../src/theme';
 
 // M-01 · מסך טעינה (Splash) — Mobile UI Spec §5. The user has no choice here;
 // the animated spinner + Hebrew caption exist purely as feedback (Nielsen
 // principle 2) so the app never reads as "stuck" while the session resolves.
 //
 // Fixed 2026-09-14 (real bug, found on a real device): this used to always
-// redirect a signed-in user to /profile, unconditionally — including right
-// after the language-switch reload (setLang in lib/i18n.tsx calls
-// DevSettings.reload() to make I18nManager.forceRTL take effect, a real JS
-// VM restart, not a backgrounding). Every reload restarts here at Splash,
-// so a diner mid-visit, sitting on the ordering tabs, got dropped back to
-// /profile every single time they changed language — losing their place
-// even though their table session was still genuinely active (and, since
-// 2026-09-14, actually still persisted — see tableSessionStore.ts). Now
-// checks for that persisted session too and resumes straight into /menu
-// when one exists, instead of always landing on /profile.
+// redirect a signed-in user to /profile, unconditionally. Now checks for a
+// persisted table session too and resumes straight into /menu when one
+// exists, instead of always landing on /profile.
+//
+// setLang (lib/i18n.tsx) no longer reloads the app on a language change
+// (2026-10-28 fix) — every layout decision in this app counteracts
+// I18nManager.isRTL explicitly instead of depending on it, so a plain state
+// update is enough to re-render correctly in the new language. This screen
+// no longer needs to resume a diner mid-flow on some other screen after a
+// language-triggered reload, since that reload doesn't happen anymore.
 export default function SplashScreen() {
   const { status } = useSession();
   const { t } = useI18n();
@@ -32,7 +33,16 @@ export default function SplashScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#1B3FA8]">
+    // Real bug (2026-10-28, per explicit report — "looks off from the
+    // mockup"): this used to hardcode its own `bg-[#1B3FA8]` Tailwind
+    // arbitrary-value class, a literal duplicate of colors.royalBlue (the
+    // same navy every real header uses) rather than that single source of
+    // truth — a correct-by-coincidence duplicate today, but with no
+    // guarantee of staying in sync with the header if that color is ever
+    // retuned, and not even confirmed to compile identically to a plain
+    // inline style under this app's current NativeWind setup. Driven from
+    // `colors.royalBlue` directly instead.
+    <View className="flex-1" style={{ backgroundColor: colors.royalBlue }}>
       <View className="flex-1 items-center justify-center">
         <FeedbookWordmark size={32} />
       </View>

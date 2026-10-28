@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Dimensions, Modal, Pressable, ScrollView, Text, View, type ViewInstance } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useI18n } from '../lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingEnd, physicalReadingStart } from '../lib/i18n';
 import type { Lang } from '../lib/translations';
 import { useSession } from '../lib/useSession';
 import { useNotifications } from '../lib/useNotifications';
@@ -10,54 +10,76 @@ import { useOpenSessionReminder } from '../lib/useOpenSessionReminder';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
-// Shared by HeaderMailIcon/HeaderBellIcon — a speech-bubble look (pointer
-// triangle) on top of the flex-based "docked near the top-right" layout
-// both already used. Two other approaches were tried and reverted
-// (2026-10-18): a measureInWindow-based version rendered fully off-screen,
-// and react-native-popover-view's own auto-positioning landed badly off to
-// the side under this app's forced-RTL layout (I18nManager.forceRTL) —
-// RTL + auto-measuring popover libraries is evidently a combination not
-// well exercised upstream. Yoga's own flex layout is what's reliable here;
-// only the decorative triangle is hand-added on top of it.
+// Shared by HeaderMailIcon/HeaderBellIcon — an explicitly measured anchor
+// (same approach as HeaderMenu's own "⋮" dropdown — see its openMenu/anchor
+// comment). Real bug (2026-10-28): this used to be a fixed mt-24/items-end
+// flex layout, tuned for one guessed icon position — on any screen where
+// the mail/bell icon didn't actually sit there, or at a different header
+// height, the panel opened in the wrong spot entirely. Two OTHER
+// approaches were tried and reverted earlier (2026-10-18) — a buggy
+// measureInWindow attempt that rendered fully off-screen, and
+// react-native-popover-view's own auto-positioning, which landed badly off
+// to the side under this app's forced-RTL layout.
+// No speech-bubble tail (removed 2026-10-28, per explicit request) — a
+// rotated-square tail hit a known Android elevation+rotation shadow
+// mismatch, and a border-triangle redraw still didn't read as one unified
+// shape; rather than keep chasing a pixel-perfect bubble notch without a
+// real design-system component for it, the panel is just a plain anchored
+// card now.
 function BubblePanel({
+  anchor,
   widthClassName = 'w-80',
   maxHeight,
   children,
 }: {
+  anchor: { top: number; left?: number; right?: number };
   widthClassName?: string;
   maxHeight?: number;
   children: ReactNode;
 }) {
   return (
-    <View className="mt-24 items-end px-4">
-      <View>
-        <View
-          style={{
-            position: 'absolute',
-            top: -6,
-            right: 24,
-            width: 12,
-            height: 12,
-            backgroundColor: '#FFFFFF',
-            transform: [{ rotate: '45deg' }],
-          }}
-        />
-        <View
-          className={`${widthClassName} overflow-hidden rounded-2xl bg-white`}
-          style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, maxHeight }}
-        >
-          {children}
-        </View>
-      </View>
+    <View
+      className={`${widthClassName} overflow-hidden rounded-2xl bg-white`}
+      style={{ position: 'absolute', top: anchor.top, left: anchor.left, right: anchor.right, elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, maxHeight }}
+    >
+      {children}
     </View>
   );
 }
 
+// Shared measuring helper — same logic as HeaderMenu's own openMenu (see its
+// comment): vertical anchor sits just below the icon; horizontal anchor
+// picks whichever screen edge the icon is actually closer to.
+// Real bug (2026-10-28, per explicit report — HeaderMailIcon's panel on
+// profile.tsx rendering mostly off the left edge of the screen): this used
+// to size the chosen edge's inset directly off the icon's own measured
+// position with no awareness of the PANEL's own width — a panel anchored
+// via `right` with a large inset (icon far from the right edge) could, once
+// you subtract its own fixed width, land with a left edge well below 0.
+// `panelWidth` lets this clamp both anchors so the panel's far edge can
+// never cross the opposite side of the screen, regardless of where the
+// icon measures to.
+function measureAnchor(
+  iconRef: { current: ViewInstance | null },
+  setAnchor: (a: { top: number; left?: number; right?: number }) => void,
+  panelWidth: number,
+) {
+  iconRef.current?.measureInWindow((x, y, width, height) => {
+    const screenWidth = Dimensions.get('window').width;
+    const top = y + height + 8;
+    const maxInset = Math.max(16, screenWidth - panelWidth - 16);
+    if (x + width / 2 > screenWidth / 2) {
+      setAnchor({ top, right: Math.min(Math.max(16, screenWidth - (x + width)), maxInset) });
+    } else {
+      setAnchor({ top, left: Math.min(Math.max(16, x), maxInset) });
+    }
+  });
+}
+
 interface Props {
-  // First child in a `flex-row` renders on the physical right in this
-  // RTL-forced app (same convention already used throughout — see
-  // profile.tsx/scan-qr.tsx) — `right`/`left` name the actual screen
-  // position, not JSX order.
+  // `right`/`left` name the actual screen position, not JSX order — which
+  // side each one lands on is driven explicitly below, not by native
+  // flex-row mirroring (see the real bug noted on that line).
   right: ReactNode;
   left: ReactNode;
 }
@@ -71,10 +93,22 @@ interface Props {
 // button elsewhere) — composing each screen's own icons through these two
 // slots matches that better than forcing every combination into one enum.
 export function AppHeader({ right, left }: Props) {
+  // Real bug (2026-10-27): this used to be plain flex-row, relying entirely
+  // on the native I18nManager.isRTL flag to mirror `right`/`left` into
+  // their correctly-named positions — confirmed on a real device that this
+  // flag can get stuck not reflecting Hebrew even after I18nManager.
+  // forceRTL + a full app relaunch (see app/_layout.tsx's useRTLSync),
+  // which silently swapped every header's icons to the wrong side with no
+  // error. Driven explicitly through visualRowDirection instead, so this
+  // renders correctly regardless of whether the native flag ever catches
+  // up (see that function's own comment for why it's not a naive isRTL ?
+  // 'row-reverse' : 'row').
+  const { isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   return (
-    <View className="flex-row items-center justify-between px-4 pb-4 pt-16" style={{ backgroundColor: colors.royalBlue }}>
-      <View className="flex-row items-center gap-3">{right}</View>
-      <View className="flex-row items-center gap-3">{left}</View>
+    <View style={{ flexDirection: rowDirection, alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.royalBlue }} className="px-4 pb-4 pt-16">
+      <View style={{ flexDirection: rowDirection, alignItems: 'center' }} className="gap-3">{right}</View>
+      <View style={{ flexDirection: rowDirection, alignItems: 'center' }} className="gap-3">{left}</View>
     </View>
   );
 }
@@ -129,6 +163,27 @@ export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-ve
   const { lang, setLang, t, isRTL } = useI18n();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'menu' | 'language'>('menu');
+  // Real bug (2026-10-28, per explicit request): the dropdown used to sit at
+  // a fixed mt-24/items-end guess — a fixed top offset tuned for one
+  // specific header height, AND a horizontal anchor hardcoded to the
+  // screen's physical right edge regardless of where this icon actually
+  // sits (this component is used from either of AppHeader's two slots, on
+  // different screens) — so on any screen where the icon isn't on the
+  // physical right, or whose header renders at a different height, the
+  // panel opened in the wrong spot entirely, not under the icon. Measured
+  // on open instead, both axes: vertical anchor is just below the icon;
+  // horizontal anchor picks whichever screen edge the icon is actually
+  // closer to and pins that same edge of the panel to it, so the panel
+  // always opens hugging the icon regardless of which slot/screen it's in.
+  // The fallback (96/end-anchored) is only ever shown for the single frame
+  // before the first real measurement lands.
+  const [anchor, setAnchor] = useState<{ top: number; left?: number; right?: number }>({ top: 96, right: 16 });
+  const iconRef = useRef<ViewInstance>(null);
+
+  function openMenu() {
+    measureAnchor(iconRef, setAnchor, 224); // w-56
+    setOpen(true);
+  }
   // Only a diner with a live table (restaurantId set) has a restaurant to
   // view details for — pre-scan screens (sign-in, profile with no active
   // visit) never show this row.
@@ -143,14 +198,19 @@ export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-ve
 
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
-        <Ionicons name={icon} size={22} color="#FFFFFF" />
+      <Pressable onPress={openMenu} hitSlop={10}>
+        <View ref={iconRef}>
+          <Ionicons name={icon} size={22} color="#FFFFFF" />
+        </View>
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
         <Pressable className="flex-1 bg-black/40" onPress={close}>
-          <View className="mt-24 items-end px-4">
-            <Pressable onPress={(e) => e.stopPropagation()} className="w-56 overflow-hidden rounded-2xl bg-white" style={{ elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 }}>
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            className="w-56 overflow-hidden rounded-2xl bg-white"
+            style={{ position: 'absolute', top: anchor.top, left: anchor.left, right: anchor.right, elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 }}
+          >
               {view === 'menu' ? (
                 <>
                   {/* Reopens app/restaurant-details.tsx standalone, by
@@ -166,32 +226,40 @@ export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-ve
                           params: { restaurantId, restaurantName: restaurantName ?? '', tableNumber: tableNumber ?? '', standalone: '1' },
                         });
                       }}
-                      className="flex-row items-center gap-3 border-b px-4 py-3.5"
-                      style={{ borderColor: colors.border }}
+                      className="items-center gap-3 border-b px-4 py-3.5"
+                      style={{ flexDirection: visualRowDirection(isRTL), borderColor: colors.border }}
                     >
                       <Ionicons name="storefront-outline" size={20} color={colors.textMuted} />
-                      <Text className="flex-1 text-sm text-[#1B2430]">{t('restaurantDetailsMenuItem')}</Text>
+                      <Text className="flex-1 text-sm text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                        {t('restaurantDetailsMenuItem')}
+                      </Text>
                       <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={16} color={colors.textMuted} />
                     </Pressable>
                   )}
-                  <Pressable onPress={() => setView('language')} className="flex-row items-center gap-3 border-b px-4 py-3.5" style={{ borderColor: colors.border }}>
+                  <Pressable onPress={() => setView('language')} className="items-center gap-3 border-b px-4 py-3.5" style={{ flexDirection: visualRowDirection(isRTL), borderColor: colors.border }}>
                     <Ionicons name="language-outline" size={20} color={colors.textMuted} />
-                    <Text className="flex-1 text-sm text-[#1B2430]">{t('languageMenuItem')}</Text>
+                    <Text className="flex-1 text-sm text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                      {t('languageMenuItem')}
+                    </Text>
                     {/* Same RTL/LTR bug class as HeaderBackButton (fixed
                         2026-09-14, see project_header_back_icon_rtl_bug) — a
                         disclosure chevron points in the reading-forward
                         direction: left under RTL, right under LTR. */}
                     <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={16} color={colors.textMuted} />
                   </Pressable>
-                  <View className="flex-row items-center gap-3 px-4 py-3.5">
+                  <View className="items-center gap-3 px-4 py-3.5" style={{ flexDirection: visualRowDirection(isRTL) }}>
                     <Ionicons name="cash-outline" size={20} color="#C7C2B4" />
-                    <Text className="flex-1 text-sm text-[#9CA3AF]">{t('currencyMenuItem')}</Text>
+                    <Text className="flex-1 text-sm text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                      {t('currencyMenuItem')}
+                    </Text>
                     <Text className="text-xs text-[#C7C2B4]">{t('comingSoon')}</Text>
                   </View>
                 </>
               ) : (
                 <>
-                  <Text className="px-4 pb-1 pt-3.5 text-xs font-semibold text-[#6E6A61]">{t('chooseLanguageTitle')}</Text>
+                  <Text className="px-4 pb-1 pt-3.5 text-xs font-semibold text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                    {t('chooseLanguageTitle')}
+                  </Text>
                   {LANGUAGE_OPTIONS.map((opt) => (
                     <Pressable
                       key={opt.value}
@@ -199,17 +267,19 @@ export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-ve
                         setLang(opt.value);
                         close();
                       }}
-                      className="flex-row items-center gap-3 px-4 py-3.5"
+                      className="items-center gap-3 px-4 py-3.5"
+                      style={{ flexDirection: visualRowDirection(isRTL) }}
                     >
                       <LanguageFlag emoji={opt.flag} />
-                      <Text className="flex-1 text-sm text-[#1B2430]">{opt.nativeLabel}</Text>
+                      <Text className="flex-1 text-sm text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                        {opt.nativeLabel}
+                      </Text>
                       {lang === opt.value && <Ionicons name="checkmark" size={18} color={colors.royalBlue} />}
                     </Pressable>
                   ))}
                 </>
               )}
-            </Pressable>
-          </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </>
@@ -223,12 +293,21 @@ export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-ve
 // definer RPC rather than a plain client query.
 export function HeaderMailIcon() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const { session } = useSession();
   const { reminder, loading } = useOpenSessionReminder(session?.user.id);
   const currentSessionId = useTableSessionStore((s) => s.sessionId);
   const setTableSession = useTableSessionStore((s) => s.setTableSession);
   const [open, setOpen] = useState(false);
+  // Measured anchor (2026-10-28), same approach as HeaderMenu's own "⋮"
+  // dropdown and BubblePanel's own comment — replaces a fixed mt-24 guess.
+  const [anchor, setAnchor] = useState<{ top: number; left?: number; right?: number }>({ top: 96, right: 16 });
+  const iconRef = useRef<ViewInstance>(null);
+
+  function openPanel() {
+    measureAnchor(iconRef, setAnchor, 320); // w-80
+    setOpen(true);
+  }
 
   // The RPC finds this diner's most-recently-joined still-open session
   // regardless of whether they're currently sitting in it — so without this
@@ -265,20 +344,33 @@ export function HeaderMailIcon() {
 
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
-        <View>
+      <Pressable onPress={openPanel} hitSlop={10}>
+        <View ref={iconRef}>
           <Ionicons name="mail-outline" size={24} color="#FFFFFF" />
+          {/* Real bug (2026-10-28): `-end-0.5` is NativeWind's logical
+              inset-end utility — resolves through the same stuck
+              I18nManager.isRTL flag as RN's own `end` does (see i18n.tsx's
+              physicalReadingEnd comment), not the actual language.
+              Computed explicitly instead. */}
           {hasPendingReminder && (
-            <View className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: colors.danger }} />
+            <View
+              className="absolute -top-0.5 h-2 w-2 rounded-full"
+              style={{ [physicalReadingEnd(isRTL)]: -2, backgroundColor: colors.danger }}
+            />
           )}
         </View>
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
-          <BubblePanel>
+          <BubblePanel anchor={anchor}>
             <Pressable onPress={(e) => e.stopPropagation()}>
-              <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
+              {/* Real bug (2026-10-28): plain full-width/flex-1 Texts below,
+                  same textAlign:'auto' issue found across the rest of the
+                  app — see i18n.tsx's physicalReadingStart comment. The
+                  empty-state Text also moved from centered to right-aligned,
+                  per explicit request (title and content both). */}
+              <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border, textAlign: physicalReadingStart(isRTL) }}>
                 {t('mailTitle')}
               </Text>
               {loading ? (
@@ -290,9 +382,9 @@ export function HeaderMailIcon() {
                 // body text), per explicit request — this "inbox" only ever
                 // holds at most this one item today, but it should still
                 // read as one row in a list, not a one-off card+button.
-                <Pressable onPress={handleReturn} className="flex-row items-start px-4 py-3" style={{ gap: 8 }}>
+                <Pressable onPress={handleReturn} className="items-start px-4 py-3" style={{ flexDirection: visualRowDirection(isRTL), gap: 8 }}>
                   <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />
-                  <Text className="flex-1 text-sm leading-5 text-[#1B2430]">
+                  <Text className="flex-1 text-sm leading-5 text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
                     {t('openSessionReminderPrefix')}
                     <Text style={{ fontWeight: '700' }}>{reminder.restaurantName}</Text>
                     {t('openSessionReminderMiddle')}
@@ -304,7 +396,9 @@ export function HeaderMailIcon() {
                   </Text>
                 </Pressable>
               ) : (
-                <Text className="px-4 py-6 text-center text-sm text-[#9CA3AF]">{t('mailEmpty')}</Text>
+                <Text className="px-4 py-6 text-sm text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                  {t('mailEmpty')}
+                </Text>
               )}
             </Pressable>
           </BubblePanel>
@@ -324,21 +418,31 @@ export function HeaderMailIcon() {
 // useNotifications) rather than prop-drilled, so every (ordering) screen
 // that renders OrderingHeader gets it for free.
 export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId: string | null; orderItemId: string | null }) => void }) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const { session } = useSession();
   const currentSessionId = useTableSessionStore((s) => s.sessionId);
   const { loading, notifications, unreadCount, markRead } = useNotifications(session?.user.id, currentSessionId);
   const [open, setOpen] = useState(false);
+  // Measured anchor (2026-10-28) — same approach as HeaderMailIcon's own.
+  const [anchor, setAnchor] = useState<{ top: number; left?: number; right?: number }>({ top: 96, right: 16 });
+  const iconRef = useRef<ViewInstance>(null);
+
+  function openPanel() {
+    measureAnchor(iconRef, setAnchor, 320); // w-80
+    setOpen(true);
+  }
 
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} hitSlop={10}>
-        <View>
+      <Pressable onPress={openPanel} hitSlop={10}>
+        <View ref={iconRef}>
           <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
+          {/* Real bug (2026-10-28): same `-end-*` logical-utility issue as
+              HeaderMailIcon's own dot above — see that fix's comment. */}
           {unreadCount > 0 && (
             <View
-              className="absolute -end-1.5 -top-1.5 min-w-[16px] items-center justify-center rounded-full px-1"
-              style={{ height: 16, backgroundColor: colors.danger }}
+              className="absolute -top-1.5 min-w-[16px] items-center justify-center rounded-full px-1"
+              style={{ height: 16, backgroundColor: colors.danger, [physicalReadingEnd(isRTL)]: -6 }}
             >
               <Text className="text-[10px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</Text>
             </View>
@@ -348,9 +452,11 @@ export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
-          <BubblePanel maxHeight={384}>
+          <BubblePanel anchor={anchor} maxHeight={384}>
             <Pressable onPress={(e) => e.stopPropagation()}>
-              <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border }}>
+              {/* Real bug (2026-10-28): same textAlign fix as HeaderMailIcon's
+                  own panel above — see that fix's comment. */}
+              <Text className="border-b px-4 py-3 text-sm font-bold text-[#1B2430]" style={{ borderColor: colors.border, textAlign: physicalReadingStart(isRTL) }}>
                 {t('notificationsTitle')}
               </Text>
               {loading ? (
@@ -358,7 +464,9 @@ export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId
                   <ActivityIndicator color={colors.royalBlue} />
                 </View>
               ) : notifications.length === 0 ? (
-                <Text className="px-4 py-6 text-center text-sm text-[#9CA3AF]">{t('notificationsEmpty')}</Text>
+                <Text className="px-4 py-6 text-sm text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                  {t('notificationsEmpty')}
+                </Text>
               ) : (
                 // A plain View with maxHeight only clips overflow, it
                 // doesn't scroll — older notifications past the visible
@@ -378,14 +486,21 @@ export function HeaderBellIcon({ onNavigate }: { onNavigate?: (target: { orderId
                       className="border-b px-4 py-3"
                       style={{ borderColor: colors.border }}
                     >
-                      <View className="flex-row items-start" style={{ gap: 8 }}>
+                      <View className="items-start" style={{ flexDirection: visualRowDirection(isRTL), gap: 8 }}>
                         {n.readAt === null && <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />}
                         <View className="flex-1">
-                          <Text className="text-sm" style={{ fontWeight: n.readAt === null ? '700' : '400', color: n.readAt === null ? '#1B2430' : '#6E6A61' }}>
+                          <Text
+                            className="text-sm"
+                            style={{ fontWeight: n.readAt === null ? '700' : '400', color: n.readAt === null ? '#1B2430' : '#6E6A61', textAlign: physicalReadingStart(isRTL) }}
+                          >
                             {n.title}
                           </Text>
-                          <Text className="mt-0.5 text-xs text-[#6E6A61]">{n.body}</Text>
-                          <Text className="mt-1 text-[10px] text-[#9CA3AF]">{new Date(n.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                          <Text className="mt-0.5 text-xs text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                            {n.body}
+                          </Text>
+                          <Text className="mt-1 text-[10px] text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                            {new Date(n.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
                         </View>
                       </View>
                     </Pressable>

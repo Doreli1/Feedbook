@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, View } from 'react-native';
+import { Animated, View, type ViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { AccountScreen } from './account/AccountScreen';
@@ -10,6 +10,7 @@ import { OrderTracker } from './orders/OrderTracker';
 import { OrderingHeader } from './OrderingHeader';
 import { OrderingTabBar, type OrderingTabKey } from './OrderingTabBar';
 import { useCartStore } from '../lib/cartStore';
+import { useI18n, visualRowDirection } from '../lib/i18n';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
@@ -30,7 +31,10 @@ import { colors } from '../theme';
 export function OrderingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const wrapperRef = useRef<View>(null);
+  const { isRTL } = useI18n();
+  // RN 0.88 (New Architecture) exposes a dedicated *Instance type per host
+  // component for refs — useRef<View> no longer carries measureInWindow().
+  const wrapperRef = useRef<ViewInstance>(null);
   const [chromeBottom, setChromeBottom] = useState(0);
   const [activeTab, setActiveTab] = useState<OrderingTabKey>('menu');
   // Set when the bell's notification dropdown is tapped — passed to
@@ -130,7 +134,7 @@ export function OrderingScreen() {
       {(showCallWaiterRow || showCartBar) && (
         <View className="px-4 pt-3" style={{ backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }}>
           {showCallWaiterRow && (
-            <View className="flex-row justify-end">
+            <View className="justify-end" style={{ flexDirection: visualRowDirection(isRTL) }}>
               <CallWaiterInlineTrigger />
             </View>
           )}

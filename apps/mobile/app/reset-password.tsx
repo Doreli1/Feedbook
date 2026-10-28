@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react';
-import { I18nManager, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View, type TextInputInstance } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorModal } from '../src/components/ErrorModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
-import { useI18n } from '../src/lib/i18n';
+import { useI18n, visualRowDirection } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
 
@@ -20,9 +20,11 @@ const CODE_LENGTH = 6;
 // onAuthStateChange listener (app/_layout.tsx) to redirect away early.
 export default function ResetPasswordScreen() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const { email } = useLocalSearchParams<{ email?: string }>();
-  const inputRef = useRef<TextInput>(null);
+  // RN 0.88 (New Architecture) exposes a dedicated *Instance type per host
+  // component for refs — useRef<TextInput> no longer carries focus()/blur().
+  const inputRef = useRef<TextInputInstance>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
@@ -74,7 +76,7 @@ export default function ResetPasswordScreen() {
         keyboardOpeningTime={0}
       >
         {/* Navy header strip matching email-auth.tsx (user request 2026-10-16). */}
-        <View className="flex-row items-center gap-2 px-4 pb-4 pt-14" style={{ backgroundColor: colors.royalBlue }}>
+        <View className="items-center gap-2 px-4 pb-4 pt-14" style={{ flexDirection: visualRowDirection(isRTL), backgroundColor: colors.royalBlue }}>
           <Pressable
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/email-auth'))}
             hitSlop={12}
@@ -104,12 +106,14 @@ export default function ResetPasswordScreen() {
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
             className="mb-1 justify-center gap-2"
-            // A numeric code always reads left-to-right, in Hebrew too — RN
-            // mirrors a plain 'row' under forced RTL (I18nManager.isRTL),
-            // same as every other flex-row layout in this app, so this
-            // cancels that mirroring back to a fixed left-to-right order
-            // instead of showing the digits reversed.
-            style={{ flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row' }}
+            // A numeric code always reads left-to-right, in Hebrew too.
+            // visualRowDirection(false) — not isRTL — since the desired
+            // direction here is always physical LTR regardless of language,
+            // unlike every other row in this app; it still counteracts
+            // whatever I18nManager.isRTL actually is (real bug 2026-10-27:
+            // that flag is stuck not reflecting Hebrew on this device, see
+            // i18n.tsx's own comment on visualRowDirection).
+            style={{ flexDirection: visualRowDirection(false) }}
           >
             {Array.from({ length: CODE_LENGTH }).map((_, i) => (
               <View

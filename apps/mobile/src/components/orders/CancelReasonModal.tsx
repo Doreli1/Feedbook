@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useI18n } from '../../lib/i18n';
+import { useI18n, visualRowDirection } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { colors } from '../../theme';
 
@@ -19,7 +19,7 @@ const REASON_KEYS: TranslationKey[] = ['cancelReasonOption1', 'cancelReasonOptio
 // text) is stored server-side on the order_item and surfaced to staff, per
 // the confirmed answer when this was scoped — not a client-only UX gate.
 export function CancelReasonModal({ visible, onBack, onConfirm }: Props) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const [selectedKey, setSelectedKey] = useState<TranslationKey | 'other' | null>(null);
   const [otherText, setOtherText] = useState('');
 
@@ -57,8 +57,8 @@ export function CancelReasonModal({ visible, onBack, onConfirm }: Props) {
                 <Pressable
                   key={key}
                   onPress={() => setSelectedKey(key)}
-                  className="flex-row items-center gap-3 py-3"
-                  style={!isLast ? { borderBottomWidth: 1, borderColor: colors.border } : undefined}
+                  className="items-center gap-3 py-3"
+                  style={{ flexDirection: visualRowDirection(isRTL), ...(!isLast ? { borderBottomWidth: 1, borderColor: colors.border } : {}) }}
                 >
                   <Text className="flex-1 text-sm text-[#1B2430]">{key === 'other' ? t('cancelReasonOther') : t(key)}</Text>
                   {isSelected && <Ionicons name="checkmark" size={18} color={colors.royalBlue} />}
@@ -80,7 +80,7 @@ export function CancelReasonModal({ visible, onBack, onConfirm }: Props) {
             />
           )}
 
-          <View className="mt-4 flex-row-reverse" style={{ gap: 12 }}>
+          <View className="mt-4" style={{ flexDirection: visualRowDirection(!isRTL), gap: 12 }}>
             <Pressable
               onPress={handleConfirm}
               disabled={!canContinue}

@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorModal } from '../src/components/ErrorModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
-import { useI18n } from '../src/lib/i18n';
+import { useI18n, visualRowDirection } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
 
@@ -22,7 +22,7 @@ import { colors } from '../src/theme';
 // real URL bar.
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +61,7 @@ export default function ForgotPasswordScreen() {
             — keeps the back arrow, not an X, since this is a step inside a
             flow (forgot-password → reset-password → set-new-password), not
             a fresh entry point the way email-auth.tsx is. */}
-        <View className="flex-row items-center gap-2 px-4 pb-4 pt-14" style={{ backgroundColor: colors.royalBlue }}>
+        <View className="items-center gap-2 px-4 pb-4 pt-14" style={{ flexDirection: visualRowDirection(isRTL), backgroundColor: colors.royalBlue }}>
           <Pressable
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/email-auth'))}
             hitSlop={12}

@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorModal } from '../src/components/ErrorModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
-import { useI18n } from '../src/lib/i18n';
+import { useI18n, visualRowDirection } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
 
@@ -21,7 +21,7 @@ import { colors } from '../src/theme';
 // comment on that, web side only), so this stays a plain form.
 export default function SetNewPasswordScreen() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -59,7 +59,7 @@ export default function SetNewPasswordScreen() {
         keyboardOpeningTime={0}
       >
         {/* Navy header strip matching email-auth.tsx (user request 2026-10-16). */}
-        <View className="flex-row items-center gap-2 px-4 pb-4 pt-14" style={{ backgroundColor: colors.royalBlue }}>
+        <View className="items-center gap-2 px-4 pb-4 pt-14" style={{ flexDirection: visualRowDirection(isRTL), backgroundColor: colors.royalBlue }}>
           <Pressable
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/email-auth'))}
             hitSlop={12}

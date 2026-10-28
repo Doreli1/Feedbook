@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorModal } from '../src/components/ErrorModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
-import { useI18n } from '../src/lib/i18n';
+import { useI18n, visualRowDirection } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
 
@@ -27,7 +27,8 @@ type Mode = 'sign-in' | 'sign-up';
 // tried and reverted; this plain-background/boxed-input version stays.
 export default function EmailAuthScreen() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const params = useLocalSearchParams<{ mode?: string }>();
   const [mode, setMode] = useState<Mode>(params.mode === 'sign-up' ? 'sign-up' : 'sign-in');
   const [email, setEmail] = useState('');
@@ -86,7 +87,7 @@ export default function EmailAuthScreen() {
             not a multi-step flow to step back through). First JSX child
             renders rightmost under this app's forced RTL — X first puts it
             on the physical right, matching the Booking reference exactly. */}
-        <View className="flex-row items-center justify-between px-4 pb-4 pt-14" style={{ backgroundColor: colors.royalBlue }}>
+        <View className="items-center justify-between px-4 pb-4 pt-14" style={{ flexDirection: rowDirection, backgroundColor: colors.royalBlue }}>
           <Pressable
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/sign-in'))}
             hitSlop={12}
@@ -105,7 +106,7 @@ export default function EmailAuthScreen() {
             {mode === 'sign-in' ? t('emailAuthSignInSubtitle') : t('emailAuthSignUpSubtitle')}
           </Text>
 
-          <View className="mb-6 flex-row rounded-xl bg-white p-1" style={{ borderColor: colors.border, borderWidth: 1 }}>
+          <View className="mb-6 rounded-xl bg-white p-1" style={{ flexDirection: rowDirection, borderColor: colors.border, borderWidth: 1 }}>
             <Pressable
               onPress={() => setMode('sign-in')}
               className={`flex-1 items-center rounded-lg py-2.5 ${mode === 'sign-in' ? 'bg-[#1B3FA8]' : ''}`}

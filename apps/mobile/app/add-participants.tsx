@@ -9,7 +9,7 @@ import { ErrorModal } from '../src/components/ErrorModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
 import { StepTabs } from '../src/components/StepTabs';
 import { goBackOrHome } from '../src/lib/goBackOrHome';
-import { useI18n } from '../src/lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingEnd, physicalReadingStart } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { useTableSessionStore } from '../src/lib/tableSessionStore';
 import { colors } from '../src/theme';
@@ -48,7 +48,8 @@ export default function AddParticipantsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const setTableSession = useTableSessionStore((s) => s.setTableSession);
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     restaurantId: string;
@@ -258,6 +259,7 @@ export default function AddParticipantsScreen() {
               placeholder={t('searchPlaceholder')}
               autoFocus
               className="w-56 text-base text-white"
+              style={{ textAlign: physicalReadingStart(isRTL) }}
               placeholderTextColor="rgba(255,255,255,0.7)"
             />
           }
@@ -312,24 +314,26 @@ export default function AddParticipantsScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start', gap: 12, paddingHorizontal: 16 }}
+          contentContainerStyle={{ flexDirection: rowDirection, flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start', gap: 12, paddingHorizontal: 16 }}
         >
-          {/* justifyContent was 'center' before 2026-09-12 — real-device
-              testing showed every chip centered in the strip instead of
-              anchored to the right, misaligned with the contact avatars
-              below it. 'flex-start' packs content from the layout's start
-              edge (the right, under this app's forced RTL) instead of
-              centering it — matching the avatar column's own alignment in
-              the contact list (both use the same 16px horizontal padding). */}
-          {/* Newest-selected should render at the physical right. The
-              earlier ".reverse()" assumed a horizontal ScrollView mirrors
-              under RTL the same way a plain flex-row View does elsewhere in
-              this app (e.g. AppHeader.tsx) — real-device testing (2026-09-12)
-              showed that assumption was wrong: RN's horizontal ScrollView is
-              a documented RTL edge case where content mirrors differently
-              from a plain row. Natural (non-reversed) Set insertion order is
-              used instead — selectedIds already iterates oldest-first. */}
+          {/* Real bug (2026-10-28): this ScrollView never set its own
+              flexDirection — the old comments here (2026-09-11/12) assumed
+              a horizontal ScrollView has some documented RTL-mirroring
+              quirk of its own that a plain row doesn't, and reverse-
+              engineered around that assumption (dropping the ".reverse()"
+              call, leaving justifyContent to "do the mirroring") — the
+              exact same "assumes native/ScrollView RTL mirroring works"
+              mistake already found and fixed everywhere else this session
+              (MenuBrowser's option carousel, AccountScreen's own
+              participant row) — there's no such special ScrollView
+              behavior; it's just a plain flex container like any other,
+              and needs the same explicit rowDirection. Newest-selected
+              should render at the physical right (per the original intent
+              below) — with rowDirection actually applied now, that means
+              newest FIRST in source order, so reversed here instead of
+              relying on justifyContent alone. */}
           {[...selectedIds]
+            .reverse()
             .map((id) => contacts.find((c) => c.id === id))
             .filter((c): c is ContactRow => c !== undefined)
             .map((c) => {
@@ -352,22 +356,24 @@ export default function AddParticipantsScreen() {
                   {/* Deselect shortcut straight from the carousel, matching
                       the real mockup (X badge on the avatar's lower corner)
                       — an alternative to tapping the contact again in the
-                      list below, not a replacement for it. Fully inline
-                      position (not the logical -end/-bottom classes used
-                      elsewhere) so the side is never ambiguous. Real-device
-                      testing (2026-09-11) showed `right: -4` landing on the
-                      visual left in this RTL-forced app — React Native
-                      mirrors absolute left/right for RTL the same way it
-                      mirrors flex-row, unlike a plain CSS position — so
-                      `left` is what actually renders on the physical right
-                      here. */}
+                      list below, not a replacement for it.
+                      Real bug (2026-10-28): the old comment here (2026-09-11)
+                      claimed plain left/right positions auto-mirror under
+                      this app's forced RTL — the exact same pre-existing
+                      misdiagnosis already found and corrected in
+                      MenuBrowser.tsx's LikeButton (see i18n.tsx's
+                      physicalReadingEnd comment): plain left/right never
+                      actually mirror in React Native, only flexDirection and
+                      the logical start/end props do. The hardcoded `left`
+                      also wasn't even language-aware — it would be wrong for
+                      English regardless. Computed explicitly instead. */}
                   <Pressable
                     onPress={() => toggleSelected(c.id)}
                     hitSlop={8}
                     style={{
                       position: 'absolute',
                       bottom: -4,
-                      left: -4,
+                      [physicalReadingEnd(isRTL)]: -4,
                       height: 22,
                       width: 22,
                       borderRadius: 11,
@@ -404,7 +410,11 @@ export default function AddParticipantsScreen() {
             const selected = selectedIds.has(item.id);
             const initial = item.fullName.trim().charAt(0).toUpperCase() || '?';
             return (
-              <Pressable onPress={() => toggleSelected(item.id)} className="flex-row items-center gap-3 bg-white px-4 py-3">
+              <Pressable
+                onPress={() => toggleSelected(item.id)}
+                className="items-center gap-3 bg-white px-4 py-3"
+                style={{ flexDirection: rowDirection }}
+              >
                 <View>
                   {item.thumbnail ? (
                     <Image source={{ uri: item.thumbnail }} className="h-11 w-11 rounded-full" />
@@ -413,16 +423,25 @@ export default function AddParticipantsScreen() {
                       <Text className="text-sm font-bold text-white">{initial}</Text>
                     </View>
                   )}
+                  {/* Real bug (2026-10-28): `-end-0.5`/`-bottom-0.5` is
+                      NativeWind's logical inset-end utility — resolves
+                      through the same stuck I18nManager.isRTL flag as RN's
+                      own `end` does (see i18n.tsx's physicalReadingEnd
+                      comment), not the actual language. */}
                   {selected && (
                     <View
-                      className="absolute -end-0.5 -bottom-0.5 h-4 w-4 items-center justify-center rounded-full border-2 border-white"
-                      style={{ backgroundColor: colors.royalBlue }}
+                      className="absolute -bottom-0.5 h-4 w-4 items-center justify-center rounded-full border-2 border-white"
+                      style={{ [physicalReadingEnd(isRTL)]: -2, backgroundColor: colors.royalBlue }}
                     >
                       <Ionicons name="checkmark" size={10} color="#FFFFFF" />
                     </View>
                   )}
                 </View>
-                <Text className="flex-1 text-sm text-[#1B2430]">{item.fullName || t('noName')}</Text>
+                {/* Real bug (2026-10-28): flex-1 Text with no explicit
+                    textAlign — same issue found across the rest of the app. */}
+                <Text className="flex-1 text-sm text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                  {item.fullName || t('noName')}
+                </Text>
               </Pressable>
             );
           }}
@@ -434,9 +453,12 @@ export default function AddParticipantsScreen() {
           <Pressable onPress={() => void handleContinue()} className="items-center rounded-xl py-4" style={{ backgroundColor: colors.royalBlue }}>
             <Text className="text-lg font-semibold text-white">{t('finishAddParticipants')}</Text>
           </Pressable>
+          {/* Real bug (2026-10-28): hardcoded `right: 14`, not even
+              language-aware — same issue found across the rest of the app,
+              computed explicitly instead. */}
           <View
             className="items-center justify-center rounded-full bg-white"
-            style={{ position: 'absolute', top: '50%', marginTop: -13, right: 14, height: 26, width: 26 }}
+            style={{ position: 'absolute', top: '50%', marginTop: -13, [physicalReadingEnd(isRTL)]: 14, height: 26, width: 26 }}
           >
             <Text className="text-xs font-bold" style={{ color: colors.royalBlue }}>
               {selectedIds.size}

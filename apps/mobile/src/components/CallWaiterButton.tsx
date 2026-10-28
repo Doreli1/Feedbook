@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
-import { useI18n } from '../lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingStart } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { supabase } from '../lib/supabase';
 import { useTableSessionStore } from '../lib/tableSessionStore';
@@ -13,6 +13,7 @@ import { colors } from '../theme';
 // (correctly, for the many real errors it's shared for), so "your call was
 // sent" gets its own small modal rather than borrowing that red styling.
 function WaiterCalledModal({ visible, onDismiss, t }: { visible: boolean; onDismiss: () => void; t: (key: TranslationKey) => string }) {
+  const { isRTL } = useI18n();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
       <View className="flex-1 items-center justify-center bg-black/40 px-6">
@@ -20,8 +21,13 @@ function WaiterCalledModal({ visible, onDismiss, t }: { visible: boolean; onDism
           <View className="mb-3 h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: colors.successSoft }}>
             <Ionicons name="checkmark" size={26} color={colors.success} />
           </View>
-          <Text className="mb-2 text-center text-lg font-bold text-[#1B2430]">{t('callWaiterConfirmTitle')}</Text>
-          <Text className="mb-5 text-center text-sm leading-5 text-[#6E6A61]">{t('callWaiterConfirmMessage')}</Text>
+          {/* Right-aligned, not centered (2026-10-28, per explicit request). */}
+          <Text className="mb-2 w-full text-lg font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+            {t('callWaiterConfirmTitle')}
+          </Text>
+          <Text className="mb-5 w-full text-sm leading-5 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+            {t('callWaiterConfirmMessage')}
+          </Text>
           <Pressable onPress={onDismiss} className="w-full items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
             <Text className="font-semibold text-white">{t('gotIt')}</Text>
           </Pressable>
@@ -106,7 +112,7 @@ function CallWaiterModals({
 // installed glyph maps), so concierge-bell stays. Label renders before the
 // icon in JSX so it lands on the icon's right under native RTL.
 export function CallWaiterInlineTrigger() {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const { calling, called, error, handlePress, dismissCalled, dismissError } = useCallWaiter();
   // Accidental-tap guard (2026-10-11, user request): a real-world miss-tap
   // sends a waiter across the restaurant for nothing. ConfirmModal is the
@@ -116,7 +122,16 @@ export function CallWaiterInlineTrigger() {
 
   return (
     <>
-      <Pressable onPress={() => setConfirmOpen(true)} disabled={calling} accessibilityRole="button" className="flex-row items-center gap-2">
+      {/* Real bug (2026-10-27): plain flex-row relied on a native RTL flag
+          that doesn't reliably flip on a real device — driven explicitly
+          instead (see i18n.tsx's visualRowDirection). */}
+      <Pressable
+        onPress={() => setConfirmOpen(true)}
+        disabled={calling}
+        accessibilityRole="button"
+        className="items-center gap-2"
+        style={{ flexDirection: visualRowDirection(isRTL) }}
+      >
         <Text className="text-sm font-semibold" style={{ color: colors.royalBlueDark }}>
           {t('callWaiterButton')}
         </Text>

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppHeader, HeaderMenu } from '../src/components/AppHeader';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
 import { StepTabs } from '../src/components/StepTabs';
-import { useI18n } from '../src/lib/i18n';
+import { useI18n, visualRowDirection } from '../src/lib/i18n';
 import { colors } from '../src/theme';
 
 // Adapted M-08 destination: the original spec (Mobile UI Spec §5, M-08)
@@ -17,7 +17,7 @@ import { colors } from '../src/theme';
 // session instead of a picker with nothing behind it — menu browsing
 // (Milestone 5) is the next real screen from here, not built yet.
 export default function TableSessionScreen() {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const params = useLocalSearchParams<{
     restaurantName: string;
     tableNumber: string;
@@ -45,11 +45,11 @@ export default function TableSessionScreen() {
         </Text>
 
         <View className="mb-6 w-full rounded-xl bg-white p-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
-          <View className="flex-row justify-between py-1.5">
+          <View className="justify-between py-1.5" style={{ flexDirection: visualRowDirection(isRTL) }}>
             <Text className="text-sm text-[#6E6A61]">{t('tableAccountNumber')}</Text>
             <Text className="text-sm font-semibold text-[#1B2430]">{params.sessionAccountNumber}</Text>
           </View>
-          <View className="flex-row justify-between py-1.5">
+          <View className="justify-between py-1.5" style={{ flexDirection: visualRowDirection(isRTL) }}>
             <Text className="text-sm text-[#6E6A61]">{t('subAccountNumber')}</Text>
             <Text className="text-sm font-semibold text-[#1B2430]">{params.subAccountNumber}</Text>
           </View>

@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CallWaiterInlineTrigger } from '../CallWaiterButton';
 import { ConfirmModal } from '../ConfirmModal';
 import { ErrorModal } from '../ErrorModal';
-import { useI18n } from '../../lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingStart } from '../../lib/i18n';
 import { formatPrice } from '../../lib/formatPrice';
 import { supabase } from '../../lib/supabase';
 import { extractFunctionErrorCode } from '../../lib/functionError';
@@ -77,6 +77,8 @@ function ParticipantAvatar({ participant }: { participant: SessionParticipant })
 }
 
 function ParticipantsRow({ participants }: { participants: SessionParticipant[] }) {
+  const { isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const router = useRouter();
   const sessionId = useTableSessionStore((s) => s.sessionId);
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
@@ -89,16 +91,26 @@ function ParticipantsRow({ participants }: { participants: SessionParticipant[] 
 
   return (
     <View style={{ height: 76, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: '#FFFFFF' }}>
+      {/* Real bug (2026-10-28, per explicit request): this ScrollView never
+          set its own flexDirection at all, relying entirely on RN's
+          horizontal-ScrollView default (a plain, never-mirrored 'row') to
+          achieve the "+ renders last (leftmost under native RTL)" ordering
+          described below — the exact native-mirroring assumption already
+          disproven everywhere else in this app (see i18n.tsx's
+          visualRowDirection comment): oldest participant was rendering
+          physically LEFTMOST, "+" physically RIGHTMOST, the reverse of the
+          intended order. Driven explicitly instead, same as every other
+          row in this app. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexGrow: 1, alignItems: 'center', gap: 12, paddingHorizontal: 16 }}
+        contentContainerStyle={{ flexDirection: rowDirection, flexGrow: 1, alignItems: 'center', gap: 12, paddingHorizontal: 16 }}
       >
-        {/* "+" renders last (leftmost under native RTL — first JSX child is
-            rightmost) — user request 2026-10-10: "+" on the left of the
-            list, oldest participant rightmost, each newly-added participant
-            appearing just left of the existing list (i.e. closest to "+").
-            Relies on useSessionParticipants returning oldest-first. */}
+        {/* "+" renders last (leftmost, via rowDirection) — user request
+            2026-10-10: "+" on the left of the list, oldest participant
+            rightmost, each newly-added participant appearing just left of
+            the existing list (i.e. closest to "+"). Relies on
+            useSessionParticipants returning oldest-first. */}
         {participants.map((p) => (
           <ParticipantAvatar key={p.participantId} participant={p} />
         ))}
@@ -120,7 +132,8 @@ function ParticipantsRow({ participants }: { participants: SessionParticipant[] 
 }
 
 function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTab; items: AccountItem[]; participants: SessionParticipant[] }) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const participantById = useMemo(() => new Map(participants.map((p) => [p.participantId, p])), [participants]);
 
   // Its own card now (2026-10-10, user request) — rounded/bordered/white,
@@ -138,17 +151,24 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
         </View>
       ) : (
         <>
-          <View className="flex-row border-b px-4 py-2" style={{ borderColor: colors.border, backgroundColor: '#E6E6E6' }}>
+          <View className="border-b px-4 py-2" style={{ flexDirection: rowDirection, borderColor: colors.border, backgroundColor: '#E6E6E6' }}>
             {scope === 'personal' && (
               <Text className="w-20 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnMember')}</Text>
             )}
-            {/* textAlign: 'left' here is intentional, not a typo — under this
-                app's forced RTL (I18nManager.forceRTL), Android maps RN's
-                literal 'left'/'right' textAlign to native gravity, which
-                Android itself then auto-mirrors to start/end under RTL
-                layout direction, inverting it back to physical right. 'right'
-                rendered physically left; this renders physically right. */}
-            <Text className="flex-[2] text-[11px] font-bold" style={{ color: colors.ink, textAlign: 'left' }}>{t('accountColumnDescription')}</Text>
+            {/* Real bug (2026-10-28): the old comment here claimed 'left'
+                was intentional because Android auto-mirrors textAlign
+                gravity under forced RTL — but that auto-mirroring goes
+                through the exact same I18nManager.isRTL flag this whole
+                app's other RTL bugs this session trace back to being stuck
+                on this device (see i18n.tsx's physicalReadingStart comment)
+                — the same "assumes native mirroring works" mistake already
+                found and fixed everywhere else (flexDirection, absolute
+                position, even a horizontal ScrollView's own child order),
+                just manifesting on textAlign instead. Computed explicitly
+                instead, independent of that flag. */}
+            <Text className="flex-[2] text-[11px] font-bold" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
+              {t('accountColumnDescription')}
+            </Text>
             <Text className="w-12 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnQuantity')}</Text>
             <Text className="flex-1 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnUnitPrice')}</Text>
             <Text className="flex-1 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnTotalPrice')}</Text>
@@ -158,8 +178,8 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
             return (
               <View
                 key={item.id}
-                className="flex-row items-center px-4 py-2.5"
-                style={{ borderColor: colors.border, borderBottomWidth: index < items.length - 1 ? 1 : 0 }}
+                className="items-center px-4 py-2.5"
+                style={{ flexDirection: rowDirection, borderColor: colors.border, borderBottomWidth: index < items.length - 1 ? 1 : 0 }}
               >
                 {scope === 'personal' && (
                   <View className="w-20 items-center">
@@ -172,7 +192,11 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
                     )}
                   </View>
                 )}
-                <Text className="flex-[2] text-sm text-[#1B2430]">{item.dishName}</Text>
+                {/* Real bug (2026-10-28): same textAlign:'auto' issue as
+                    this table's own header above. */}
+                <Text className="flex-[2] text-sm text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                  {item.dishName}
+                </Text>
                 <Text className="w-12 text-center text-sm text-[#1B2430]">{item.quantity}</Text>
                 <Text className="flex-1 text-center text-sm text-[#1B2430]" numberOfLines={1} adjustsFontSizeToFit>
                   ₪{formatPrice(item.unitPrice)}
@@ -190,12 +214,13 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
 }
 
 function StripCell({ label, value, icon }: { label: string; value: string; icon?: keyof typeof Ionicons.glyphMap }) {
+  const { isRTL } = useI18n();
   return (
     <View className="flex-1 items-center py-3">
       <Text className="text-[11px] text-[#9CA3AF]" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center' }}>
         {label}
       </Text>
-      <View className="mt-1 flex-row items-center gap-1">
+      <View className="mt-1 items-center gap-1" style={{ flexDirection: visualRowDirection(isRTL) }}>
         <Text className="text-base font-semibold text-[#1B2430]">{value}</Text>
         {icon && <Ionicons name={icon} size={12} color="#9CA3AF" />}
       </View>
@@ -208,7 +233,8 @@ function StripCell({ label, value, icon }: { label: string; value: string; icon?
 // The strip itself, and its info modal, are untouched from that placeholder
 // per explicit instruction — only wrapped with the new content around it.
 export function AccountScreen() {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const clearTableSession = useTableSessionStore((s) => s.clearTableSession);
@@ -310,11 +336,12 @@ export function AccountScreen() {
           personal ever applies (see isBarTable comments above) — so it's
           hidden entirely rather than shown with one dead/disabled option. */}
       {!isBarTable && (
-      <View className="flex-row border-b bg-white" style={{ borderColor: colors.border }}>
+      <View className="border-b bg-white" style={{ flexDirection: rowDirection, borderColor: colors.border }}>
         {(
-          // Order matters under native RTL (I18nManager.forceRTL) — first
-          // JSX child renders rightmost. User request 2026-10-10: "חשבון
-          // אישי" on the right.
+          // Order matters: first JSX child renders rightmost via
+          // visualRowDirection (real bug 2026-10-27: native RTL mirroring
+          // alone can't be trusted — see i18n.tsx). User request 2026-10-10:
+          // "חשבון אישי" on the right.
           [
             { key: 'personal' as const, labelKey: 'personalAccountTab' as const, icon: 'receipt-outline' as const },
             { key: 'general' as const, labelKey: 'generalAccountTab' as const, icon: 'reader-outline' as const },
@@ -325,8 +352,8 @@ export function AccountScreen() {
             <Pressable
               key={tab.key}
               onPress={() => setSubTab(tab.key)}
-              className="flex-1 flex-row items-center justify-center gap-1.5 py-3"
-              style={{ borderBottomWidth: active ? 2 : 0, borderColor: colors.royalBlue }}
+              className="flex-1 items-center justify-center gap-1.5 py-3"
+              style={{ flexDirection: rowDirection, borderBottomWidth: active ? 2 : 0, borderColor: colors.royalBlue }}
             >
               <Ionicons name={tab.icon} size={16} color={active ? colors.royalBlue : '#9CA3AF'} />
               <Text className="text-sm font-semibold" style={{ color: active ? colors.royalBlue : '#9CA3AF' }}>
@@ -341,7 +368,7 @@ export function AccountScreen() {
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24 }}>
         <View className="px-4 pt-4">
           <View className="overflow-hidden rounded-xl bg-white" style={{ borderColor: colors.border, borderWidth: 1 }}>
-            <View className="flex-row items-center justify-end px-3 pt-2">
+            <View className="items-center justify-end px-3 pt-2" style={{ flexDirection: rowDirection }}>
               <Pressable
                 onPress={() => setInfoOpen(true)}
                 hitSlop={10}
@@ -351,7 +378,7 @@ export function AccountScreen() {
                 <Ionicons name="information-outline" size={14} color="#FFFFFF" />
               </Pressable>
             </View>
-            <View className="flex-row items-stretch px-1 pb-3">
+            <View className="items-stretch px-1 pb-3" style={{ flexDirection: rowDirection }}>
               <StripCell label={t('accountStripTableLabel')} value={tableNumber ?? '—'} />
               <View className="w-px" style={{ backgroundColor: colors.border }} />
               <StripCell label={t('accountStripGeneralLabel')} value={sessionAccountNumber ?? '—'} />
@@ -374,13 +401,16 @@ export function AccountScreen() {
           from the screen (kept from the previous round: colors.background,
           no border-top). */}
       <View className="px-4 pt-3" style={{ backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }}>
-        <View className="flex-row items-center justify-between">
+        <View className="items-center justify-between" style={{ flexDirection: rowDirection }}>
           <Text className="text-lg font-bold" style={{ color: colors.success }}>
             ₪{formatAmount(total)}
           </Text>
           {!isBarTable && <CallWaiterInlineTrigger />}
         </View>
-        <Text className="mb-1 text-xs leading-4" style={{ color: colors.ink }}>
+        {/* Real bug (2026-10-28): plain full-width Text, same textAlign:
+            'auto' issue found across the rest of the app — see i18n.tsx's
+            physicalReadingStart comment. */}
+        <Text className="mb-1 text-xs leading-4" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
           {t('serviceFeeDisclaimerPrefix')}
           <Text style={{ fontWeight: '700' }}>{t('serviceFeeDisclaimerEmphasis')}</Text>
         </Text>
@@ -388,8 +418,9 @@ export function AccountScreen() {
         {/* Plain static label, always shown, no conditional logic at all
             (2026-10-19, user request — explicitly not gated on balance or
             order history, unlike every earlier version of this line). Same
-            shape as the service-fee disclaimer right above it. */}
-        <Text className="mb-1 text-xs leading-4" style={{ color: colors.ink }}>
+            shape as the service-fee disclaimer right above it — but
+            centered, not right-aligned, per explicit request (2026-10-28). */}
+        <Text className="mb-1 text-xs leading-4 text-center" style={{ color: colors.ink }}>
           {t('endVisitFreeTooltip')}
         </Text>
 
@@ -456,11 +487,20 @@ export function AccountScreen() {
       <Modal visible={infoOpen} transparent animationType="fade" onRequestClose={() => setInfoOpen(false)}>
         <View className="flex-1 items-center justify-center bg-black/40 px-6">
           <View className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <Text className="mb-4 text-lg font-bold text-[#1B2430]">{t('accountInfoModalTitle')}</Text>
+            {/* Real bug (2026-10-28): plain full-width Texts, same
+                textAlign:'auto' issue found across the rest of the app —
+                see i18n.tsx's physicalReadingStart comment. */}
+            <Text className="mb-4 text-lg font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('accountInfoModalTitle')}
+            </Text>
             {infoRows.map((row, i) => (
               <View key={row.labelKey} className={i > 0 ? 'mt-3.5' : ''}>
-                <Text className="text-sm font-semibold text-[#1B2430]">{t(row.labelKey)}</Text>
-                <Text className="mt-0.5 text-xs leading-5 text-[#6E6A61]">{t(row.explanationKey)}</Text>
+                <Text className="text-sm font-semibold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                  {t(row.labelKey)}
+                </Text>
+                <Text className="mt-0.5 text-xs leading-5 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                  {t(row.explanationKey)}
+                </Text>
               </View>
             ))}
             <Pressable onPress={() => setInfoOpen(false)} className="mt-5 items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>

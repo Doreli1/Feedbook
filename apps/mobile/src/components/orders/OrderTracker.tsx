@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Dish } from '@feedbook/types';
-import { useI18n } from '../../lib/i18n';
+import { useI18n, visualRowDirection } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { supabase } from '../../lib/supabase';
 import { extractFunctionErrorCode } from '../../lib/functionError';
@@ -110,13 +110,15 @@ function stageIndexForStatus(status: ItemStatus): number {
 // timeline) — placed below the action buttons rather than between the photo
 // and the buttons. Each stage is an equal-width column (icon + label); the
 // connecting line between two stages is colored completed the moment the
-// later stage has been reached. Relies on the app-wide I18nManager.forceRTL
-// flip (see i18n.tsx) to mirror this plain flex-row so the first stage
-// ("received") renders at the physical right, matching reading order.
+// later stage has been reached. Driven explicitly via visualRowDirection so
+// the first stage ("received") renders at the physical right, matching
+// reading order (real bug 2026-10-27: native RTL mirroring alone can't be
+// trusted — see i18n.tsx).
 function HorizontalStatusTimeline({ item, t }: { item: TrackedItem; t: (key: TranslationKey) => string }) {
+  const { isRTL } = useI18n();
   const currentIndex = stageIndexForStatus(item.status);
   return (
-    <View className="mt-3 flex-row items-start">
+    <View className="mt-3 items-start" style={{ flexDirection: visualRowDirection(isRTL) }}>
       {STAGES.map((stage, index) => {
         const completed = index <= currentIndex;
         return (
@@ -152,6 +154,7 @@ const BULLET_LINE_HEIGHT = 16;
 const NOTE_LINE_HEIGHT = 20;
 
 function PolicyBullet({ text }: { text: string }) {
+  const { isRTL } = useI18n();
   return (
     // items-start on the row (so a wrapped second line doesn't pull the
     // icon down with it), but the icon itself lives in its own
@@ -162,7 +165,7 @@ function PolicyBullet({ text }: { text: string }) {
     // fixed in absolute pixels, so it looks right on a two-line bullet and
     // wrong on a one-line one (or vice versa) — this scales with the text
     // itself instead.
-    <View className="flex-row items-start" style={{ gap: 6 }}>
+    <View className="items-start" style={{ flexDirection: visualRowDirection(isRTL), gap: 6 }}>
       {/* MaterialCommunityIcons' "check-bold" — a purpose-built bold variant
           (Ionicons' plain "checkmark" and MaterialIcons' "check" both have
           no bolder alternative; this glyph is the actual answer to "a bit
@@ -201,6 +204,8 @@ function OrderItemCard({
   onEdit?: () => void;
   t: (key: TranslationKey) => string;
 }) {
+  const { isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showReasonModal, setShowReasonModal] = useState(false);
@@ -270,16 +275,15 @@ function OrderItemCard({
         {item.quantity}× {item.dishName}
       </Text>
       {(item.ratingCount > 0 || item.feedstarsEligible) && (
-        <View className="mt-1 flex-row items-center" style={{ gap: 6 }}>
+        <View className="mt-1 items-center" style={{ flexDirection: rowDirection, gap: 6 }}>
           {item.ratingCount > 0 && <StarRow value={item.ratingAvg ?? 0} size={14} />}
           {item.feedstarsEligible && (
             // Same badge as the menu browser's dish list (MenuBrowser.tsx) —
             // gold background, Baloo 2 wordmark, sparkles icon — reused
             // verbatim rather than a one-off here. Per the mockup, it sits
             // to the physical left of the stars (JSX order = visual
-            // right-to-left under this app's forced RTL, so it's written
-            // second).
-            <View className="flex-row items-center rounded px-2 py-0.5" style={{ backgroundColor: '#F5A623', gap: 2 }}>
+            // right-to-left, so it's written second).
+            <View className="items-center rounded px-2 py-0.5" style={{ flexDirection: rowDirection, backgroundColor: '#F5A623', gap: 2 }}>
               <Ionicons name="sparkles-outline" size={11} color="#FFFFFF" />
               <Text style={{ fontFamily: 'Baloo2_700Bold', fontSize: 11, color: '#FFFFFF' }}>{t('dishFeedstarsBadge')}</Text>
             </View>
@@ -302,7 +306,7 @@ function OrderItemCard({
         </View>
       ) : (
         canModify && (
-          <View className="mt-3 flex-row items-stretch" style={{ gap: 10 }}>
+          <View className="mt-3 items-stretch" style={{ flexDirection: rowDirection, gap: 10 }}>
             <Pressable onPress={() => setShowReasonModal(true)} disabled={busy} className="flex-1 items-center justify-center rounded-lg border py-2.5" style={{ borderColor: colors.danger }}>
               {busy ? <ActivityIndicator color={colors.danger} /> : (
                 <Text className="text-sm font-semibold" style={{ color: colors.danger }}>
@@ -354,7 +358,7 @@ function OrderItemCard({
         // specifically (proportionate to text-sm here, not a fixed 24px
         // circle that reads oversized next to it) rather than the mid-point
         // of however many lines the note wraps to.
-        <View className="mt-3 flex-row items-start" style={{ gap: 8 }}>
+        <View className="mt-3 items-start" style={{ flexDirection: rowDirection, gap: 8 }}>
           <View style={{ height: NOTE_LINE_HEIGHT, justifyContent: 'center' }}>
             <View className="items-center justify-center rounded-full" style={{ width: 18, height: 18, backgroundColor: '#38BDF8' }}>
               <Ionicons name="information-outline" size={11} color="#FFFFFF" />
@@ -371,13 +375,15 @@ function OrderItemCard({
           mirrors the action-buttons row's own flex-1/divider/flex-1
           pattern above, matching mockup "9 - Orders.JPG"'s layout
           (price on the physical left, prep time on the physical right;
-          JSX order is reversed accordingly since this flex-row is
-          RTL-mirrored). Restored 2026-09-19 after the stacked/centered
-          version the previous turn shipped didn't match the mockup. */}
-      <View className="mt-3 flex-row items-center" style={{ gap: 10 }}>
+          JSX order is reversed accordingly, driven explicitly via
+          visualRowDirection — real bug 2026-10-27, native RTL mirroring
+          alone can't be trusted, see i18n.tsx). Restored 2026-09-19 after
+          the stacked/centered version the previous turn shipped didn't
+          match the mockup. */}
+      <View className="mt-3 items-center" style={{ flexDirection: rowDirection, gap: 10 }}>
         {item.prepTimeMinutes !== null && (
           <>
-            <View className="flex-1 flex-row items-center justify-center" style={{ gap: 4 }}>
+            <View className="flex-1 items-center justify-center" style={{ flexDirection: rowDirection, gap: 4 }}>
               <Ionicons name="time-outline" size={16} color="#6E6A61" />
               <Text className="text-xs text-[#6E6A61]">
                 {t('orderEstimatedPrepTimeLabel')} <Text className="font-bold text-[#1B2430]">{t('orderEstimatedPrepTimeValue').replace('{minutes}', String(item.prepTimeMinutes))}</Text>

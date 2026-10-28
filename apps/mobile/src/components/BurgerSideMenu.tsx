@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Animated, Dimensions, Easing, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Dimensions, Easing, I18nManager, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { HeaderBackButton } from './AppHeader';
-import { useI18n } from '../lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingStart, visualColumnAlign } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { useBurgerMenuStore } from '../lib/burgerMenuStore';
 import { useTableSessionStore } from '../lib/tableSessionStore';
@@ -66,7 +66,17 @@ export function BurgerMenuButton() {
 }
 
 export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  // Real bug (2026-10-27): the panel used to always anchor via `left: 0`,
+  // relying on I18nManager mirroring that into the physical right edge
+  // under Hebrew — confirmed on a real device that this native flag can
+  // get stuck not reflecting Hebrew even after forceRTL + a full app
+  // relaunch, which left the panel opening from the physical left instead.
+  // This explicitly picks the side that lands the panel on the physical
+  // right for Hebrew (and physical left for English) regardless of
+  // whatever I18nManager.isRTL actually is right now, by counteracting it
+  // rather than assuming it will mirror correctly.
+  const anchorLeft = isRTL === I18nManager.isRTL;
   const router = useRouter();
   const open = useBurgerMenuStore((s) => s.open);
   const setOpen = useBurgerMenuStore((s) => s.setOpen);
@@ -78,12 +88,13 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
   const [translateX] = useState(() => new Animated.Value(SCREEN_WIDTH));
   const [backdropOpacity] = useState(() => new Animated.Value(0));
 
-  // Slide-in from the right on open, slide back out to the right on close —
-  // transform values are never RTL-mirrored by I18nManager (unlike absolute
-  // left/right, already confirmed this session to mirror), so a plain
-  // positive translateX always means "further toward the physical right"
-  // regardless of forceRTL, matching this panel's own `left: 0` anchor to
-  // the physical right edge.
+  // Slide-in from whichever edge the panel is anchored to (physical right
+  // for Hebrew, physical left for English — see anchorLeft above) and back
+  // out the same edge on close. transform values are never RTL-mirrored by
+  // I18nManager, so "off-screen" is a plain positive translateX (push
+  // toward the physical right) when anchored right, or negative (push
+  // toward the physical left) when anchored left.
+  const hiddenTranslateX = anchorLeft ? -SCREEN_WIDTH : SCREEN_WIDTH;
   useEffect(() => {
     if (open) {
       // setState is tied to kicking off the imperative Animated sequence
@@ -92,7 +103,7 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
       // the rule targets.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setModalVisible(true);
-      translateX.setValue(SCREEN_WIDTH);
+      translateX.setValue(hiddenTranslateX);
       backdropOpacity.setValue(0);
       Animated.parallel([
         Animated.timing(translateX, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
@@ -100,7 +111,7 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
       ]).start();
     } else if (modalVisible) {
       Animated.parallel([
-        Animated.timing(translateX, { toValue: SCREEN_WIDTH, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(translateX, { toValue: hiddenTranslateX, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
       ]).start(() => setModalVisible(false));
     }
@@ -153,21 +164,42 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
         />
         <Animated.View
           className="absolute bottom-0 w-[82%] max-w-sm"
-          // `left: 0` (not `right`) lands this on the physical right edge —
-          // confirmed this session that absolute left/right positions get
-          // mirrored under I18nManager.forceRTL(true), unlike flex-row order.
-          style={{ top: topOffset, left: 0, backgroundColor: colors.background, transform: [{ translateX }] }}
+          style={{
+            top: topOffset,
+            ...(anchorLeft ? { left: 0 } : { right: 0 }),
+            backgroundColor: colors.background,
+            transform: [{ translateX }],
+          }}
         >
           <Pressable style={{ flex: 1 }} onPress={(e) => e.stopPropagation()}>
             <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-              <View className="flex-row items-center gap-4 px-5 py-5">
+              <View className="items-center gap-4 px-5 py-5" style={{ flexDirection: visualRowDirection(isRTL) }}>
                 <View className="h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: colors.royalBlue }}>
                   <Text className="text-xl font-bold text-white">{initial}</Text>
                 </View>
+                {/* Real bug (2026-10-28): flex-1/stretched Text with no
+                    explicit textAlign — same issue found across
+                    MenuBrowser.tsx's own titles (see i18n.tsx's
+                    physicalReadingStart comment); 'auto' resolves through
+                    the stuck I18nManager.isRTL flag, not the actual
+                    language. */}
                 <View className="flex-1">
-                  <Text className="text-lg font-bold text-[#1B2430]">{displayName ?? t('loadingEllipsis')}</Text>
-                  <Text className="text-xs text-[#6E6A61]">{email}</Text>
-                  <View className="mt-1.5 flex-row items-center gap-1.5 self-start rounded-full bg-[#FEF3C7] px-2.5 py-1">
+                  <Text className="text-lg font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                    {displayName ?? t('loadingEllipsis')}
+                  </Text>
+                  <Text className="text-xs text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                    {email}
+                  </Text>
+                  {/* Real bug (2026-10-28): `self-start` is alignSelf on a
+                      column's (horizontal) cross axis — same
+                      direction-aware-through-the-stuck-flag issue as
+                      PriceRow's own alignSelf fix in MenuBrowser.tsx (see
+                      i18n.tsx's visualColumnAlign comment), not a fixed
+                      physical side. */}
+                  <View
+                    className="mt-1.5 items-center gap-1.5 rounded-full bg-[#FEF3C7] px-2.5 py-1"
+                    style={{ flexDirection: visualRowDirection(isRTL), alignSelf: visualColumnAlign(physicalReadingStart(isRTL)) }}
+                  >
                     <Ionicons name="sparkles-outline" size={13} color="#B45309" />
                     <Text className="text-xs font-semibold text-[#B45309]">{t('feedstarsLevel')}</Text>
                   </View>
@@ -178,26 +210,32 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
                 {MAIN_ROWS.map((row, i) => (
                   <View
                     key={row.key}
-                    className={`flex-row items-center gap-3 px-4 py-3.5 ${i > 0 ? 'border-t' : ''}`}
-                    style={{ borderColor: colors.border }}
+                    className={`items-center gap-3 px-4 py-3.5 ${i > 0 ? 'border-t' : ''}`}
+                    style={{ flexDirection: visualRowDirection(isRTL), borderColor: colors.border }}
                   >
                     <Ionicons name={row.icon} size={20} color={colors.textMuted} />
-                    <Text className="flex-1 text-sm text-[#9CA3AF]">{t(row.labelKey)}</Text>
+                    <Text className="flex-1 text-sm text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                      {t(row.labelKey)}
+                    </Text>
                     <Ionicons name="lock-closed-outline" size={16} color="#C7C2B4" />
                   </View>
                 ))}
               </View>
 
-              <Text className="mb-2 mt-5 px-5 text-xs font-semibold text-[#6E6A61]">{t('settingsSectionTitle')}</Text>
+              <Text className="mb-2 mt-5 px-5 text-xs font-semibold text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                {t('settingsSectionTitle')}
+              </Text>
               <View className="mx-4 overflow-hidden rounded-xl bg-white" style={{ borderColor: colors.border, borderWidth: 1 }}>
                 {SETTINGS_ROWS.map((row, i) => (
                   <View
                     key={row.key}
-                    className={`flex-row items-center gap-3 px-4 py-3.5 ${i > 0 ? 'border-t' : ''}`}
-                    style={{ borderColor: colors.border }}
+                    className={`items-center gap-3 px-4 py-3.5 ${i > 0 ? 'border-t' : ''}`}
+                    style={{ flexDirection: visualRowDirection(isRTL), borderColor: colors.border }}
                   >
                     <Ionicons name={row.icon} size={20} color={colors.textMuted} />
-                    <Text className="flex-1 text-sm text-[#9CA3AF]">{t(row.labelKey)}</Text>
+                    <Text className="flex-1 text-sm text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                      {t(row.labelKey)}
+                    </Text>
                     <Ionicons name="lock-closed-outline" size={16} color="#C7C2B4" />
                   </View>
                 ))}
@@ -219,11 +257,11 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
                     clearTableSession();
                     router.replace('/profile');
                   }}
-                  className="mx-4 mt-5 flex-row items-center gap-3 overflow-hidden rounded-xl bg-white px-4 py-3.5"
-                  style={{ borderColor: colors.danger, borderWidth: 1 }}
+                  className="mx-4 mt-5 items-center gap-3 overflow-hidden rounded-xl bg-white px-4 py-3.5"
+                  style={{ flexDirection: visualRowDirection(isRTL), borderColor: colors.danger, borderWidth: 1 }}
                 >
                   <Ionicons name="construct-outline" size={20} color={colors.danger} />
-                  <Text className="flex-1 text-sm font-medium" style={{ color: colors.danger }}>
+                  <Text className="flex-1 text-sm font-medium" style={{ color: colors.danger, textAlign: physicalReadingStart(isRTL) }}>
                     {t('testDisconnectSessionMenuItem')}
                   </Text>
                 </Pressable>

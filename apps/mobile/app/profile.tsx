@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppHeader, HeaderMailIcon, HeaderMenu } from '../src/components/AppHeader';
 import { ConfirmModal } from '../src/components/ConfirmModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
-import { useI18n } from '../src/lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingStart, visualColumnAlign } from '../src/lib/i18n';
 import type { TranslationKey } from '../src/lib/translations';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
@@ -29,7 +29,8 @@ const LOCKED_ROWS: LockedRow[] = [
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const insets = useSafeAreaInsets();
   const [session, setSession] = useState<Session | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -102,7 +103,8 @@ export default function ProfileScreen() {
             <HeaderMailIcon />
             <Pressable
               onPress={() => router.push('/scan-qr')}
-              className="flex-row items-center gap-2 rounded-full bg-white px-4 py-2.5"
+              className="items-center gap-2 rounded-full bg-white px-4 py-2.5"
+              style={{ flexDirection: rowDirection }}
             >
               <Ionicons name="qr-code-outline" size={19} color={colors.royalBlue} />
               <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
@@ -115,14 +117,28 @@ export default function ProfileScreen() {
       />
 
       <ScrollView className="flex-1 px-4 pt-6" contentContainerStyle={{ paddingBottom: 32 }}>
-        <View className="mb-6 flex-row items-center gap-4">
+        <View className="mb-6 items-center gap-4" style={{ flexDirection: rowDirection }}>
           <View className="h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: colors.royalBlue }}>
             <Text className="text-2xl font-bold text-white">{initial}</Text>
           </View>
+          {/* Real bug (2026-10-28): flex-1/stretched Texts with no explicit
+              textAlign, and `self-start` on the badge below — same two
+              issues already found and fixed in BurgerSideMenu's own
+              identical avatar+name+badge block (see i18n.tsx's
+              physicalReadingStart/visualColumnAlign comments): 'auto'
+              textAlign and alignSelf flex-start/flex-end both resolve
+              through the same stuck I18nManager.isRTL flag. */}
           <View className="flex-1">
-            <Text className="text-xl font-bold text-[#1B2430]">{displayName ?? t('loadingEllipsis')}</Text>
-            <Text className="text-sm text-[#6E6A61]">{session?.user.email}</Text>
-            <View className="mt-1.5 flex-row items-center gap-1.5 self-start rounded-full bg-[#FEF3C7] px-2.5 py-1">
+            <Text className="text-xl font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {displayName ?? t('loadingEllipsis')}
+            </Text>
+            <Text className="text-sm text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {session?.user.email}
+            </Text>
+            <View
+              className="mt-1.5 items-center gap-1.5 rounded-full bg-[#FEF3C7] px-2.5 py-1"
+              style={{ flexDirection: rowDirection, alignSelf: visualColumnAlign(physicalReadingStart(isRTL)) }}
+            >
               <Ionicons name="sparkles-outline" size={14} color="#B45309" />
               <Text className="text-xs font-semibold text-[#B45309]">{t('feedstarsLevel')}</Text>
             </View>
@@ -130,9 +146,11 @@ export default function ProfileScreen() {
         </View>
 
         <View className="mb-4 overflow-hidden rounded-xl bg-white" style={{ borderColor: colors.border, borderWidth: 1 }}>
-          <Pressable onPress={openEditName} className="flex-row items-center gap-3 px-4 py-4">
+          <Pressable onPress={openEditName} className="items-center gap-3 px-4 py-4" style={{ flexDirection: rowDirection }}>
             <Ionicons name="pencil-outline" size={22} color={colors.textMuted} />
-            <Text className="flex-1 text-base text-[#1B2430]">{t('editProfile')}</Text>
+            <Text className="flex-1 text-base text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('editProfile')}
+            </Text>
           </Pressable>
           {/* Voluntary password change (2026-10-16, user request) — forgot-
               password's code verification now logs the diner straight back
@@ -140,11 +158,13 @@ export default function ProfileScreen() {
               that choice lives instead: optional, whenever they want it. */}
           <Pressable
             onPress={() => router.push('/set-new-password')}
-            className="flex-row items-center gap-3 border-t px-4 py-4"
-            style={{ borderColor: colors.border }}
+            className="items-center gap-3 border-t px-4 py-4"
+            style={{ flexDirection: rowDirection, borderColor: colors.border }}
           >
             <Ionicons name="key-outline" size={22} color={colors.textMuted} />
-            <Text className="flex-1 text-base text-[#1B2430]">{t('changePassword')}</Text>
+            <Text className="flex-1 text-base text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('changePassword')}
+            </Text>
           </Pressable>
         </View>
 
@@ -152,11 +172,13 @@ export default function ProfileScreen() {
           {LOCKED_ROWS.map((row, i) => (
             <View
               key={row.key}
-              className={`flex-row items-center gap-3 px-4 py-4 ${i > 0 ? 'border-t' : ''}`}
-              style={{ borderColor: colors.border }}
+              className={`items-center gap-3 px-4 py-4 ${i > 0 ? 'border-t' : ''}`}
+              style={{ flexDirection: rowDirection, borderColor: colors.border }}
             >
               <Ionicons name={row.icon} size={22} color={colors.textMuted} />
-              <Text className="flex-1 text-base text-[#9CA3AF]">{t(row.labelKey)}</Text>
+              <Text className="flex-1 text-base text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                {t(row.labelKey)}
+              </Text>
               <Ionicons name="lock-closed-outline" size={18} color="#C7C2B4" />
             </View>
           ))}
@@ -176,16 +198,24 @@ export default function ProfileScreen() {
       <Modal visible={editingName} transparent animationType="fade" onRequestClose={() => setEditingName(false)}>
         <View className="flex-1 items-center justify-center bg-black/40 px-6">
           <View className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <Text className="mb-3 text-lg font-bold text-[#1B2430]">{t('editProfile')}</Text>
-            <Text className="mb-1.5 text-xs font-semibold text-[#6E6A61]">{t('displayName')}</Text>
+            {/* Real bug (2026-10-28): plain full-width Texts, same
+                textAlign:'auto' issue found across the rest of the app —
+                see i18n.tsx's physicalReadingStart comment. TextInput has
+                the exact same 'auto' default for its own typed text. */}
+            <Text className="mb-3 text-lg font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('editProfile')}
+            </Text>
+            <Text className="mb-1.5 text-xs font-semibold text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('displayName')}
+            </Text>
             <TextInput
               value={nameDraft}
               onChangeText={setNameDraft}
               className="mb-5 rounded-xl border px-4 py-3 text-base text-[#1B2430]"
-              style={{ borderColor: colors.border }}
+              style={{ borderColor: colors.border, textAlign: physicalReadingStart(isRTL) }}
               autoFocus
             />
-            <View className="flex-row-reverse gap-3">
+            <View className="gap-3" style={{ flexDirection: visualRowDirection(!isRTL) }}>
               <Pressable
                 onPress={() => void saveName()}
                 disabled={savingName || !nameDraft.trim()}

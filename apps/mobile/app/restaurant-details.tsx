@@ -7,7 +7,7 @@ import { AppHeader, HeaderBackButton, HeaderMenu } from '../src/components/AppHe
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
 import { goBackOrHome } from '../src/lib/goBackOrHome';
 import { supabase } from '../src/lib/supabase';
-import { useI18n } from '../src/lib/i18n';
+import { useI18n, visualRowDirection } from '../src/lib/i18n';
 import type { TranslationKey } from '../src/lib/translations';
 import { colors } from '../src/theme';
 
@@ -119,7 +119,8 @@ function isPdfUrl(url: string): boolean {
 
 export default function RestaurantDetailsScreen() {
   const router = useRouter();
-  const { t, lang } = useI18n();
+  const { t, lang, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     restaurantId: string;
@@ -307,12 +308,13 @@ export default function RestaurantDetailsScreen() {
             no equivalent "badge" to match for a negative declaration. */}
         <Pressable
           onPress={handleBadgePress}
-          className="mb-4 flex-row items-center gap-2 self-center rounded-full px-3 py-1.5"
-          style={
-            isCertified
+          className="mb-4 items-center gap-2 self-center rounded-full px-3 py-1.5"
+          style={{
+            flexDirection: rowDirection,
+            ...(isCertified
               ? { backgroundColor: colors.discountGreenDark }
-              : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }
-          }
+              : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }),
+          }}
         >
           <Ionicons name={isCertified ? 'checkmark-circle' : 'close-circle-outline'} size={16} color={isCertified ? '#FFFFFF' : colors.textMuted} />
           <Text className="text-base font-semibold" style={{ color: isCertified ? '#FFFFFF' : colors.textMuted }}>
@@ -322,7 +324,7 @@ export default function RestaurantDetailsScreen() {
         </Pressable>
 
         {cuisineTags.length > 0 && (
-          <View className="mb-3 flex-row flex-wrap justify-center gap-1.5 px-6">
+          <View className="mb-3 flex-wrap justify-center gap-1.5 px-6" style={{ flexDirection: rowDirection }}>
             {cuisineTags.map((tag) => (
               <View key={tag} className="rounded-full px-4 py-2" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
                 <Text className="text-base font-medium text-[#1B2430]">{t(CUISINE_LABEL_KEYS[tag] ?? 'cuisineDairy')}</Text>
@@ -337,7 +339,7 @@ export default function RestaurantDetailsScreen() {
 
         <View className="mx-6 mb-3 rounded-xl bg-white p-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
           {hourRules.length > 0 ? (
-            <Pressable onPress={() => setWeekExpanded((v) => !v)} className="flex-row items-start gap-3 py-2">
+            <Pressable onPress={() => setWeekExpanded((v) => !v)} className="items-start gap-3 py-2" style={{ flexDirection: rowDirection }}>
               <Ionicons name="time-outline" size={18} color={colors.textMuted} />
               <View className="flex-1">
                 <Text className="text-sm text-[#9CA3AF]">{t('hoursToday')}</Text>
@@ -351,21 +353,21 @@ export default function RestaurantDetailsScreen() {
               <Ionicons name={weekExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
             </Pressable>
           ) : (
-            <View className="flex-row items-start gap-3 py-2">
+            <View className="items-start gap-3 py-2" style={{ flexDirection: rowDirection }}>
               <Ionicons name="time-outline" size={18} color={colors.textMuted} />
               <Text className="flex-1 text-base text-[#6E6A61]">{t('hoursNotPublished')}</Text>
             </View>
           )}
 
           {!!info.address && (
-            <View className="flex-row items-start gap-3 border-t py-2" style={{ borderColor: colors.border }}>
+            <View className="items-start gap-3 border-t py-2" style={{ flexDirection: rowDirection, borderColor: colors.border }}>
               <Ionicons name="location-outline" size={18} color={colors.textMuted} />
               <Text className="flex-1 text-base text-[#1B2430]">{info.address}</Text>
             </View>
           )}
 
           {!!info.phone && (
-            <Pressable onPress={handleCall} className="flex-row items-start gap-3 border-t py-2" style={{ borderColor: colors.border }}>
+            <Pressable onPress={handleCall} className="items-start gap-3 border-t py-2" style={{ flexDirection: rowDirection, borderColor: colors.border }}>
               <Ionicons name="call-outline" size={18} color={colors.textMuted} />
               <Text className="flex-1 text-base text-[#1B3FA8]">{info.phone}</Text>
             </Pressable>
@@ -415,7 +417,7 @@ export default function RestaurantDetailsScreen() {
                   resizeMode="contain"
                 />
                 <View className="absolute inset-x-0 bottom-2 items-center">
-                  <View className="flex-row items-center gap-1 rounded-full bg-black/50 px-2.5 py-1">
+                  <View className="items-center gap-1 rounded-full bg-black/50 px-2.5 py-1" style={{ flexDirection: rowDirection }}>
                     <Ionicons name="expand-outline" size={12} color="#FFFFFF" />
                     <Text className="text-xs text-white">{t('tapToEnlarge')}</Text>
                   </View>

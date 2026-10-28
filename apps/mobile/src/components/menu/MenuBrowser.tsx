@@ -6,7 +6,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Dish, DishModifierGroup, DishModifierOption, DishSizeOption, MenuCategory, ModifierOptionServingVariant } from '@feedbook/types';
 import { ConfirmModal } from '../ConfirmModal';
 import { ErrorModal } from '../ErrorModal';
-import { useI18n } from '../../lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingEnd, physicalReadingStart, visualColumnAlign } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { supabase } from '../../lib/supabase';
 import { extractFunctionErrorCode } from '../../lib/functionError';
@@ -77,8 +77,22 @@ export function useMenuData(restaurantId: string | null) {
       ]);
       const dishIds = (dishes ?? []).map((d) => d.id);
       const [{ data: sizes }, { data: groups }] = await Promise.all([
+        // Real bug (2026-10-27, user report): a diner who is ALSO staff at
+        // this restaurant (current_staff_restaurant_ids(), see
+        // staff_manage_own_restaurant_dish_size_options policy) gets every
+        // historical/soft-deleted size row here too, not just the active
+        // ones — that staff policy is intentionally unfiltered (the web
+        // admin editor needs to see inactive sizes), and RLS policies for
+        // the same role OR together, so it widens what this diner-facing
+        // query returns for exactly that person. Confirmed against the real
+        // local DB: `set role anon` returns only the 2 active rows for a
+        // true diner, but a staff member's own session returned all 6.
+        // Explicit is_active filter here closes it for every caller,
+        // regardless of their other roles — same "don't rely on RLS alone"
+        // principle already used elsewhere (see dish_size_options_soft_
+        // delete.sql's own comment).
         dishIds.length
-          ? supabase.from('dish_size_options').select('*').in('dish_id', dishIds).order('sort_order')
+          ? supabase.from('dish_size_options').select('*').eq('is_active', true).in('dish_id', dishIds).order('sort_order')
           : Promise.resolve({ data: [] as DishSizeOption[] }),
         dishIds.length
           ? supabase.from('dish_modifier_groups').select('*').in('dish_id', dishIds).order('sort_order')
@@ -779,12 +793,13 @@ function FilterChip({
   onPress: () => void;
   tone?: 'include' | 'exclude';
 }) {
+  const { isRTL } = useI18n();
   const activeColor = tone === 'exclude' ? colors.brightRed : colors.royalBlue;
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center rounded-lg border px-3 py-2"
-      style={{ gap: 4, borderColor: selected ? activeColor : colors.border, backgroundColor: selected ? activeColor : '#FFFFFF' }}
+      className="items-center rounded-lg border px-3 py-2"
+      style={{ flexDirection: visualRowDirection(isRTL), gap: 4, borderColor: selected ? activeColor : colors.border, backgroundColor: selected ? activeColor : '#FFFFFF' }}
     >
       <Text className="text-sm font-medium" style={{ color: selected ? '#FFFFFF' : colors.ink }}>
         {label}
@@ -815,15 +830,20 @@ function FilterSortBar({
   hasActiveFilters: boolean;
   t: (key: TranslationKey) => string;
 }) {
+  // Real bug (2026-10-27): plain flex-row relied on a native RTL flag that
+  // doesn't reliably flip on a real device — see i18n.tsx's
+  // visualRowDirection for why this is driven explicitly instead.
+  const { isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   return (
-    <View className="flex-row border-b bg-white" style={{ borderColor: colors.border }}>
-      <Pressable onPress={onOpenSort} className="flex-1 flex-row items-center justify-center py-3" style={{ gap: 6 }}>
+    <View style={{ flexDirection: rowDirection, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: '#FFFFFF' }}>
+      <Pressable onPress={onOpenSort} className="flex-1 items-center justify-center py-3" style={{ flexDirection: rowDirection, gap: 6 }}>
         <Ionicons name="swap-vertical-outline" size={18} color={colors.royalBlue} />
         <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
           {t('dishSortButton')}
         </Text>
       </Pressable>
-      <Pressable onPress={onOpenFilter} className="flex-1 flex-row items-center justify-center py-3" style={{ gap: 6 }}>
+      <Pressable onPress={onOpenFilter} className="flex-1 items-center justify-center py-3" style={{ flexDirection: rowDirection, gap: 6 }}>
         <Ionicons name="funnel-outline" size={16} color={colors.royalBlue} />
         <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
           {t('dishFilterButton')}
@@ -850,6 +870,7 @@ function SortSheet({
   onChange: (next: DishSortOption) => void;
   t: (key: TranslationKey) => string;
 }) {
+  const { isRTL } = useI18n();
   const options: { key: Exclude<DishSortOption, null>; labelKey: TranslationKey }[] = [
     { key: 'popularity', labelKey: 'dishSortPopularity' },
     { key: 'rating', labelKey: 'dishSortRatingHigh' },
@@ -874,8 +895,8 @@ function SortSheet({
                   onChange(selected ? null : opt.key);
                   onClose();
                 }}
-                className="flex-row items-center px-4 py-3"
-                style={{ gap: 10 }}
+                className="items-center px-4 py-3"
+                style={{ flexDirection: visualRowDirection(isRTL), gap: 10 }}
               >
                 <Ionicons
                   name={selected ? 'radio-button-on' : 'radio-button-off'}
@@ -922,6 +943,8 @@ function FilterScreen({
   criticalStock: Map<string, 'low' | 'out' | undefined>;
   t: (key: TranslationKey) => string;
 }) {
+  const { isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const priced = dishes.map((d) => ({ dish: d, price: effectiveDishPrice(d, sizesByDish.get(d.id) ?? []) }));
 
   function countFor(skipGroup: keyof DishFilterState, predicate: (dish: Dish, price: number) => boolean): number {
@@ -949,7 +972,7 @@ function FilterScreen({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        <View className="flex-row items-center justify-between border-b px-4 py-3" style={{ borderColor: colors.border }}>
+        <View className="items-center justify-between border-b px-4 py-3" style={{ flexDirection: rowDirection, borderColor: colors.border }}>
           <Pressable onPress={onClose} hitSlop={8}>
             <Ionicons name="close" size={22} color={colors.ink} />
           </Pressable>
@@ -963,7 +986,7 @@ function FilterScreen({
           <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
             {t('dishFilterBudgetSection')}
           </Text>
-          <View className="mb-5 flex-row flex-wrap" style={{ gap: 8 }}>
+          <View className="mb-5 flex-wrap" style={{ flexDirection: rowDirection, gap: 8 }}>
             {PRICE_BUCKETS.map((bucket) => (
               <FilterChip
                 key={bucket}
@@ -978,7 +1001,7 @@ function FilterScreen({
           <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
             {t('dishFilterStarsSection')}
           </Text>
-          <View className="mb-5 flex-row flex-wrap" style={{ gap: 8 }}>
+          <View className="mb-5 flex-wrap" style={{ flexDirection: rowDirection, gap: 8 }}>
             <FilterChip
               label={t('dishFilterNoRating')}
               count={countFor('starRating', (dish) => dish.rating_count === 0)}
@@ -999,7 +1022,7 @@ function FilterScreen({
           <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
             {t('dishFilterGuestRatingSection')}
           </Text>
-          <View className="mb-5 flex-row flex-wrap" style={{ gap: 8 }}>
+          <View className="mb-5 flex-wrap" style={{ flexDirection: rowDirection, gap: 8 }}>
             <FilterChip
               label={t('dishFilterNoRating')}
               count={countFor('guestRatingMin', (dish) => dish.rating_count === 0)}
@@ -1022,7 +1045,7 @@ function FilterScreen({
               <Text className="mb-2 text-sm font-bold" style={{ color: colors.ink }}>
                 {t('dishFilterAllergensSection')}
               </Text>
-              <View className="mb-5 flex-row flex-wrap" style={{ gap: 8 }}>
+              <View className="mb-5 flex-wrap" style={{ flexDirection: rowDirection, gap: 8 }}>
                 {allAllergens.map((allergen) => (
                   <FilterChip
                     key={allergen}
@@ -1047,8 +1070,8 @@ function FilterScreen({
           </Text>
           <Pressable
             onPress={() => onChange({ ...filters, availableOnly: !filters.availableOnly })}
-            className="flex-row items-center rounded-lg border px-3 py-2.5"
-            style={{ gap: 8, borderColor: filters.availableOnly ? colors.royalBlue : colors.border }}
+            className="items-center rounded-lg border px-3 py-2.5"
+            style={{ flexDirection: rowDirection, gap: 8, borderColor: filters.availableOnly ? colors.royalBlue : colors.border }}
           >
             <Ionicons
               name={filters.availableOnly ? 'checkbox' : 'square-outline'}
@@ -1122,6 +1145,8 @@ function PriceRow({
   // entrecote steak).
   almostOutLabel: string | null;
 }) {
+  const { isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   // mt-1.5 (2026-10-01, per explicit request, gentle increase) — this line
   // had no top spacing at all before, sitting flush against the discount/
   // almost-out row right above it. text-[10px] (2026-10-01 follow-up, same
@@ -1140,8 +1165,14 @@ function PriceRow({
 
   if (!hasDiscount) {
     return (
-      <View style={{ alignItems: 'flex-end' }}>
-        <View className="flex-row items-center" style={{ gap: 6 }}>
+      // Real bug (2026-10-28): see visualColumnAlign's own comment in
+      // i18n.tsx — a column's cross axis is horizontal, so alignItems
+      // flex-start/flex-end here genuinely is direction-aware, through the
+      // same stuck I18nManager.isRTL flag flexDirection uses. Anchored to
+      // the same physical side as the price block's own outer wrapper in
+      // DishRow (physicalReadingEnd), so the row/vatLabel line up with it.
+      <View style={{ alignItems: visualColumnAlign(physicalReadingEnd(isRTL)) }}>
+        <View className="items-center" style={{ flexDirection: rowDirection, gap: 6 }}>
           {/* "כמעט אזל" first in source order so RTL puts it on the physical
               right of the price, matching this row's own established
               convention. */}
@@ -1192,8 +1223,10 @@ function PriceRow({
   const displayPercent = Math.ceil(truePercent);
   const isApprox = displayPercent !== truePercent;
   return (
-    <View style={{ alignItems: 'flex-end' }}>
-      <View className="flex-row items-end" style={{ gap: 4 }}>
+    // Real bug (2026-10-28): same visualColumnAlign fix as the no-discount
+    // branch above.
+    <View style={{ alignItems: visualColumnAlign(physicalReadingEnd(isRTL)) }}>
+      <View className="items-end" style={{ flexDirection: rowDirection, gap: 4 }}>
         {/* "החל מ-" split out of the strikethrough price (2026-10-01, per
             explicit request) — it used to be inside the same struck-through
             Text as the original price, so the line ran through the label
@@ -1219,7 +1252,7 @@ function PriceRow({
             {prefix}
           </Text>
         )}
-        <View className="flex-row items-end" style={{ gap: 2 }}>
+        <View className="items-end" style={{ flexDirection: rowDirection, gap: 2 }}>
           <Text className="text-xs" style={{ color: colors.originalPriceRed, textDecorationLine: 'line-through' }}>
             ₪{basePrice}
           </Text>
@@ -1242,7 +1275,7 @@ function PriceRow({
               (physical right), ₪ second (physical left) — matching how the
               untouched, never-complained-about `₪{basePrice}` right above
               this already renders as plain unflexed text. */}
-          <View className="flex-row items-end" style={{ gap: 2 }}>
+          <View className="items-end" style={{ flexDirection: rowDirection, gap: 2 }}>
             <Text className="text-[17px] font-bold" style={{ color: colors.royalBlue }}>
               {discounted}
             </Text>
@@ -1252,7 +1285,7 @@ function PriceRow({
           </View>
         </View>
       </View>
-      <View className="mt-1 flex-row items-center" style={{ gap: 6 }}>
+      <View className="mt-1 items-center" style={{ flexDirection: rowDirection, gap: 6 }}>
         <View className="rounded px-1 py-0.5" style={{ backgroundColor: colors.discountGreenDark }}>
           <Text className="text-[9px] font-bold text-white">
             {t(isApprox ? 'dishDiscountSavedApproxBadge' : 'dishDiscountSavedBadge').replace('{percent}', String(displayPercent))}
@@ -1313,7 +1346,7 @@ function LikeButton({
   // the pill's own hardcoded top:8/right:8 was tuned for CategoryCard's
   // photo corner specifically.
   showCount?: boolean;
-  positionStyle?: { position: 'absolute'; top: number; bottom?: number; end?: number; right?: number };
+  positionStyle?: { position: 'absolute'; top: number; bottom?: number; left?: number; right?: number };
   iconSize?: number;
   hitSlop?: number;
 }) {
@@ -1324,6 +1357,7 @@ function LikeButton({
   // a stand-in for real typing elsewhere) — the runtime value is always
   // exactly the correct column name for whichever table was actually passed.
   const idColumn = (table === 'dish_likes' ? 'dish_id' : 'category_id') as never;
+  const { isRTL } = useI18n();
   const [liked, setLiked] = useState(initiallyLiked);
   const [count, setCount] = useState(initialCount);
   const [busy, setBusy] = useState(false);
@@ -1376,26 +1410,23 @@ function LikeButton({
       onPress={() => void toggle()}
       disabled={!id || busy}
       hitSlop={hitSlop}
-      className={showCount ? 'flex-row items-center rounded-full bg-white px-2.5 py-1.5' : 'items-center justify-center'}
+      className={showCount ? 'items-center rounded-full bg-white px-2.5 py-1.5' : 'items-center justify-center'}
       style={
         showCount
           ? {
-              // 2026-09-14 (correction): this app already has an established,
-              // real-device-verified rule (BurgerSideMenu.tsx's own X-badge fix,
-              // 2026-09-11) that under this app's forced RTL, React Native
-              // mirrors absolute left/right the same way it mirrors flex-row —
-              // style `left` actually renders on the physical RIGHT, not the
-              // left. The previous version of this button used `left: 8`
-              // expecting it to stay physically left, which is exactly backwards
-              // per that rule — confirmed by real-device feedback showing it on
-              // the right. `right: 8` is what actually lands on the physical left
-              // in Hebrew, and correctly flips to the physical right once English
-              // switches this app to LTR (no mirroring applies there) — matching
-              // both "left in Hebrew" and "should flip with the language" in one
-              // property, with no isRTL branch needed.
+              flexDirection: visualRowDirection(isRTL),
+              // Real bug (2026-10-27): the 2026-09-14 "left/right auto-
+              // mirrors" rule this cited (from BurgerSideMenu's older
+              // X-badge fix) was never actually correct — plain left/right
+              // are NOT I18n-aware in React Native, only flexDirection and
+              // the logical start/end props are (see i18n.tsx's own
+              // physicalReadingEnd for the real explanation). Computed
+              // explicitly instead: lands on the physical left in Hebrew,
+              // physical right in English, with no dependency on
+              // I18nManager at all.
               position: 'absolute',
               top: 8,
-              right: 8,
+              [physicalReadingEnd(isRTL)]: 8,
               gap: 5,
               shadowColor: '#000',
               shadowOpacity: 0.18,
@@ -1454,17 +1485,40 @@ function CategoryCard({
           feedback that it read as floating too far below it. Rating block
           moved beside the name (not a separate row above it) — right side
           (RTL-start) holds the name, left side holds stars + verified-
-          review count, both at the top of the strip. paddingEnd (not a
-          symmetric px-3) so this block sits closer to the card's actual
+          review count, both at the top of the strip. The tighter side (not
+          a symmetric px-3) so this block sits closer to the card's actual
           left edge in Hebrew, per feedback that it read as floating too far
-          from it — paddingStart keeps the name's own breathing room. */}
-      <View className="pb-3 pt-2" style={{ paddingStart: 12, paddingEnd: 6 }}>
-        <View className="flex-row items-start justify-between">
-          <Text className="flex-1 text-base font-bold" style={{ color: '#173A63' }}>
+          from it — the generous side keeps the name's own breathing room.
+          Real bug (2026-10-27): this used to be paddingStart/paddingEnd,
+          RN's logical props — both resolve through the same broken
+          I18nManager.isRTL flag as flexDirection does, so the generous/
+          tight sides landed backwards (title squeezed against the stars
+          instead of having room). Computed explicitly instead, independent
+          of that flag (see i18n.tsx's physicalReadingStart/End). */}
+      <View className="pb-3 pt-2" style={physicalReadingStart(isRTL) === 'right' ? { paddingRight: 12, paddingLeft: 6 } : { paddingLeft: 12, paddingRight: 6 }}>
+        <View className="items-start justify-between" style={{ flexDirection: visualRowDirection(isRTL) }}>
+          {/* Real bug (2026-10-28): this Text is flex-1 (a wide box, not
+              sized to its own content) with no explicit textAlign — RN's
+              default 'auto' resolves through the same stuck
+              I18nManager.isRTL flag as flexDirection does, not the actual
+              language, so it rendered flush against whatever physical side
+              'auto' happened to resolve to (the left, next to the stars)
+              instead of the card's right edge. textAlign literal values are
+              NOT I18n-mirrored (only 'auto' is), so physicalReadingStart
+              gives a flag-independent, always-correct answer here, same as
+              it does for absolute positioning. */}
+          <Text className="flex-1 text-base font-bold" style={{ color: '#173A63', textAlign: physicalReadingStart(isRTL) }}>
             {category.name}
           </Text>
           {avgRating !== null && (
-            <View className="flex-row items-center" style={{ gap: 4, marginStart: 6 }}>
+            <View
+              className="items-center"
+              style={{
+                flexDirection: visualRowDirection(isRTL),
+                gap: 4,
+                ...(physicalReadingStart(isRTL) === 'right' ? { marginRight: 6 } : { marginLeft: 6 }),
+              }}
+            >
               <Ionicons name="trophy" size={13} color="#F5A623" />
               <StarRow value={avgRating} size={15} />
             </View>
@@ -1473,7 +1527,7 @@ function CategoryCard({
         {/* Review count moved down onto the same row as "ראו את כל התפריט"
             (was on the stars' row above) — same text-xs size as that link,
             opposite side of the same row via justify-between. */}
-        <View className="mt-1.5 flex-row items-center justify-between">
+        <View className="mt-1.5 items-center justify-between" style={{ flexDirection: visualRowDirection(isRTL) }}>
           {/* The chevron is rendered as a nested <Text> using Ionicons' own
               glyph character (its "ionicons" icon font), not a separate
               <Ionicons> element beside this one — a sibling icon component
@@ -1526,6 +1580,8 @@ function DishRow({
   initiallyLiked: boolean;
 }) {
   const image = dish.photo_urls[0];
+  const { isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   // Score-derived (2026-09-24): dishes.is_special_value turned out to be a
   // dead column (documented as "staff-set", but grepping MenuManager.tsx
   // shows no admin UI ever sets it) — per the user's instruction this badge
@@ -1586,8 +1642,8 @@ function DishRow({
     <Pressable
       onPressIn={handleCardPressIn}
       onPress={handleCardPress}
-      className="mb-3 flex-row bg-white"
-      style={{ gap: 10, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}
+      className="mb-3 bg-white"
+      style={{ flexDirection: rowDirection, gap: 10, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}
     >
       {/* Image stretched flush to the card's own edges (2026-10-01, per
           explicit request — "as it was before" the card padding started
@@ -1641,7 +1697,19 @@ function DishRow({
       ) : (
         <View style={{ width: 150, alignSelf: 'stretch', backgroundColor: '#EFEBE2' }} />
       )}
-      <View className="flex-1 justify-center py-3 pe-4">
+      {/* Real bug (2026-10-28): `pe-4` is NativeWind's logical padding-end
+          utility — it resolves through the same stuck I18nManager.isRTL
+          flag as RN's own paddingStart/paddingEnd do (see i18n.tsx's own
+          comment on those), not the actual language, so it was landing on
+          the wrong physical side: the gap against the photo (right side,
+          already has the row's own `gap: 10`) instead of the gap against
+          the card's outer wall (physical left in Hebrew) — leaving every
+          label in this column flush against that wall with no breathing
+          room, looking clipped. Computed explicitly instead. */}
+      <View
+        className="flex-1 justify-center py-3"
+        style={physicalReadingEnd(isRTL) === 'left' ? { paddingLeft: 16 } : { paddingRight: 16 }}
+      >
         {/* Title row (2026-09-24): the score badge moved up here, to the
             far corner opposite the name — same justify-between pattern
             CategoryCard's own title row already uses for its trophy+stars
@@ -1677,7 +1745,20 @@ function DishRow({
         <View style={{ position: 'relative', minHeight: 26 }}>
           {/* Sized up slightly (2026-10-01, per explicit request, gentle
               increase) — was text-base (16px). */}
-          <Text className="text-[17px] font-semibold text-[#1B2430]" style={{ paddingEnd: 32 }} numberOfLines={2}>
+          {/* Real bug (2026-10-27): paddingEnd and the LikeButton's own
+              positionStyle below both used RN's logical `end` property,
+              which resolves through the same broken I18nManager.isRTL flag
+              as flexDirection does — computed explicitly through
+              physicalReadingEnd instead (see i18n.tsx), independent of that
+              flag. */}
+          <Text
+            className="text-[17px] font-semibold text-[#1B2430]"
+            style={{
+              textAlign: physicalReadingStart(isRTL),
+              ...(physicalReadingEnd(isRTL) === 'left' ? { paddingLeft: 32 } : { paddingRight: 32 }),
+            }}
+            numberOfLines={2}
+          >
             {dish.name}
           </Text>
           <LikeButton
@@ -1688,7 +1769,7 @@ function DishRow({
             showCount={false}
             iconSize={22}
             hitSlop={14}
-            positionStyle={{ position: 'absolute', top: 0, bottom: 0, end: 0 }}
+            positionStyle={{ position: 'absolute', top: 0, bottom: 0, [physicalReadingEnd(isRTL)]: 0 }}
           />
         </View>
         {/* Stars + trophy + Feedstars, tight under the title (2026-09-27) —
@@ -1699,7 +1780,7 @@ function DishRow({
             its own row. flex-wrap as a safety net only; at normal card
             widths this still fits on one line. */}
         {(dish.rating_count > 0 || dish.feedstars_eligible) && (
-          <View className="flex-row flex-wrap items-center" style={{ gap: 4, marginTop: 2 }}>
+          <View className="flex-wrap items-center" style={{ flexDirection: rowDirection, gap: 4, marginTop: 2 }}>
             {/* Stars + trophy sized up slightly (2026-10-01, per explicit
                 request, gentle increase) — was 12/13. */}
             {dish.rating_count > 0 && <StarRow value={dish.rating_avg ?? 0} size={14} />}
@@ -1711,7 +1792,7 @@ function DishRow({
               // this badge (the tallest child), so trimming its own padding
               // is what actually pulls the whole row — and the title gap
               // above it — tighter, not the row's own marginTop/gap.
-              <View className="flex-row items-center rounded" style={{ backgroundColor: '#F5A623', gap: 2, paddingHorizontal: 5.5, paddingVertical: 1.5 }}>
+              <View className="items-center rounded" style={{ flexDirection: rowDirection, backgroundColor: '#F5A623', gap: 2, paddingHorizontal: 5.5, paddingVertical: 1.5 }}>
                 <Ionicons name="sparkles-outline" size={8.5} color="#FFFFFF" />
                 <Text style={{ fontFamily: 'Baloo2_700Bold', fontSize: 8.5, color: '#FFFFFF' }}>{t('dishFeedstarsBadge')}</Text>
               </View>
@@ -1732,7 +1813,7 @@ function DishRow({
             gray, same font size) rather than the badge's white/8px text —
             joined to the review count with a "·" separator. */}
         {dish.rating_count > 0 && (
-          <View className="flex-row items-center" style={{ gap: 6, marginTop: 3 }}>
+          <View className="items-center" style={{ flexDirection: rowDirection, gap: 6, marginTop: 3 }}>
             {/* Score number sized up slightly (2026-10-01, gentle increase, per
                 explicit request) — was text-xs (12px). */}
             <View className="items-center rounded px-1.5 py-0.5" style={{ backgroundColor: colors.royalBlue }}>
@@ -1759,8 +1840,13 @@ function DishRow({
             for a dish with a single flat price). Each option's own `name`
             already carries its unit (e.g. "350 גרם"), so this just joins
             them with the mockup's "/" separator. */}
+        {/* Real bug (2026-10-28): plain block Text, same textAlign:'auto'-
+            depends-on-the-stuck-native-flag issue as CategoryCard's own
+            title — it was rendering flush against this column's left edge
+            (the box's own full-stretch width) instead of beside the title
+            on the right. */}
         {sizes.length > 0 && (
-          <Text className="mt-0.5 text-xs" style={{ color: colors.textMuted }}>
+          <Text className="mt-0.5 text-xs" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
             {sizes.map((s) => s.name).join(' / ')}
           </Text>
         )}
@@ -1782,7 +1868,7 @@ function DishRow({
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.75}
-            style={{ color: colors.bottleGreen }}
+            style={{ color: colors.bottleGreen, textAlign: physicalReadingStart(isRTL) }}
           >
             {activityLabel}
           </Text>
@@ -1797,7 +1883,7 @@ function DishRow({
         {/* Sized down slightly (2026-10-01, per explicit request, gentle
             decrease) — was text-[12px]. */}
         {presenceLabel && (
-          <Text className="mt-0.5 text-[11px] font-medium" style={{ color: colors.textMuted }}>
+          <Text className="mt-0.5 text-[11px] font-medium" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
             {presenceLabel}
           </Text>
         )}
@@ -1805,8 +1891,18 @@ function DishRow({
             bullet, independently gated on its own live condition. "כמעט
             אזל" moved down next to the price (2026-09-27, per explicit
             request), no longer sharing this row. */}
+        {/* Real bug (2026-10-28): this used to be a literal className
+            "flex-row" with a single child — harmless for child ORDER since
+            there's only one, but the single badge's own position within
+            this container (which stretches to the DishRow column's full
+            width) comes from justifyContent's default flex-start, which IS
+            a main-axis/direction-aware position — so under the stuck
+            I18nManager.isRTL flag it kept landing flush on the physical
+            left regardless of language (per real-device feedback, it
+            appeared on the left instead of the right). Needs rowDirection
+            the same as any other flexDirection in this file. */}
         {isHighDemand && (
-          <View className="mt-1 flex-row flex-wrap items-center" style={{ gap: 4 }}>
+          <View className="mt-1 flex-wrap items-center" style={{ flexDirection: rowDirection, gap: 4 }}>
             <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: colors.darkRed }}>
               <Text className="text-[10px] font-semibold text-white">{t('dishHighDemandBadge')}</Text>
             </View>
@@ -1814,9 +1910,10 @@ function DishRow({
         )}
         {/* Top-rated value badge — always its own row below "ביקוש גבוה"
             (2026-09-27, per explicit request), not sharing a row/wrap with
-            it. */}
+            it. Same single-child positioning bug as isHighDemand above,
+            fixed the same way. */}
         {isTopRated && (
-          <View className="mt-1 flex-row items-center" style={{ gap: 4 }}>
+          <View className="mt-1 items-center" style={{ flexDirection: rowDirection, gap: 4 }}>
             <View className="rounded px-2.5 py-1" style={{ borderWidth: 1.5, borderColor: colors.valueOrange, backgroundColor: '#FFFFFF' }}>
               <Text className="text-[11px] font-semibold" style={{ color: colors.valueOrange }}>
                 {t('dishBadgeSpecialValue')}
@@ -1824,10 +1921,16 @@ function DishRow({
             </View>
           </View>
         )}
-        {/* alignItems: 'flex-end' — under this app's real I18nManager RTL
-            (not a CSS `dir`), flex-end on the cross axis is the physical
-            left, the same way a flex-row's child order already flips
-            physically elsewhere in this file.
+        {/* Price block anchored to the physical left in Hebrew (per explicit
+            request).
+            Real bug (2026-10-28): this used to be a literal
+            alignSelf: 'flex-end', assuming it would resolve through
+            I18nManager the way a flex-row's child order does — which is
+            true in principle (a column's cross axis is horizontal, so it
+            genuinely is direction-aware), but it goes through the exact
+            same stuck I18nManager.isRTL flag as flexDirection does, so it's
+            just as unreliable. visualColumnAlign counteracts that flag the
+            same way visualRowDirection does for flexDirection.
             2026-10-01 (reworked): "כמעט אזל" used to live here, beside the
             whole PriceRow column — which put it beside the VAT label's own
             (much wider) line whenever that was the widest line in the
@@ -1836,7 +1939,7 @@ function DishRow({
             entirely PriceRow's own responsibility, rendered inline next to
             whichever specific line it belongs beside — see PriceRow's
             almostOutLabel prop. */}
-        <View className="mt-1.5" style={{ alignSelf: 'flex-end' }}>
+        <View className="mt-1.5" style={{ alignSelf: visualColumnAlign(physicalReadingEnd(isRTL)) }}>
           {!isSoldOut && (
             <PriceRow dish={dish} sizes={sizes} t={t} vatRatePercent={vatRatePercent} almostOutLabel={isLowStock ? t('dishAlmostOutBadge') : null} />
           )}
@@ -1852,11 +1955,23 @@ function DishRow({
             same primary-action color DishDetailModal's own add-to-order
             button already uses. Disabled/gray + "אזל" once the dish's
             critical ingredient is fully out. */}
+        {/* Language-dependent, not a fixed physical side (2026-10-28,
+            correcting the previous fix) — anchored to the side AWAY from
+            the photo (physicalReadingEnd: physical left in Hebrew, physical
+            right in English), the same side every other "trailing"
+            decoration in this file uses, so it mirrors correctly in
+            English the same way the image/content order itself does (see
+            this row's own "Image first, content second" comment above). */}
         <Pressable
           onPress={isSoldOut ? undefined : onPress}
           disabled={isSoldOut}
-          className="mx-1 mt-1.5 items-center justify-center rounded-lg"
-          style={{ backgroundColor: isSoldOut ? '#9CA3AF' : colors.royalBlue, paddingVertical: 8 }}
+          className="mt-1.5 items-center justify-center rounded-lg"
+          style={{
+            backgroundColor: isSoldOut ? '#9CA3AF' : colors.royalBlue,
+            paddingVertical: 8,
+            paddingHorizontal: 28,
+            alignSelf: visualColumnAlign(physicalReadingEnd(isRTL)),
+          }}
         >
           <Text className="text-sm font-semibold text-white">{isSoldOut ? t('dishSoldOutButton') : t('dishOrderNowButton')}</Text>
         </Pressable>
@@ -1907,6 +2022,7 @@ function DishPhotoGallery({
   initialIndex: number;
   onClose: () => void;
 }) {
+  const { isRTL } = useI18n();
   const screenWidth = Dimensions.get('window').width;
   const count = photos.length;
   const [index, setIndex] = useState(initialIndex);
@@ -1936,7 +2052,11 @@ function DishPhotoGallery({
           ))}
         </ScrollView>
         <Text className="mt-4 text-center text-sm font-semibold text-white">{`⁦${index + 1}/${count}⁩`}</Text>
-        <Pressable onPress={onClose} className="absolute items-center justify-center rounded-full bg-white/20" style={{ top: 48, end: 16, width: 40, height: 40 }}>
+        <Pressable
+          onPress={onClose}
+          className="absolute items-center justify-center rounded-full bg-white/20"
+          style={{ top: 48, [physicalReadingEnd(isRTL)]: 16, width: 40, height: 40 }}
+        >
           <Ionicons name="close" size={22} color="#FFFFFF" />
         </Pressable>
       </View>
@@ -2007,7 +2127,8 @@ export function DishDetailModal({
   trackDish: (dishId: string) => void;
   untrackDish: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const addItem = useCartStore((s) => s.addItem);
   const removeItem = useCartStore((s) => s.removeItem);
   // No pre-selected size, ever (2026-09-24, per the user's explicit
@@ -2332,8 +2453,13 @@ export function DishDetailModal({
                 — same colors.border hairline already used for dividers
                 elsewhere in this app (e.g. DishRow's own row separator). */}
             <View className="rounded-xl bg-white" style={{ overflow: 'hidden', borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <View className="flex-row items-start justify-between px-4 pt-3">
-                <Text className="flex-1 text-xl font-bold text-[#1B2430]">{dish.name}</Text>
+              <View className="items-start justify-between px-4 pt-3" style={{ flexDirection: rowDirection }}>
+                {/* Real bug (2026-10-28): same flex-1-with-no-explicit-
+                    textAlign issue as CategoryCard's own title — see that
+                    fix's comment. */}
+                <Text className="flex-1 text-xl font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                  {dish.name}
+                </Text>
                 <Pressable onPress={onClose} hitSlop={10}>
                   <Ionicons name="close" size={24} color="#6E6A61" />
                 </Pressable>
@@ -2344,7 +2470,7 @@ export function DishDetailModal({
                   version, just consolidated into one row here instead of
                   split between the title's corner and the row beneath it. */}
               {(dish.rating_count > 0 || dish.feedstars_eligible) && (
-                <View className="flex-row flex-wrap items-start px-4" style={{ gap: 6, marginTop: 6 }}>
+                <View className="flex-wrap items-start px-4" style={{ flexDirection: rowDirection, gap: 6, marginTop: 6 }}>
                   {dish.rating_count > 0 && (
                     <View className="items-center">
                       <View className="items-center rounded px-1.5 py-0.5" style={{ backgroundColor: colors.royalBlue }}>
@@ -2367,7 +2493,7 @@ export function DishDetailModal({
                     // Only the icon + wordmark sizes bumped up (2026-09-24,
                     // per the user's correction — not the badge's own
                     // padding/gap, which stay as they were).
-                    <View className="flex-row items-center rounded" style={{ backgroundColor: '#F5A623', gap: 2, paddingHorizontal: 5.5, paddingVertical: 1.5 }}>
+                    <View className="items-center rounded" style={{ flexDirection: rowDirection, backgroundColor: '#F5A623', gap: 2, paddingHorizontal: 5.5, paddingVertical: 1.5 }}>
                       <Ionicons name="sparkles-outline" size={11} color="#FFFFFF" />
                       <Text style={{ fontFamily: 'Baloo2_700Bold', fontSize: 11, color: '#FFFFFF' }}>{t('dishFeedstarsBadge')}</Text>
                     </View>
@@ -2378,14 +2504,24 @@ export function DishDetailModal({
                 <Pressable onPress={() => setGalleryVisible(true)} style={{ marginTop: 12 }}>
                   <Image source={{ uri: dish.photo_urls[0] }} style={{ width: '100%', height: 180 }} />
                   {dish.photo_urls.length > 1 && (
-                    <View className="absolute rounded-full px-2 py-0.5" style={{ bottom: 8, end: 8, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+                    <View
+                      className="absolute rounded-full px-2 py-0.5"
+                      style={{ bottom: 8, [physicalReadingEnd(isRTL)]: 8, backgroundColor: 'rgba(0,0,0,0.55)' }}
+                    >
                       <Text className="text-xs font-semibold text-white">{` 1/${dish.photo_urls.length}⁩`}</Text>
                     </View>
                   )}
                 </Pressable>
               )}
-              <Text className="px-4 pb-1 pt-3 text-sm font-semibold text-[#1B2430]">{t('dishDescriptionTitle')}</Text>
-              <Text className="px-4 pb-3 text-sm leading-5 text-[#6E6A61]">{dish.description || t('dishDescriptionEmpty')}</Text>
+              {/* Real bug (2026-10-28): plain full-width Texts, same
+                  textAlign:'auto'-depends-on-the-stuck-native-flag issue as
+                  CategoryCard's own title. */}
+              <Text className="px-4 pb-1 pt-3 text-sm font-semibold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                {t('dishDescriptionTitle')}
+              </Text>
+              <Text className="px-4 pb-3 text-sm leading-5 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                {dish.description || t('dishDescriptionEmpty')}
+              </Text>
               {/* Verified-diner reviews (2026-09-24, per the user's explicit
                   request and mockup) — real published reviews only (see
                   useDishReviews above for the full RLS/moderation reasoning),
@@ -2395,7 +2531,7 @@ export function DishDetailModal({
                   worth showing on its own. */}
               {positiveReviewCount > 0 && (
                 <View className="px-4 pb-3" style={{ gap: 8 }}>
-                  <View className="flex-row items-center" style={{ gap: 4 }}>
+                  <View className="items-center" style={{ flexDirection: rowDirection, gap: 4 }}>
                     <Ionicons name="checkmark-circle" size={14} color={colors.success} />
                     <Text className="text-xs font-medium" style={{ color: colors.success }}>
                       {t('dishReviewsPositiveSummary').replace('{count}', String(positiveReviewCount))}
@@ -2403,7 +2539,7 @@ export function DishDetailModal({
                   </View>
                   {dishReviews.map((review) => (
                     <View key={review.id} className="rounded-lg p-2" style={{ backgroundColor: colors.background, gap: 4 }}>
-                      <View className="flex-row items-center" style={{ gap: 6 }}>
+                      <View className="items-center" style={{ flexDirection: rowDirection, gap: 6 }}>
                         {review.photoUrl ? (
                           <Image source={{ uri: review.photoUrl }} style={{ width: 28, height: 28, borderRadius: 14 }} />
                         ) : (
@@ -2416,7 +2552,9 @@ export function DishDetailModal({
                           {review.ageRange ? ` · ${review.ageRange}` : ''}
                         </Text>
                       </View>
-                      <Text className="text-xs leading-5" style={{ color: colors.textMuted }}>
+                      {/* Real bug (2026-10-28): plain full-width Text, same
+                          textAlign:'auto' issue as the description above. */}
+                      <Text className="text-xs leading-5" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
                         {review.comment}
                       </Text>
                     </View>
@@ -2429,9 +2567,9 @@ export function DishDetailModal({
                   Detail-modal-only, per the user's explicit choice, not the
                   list row. */}
               {missingIngredientNames.length > 0 && (
-                <View className="mx-4 mb-3 flex-row items-start rounded-lg p-2" style={{ gap: 6, backgroundColor: colors.background }}>
+                <View className="mx-4 mb-3 items-start rounded-lg p-2" style={{ flexDirection: rowDirection, gap: 6, backgroundColor: colors.background }}>
                   <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} />
-                  <Text className="flex-1 text-xs" style={{ color: colors.textMuted }}>
+                  <Text className="flex-1 text-xs" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
                     {t('dishMissingIngredientsNote').replace('{ingredients}', missingIngredientNames.join(', '))}
                   </Text>
                 </View>
@@ -2447,12 +2585,16 @@ export function DishDetailModal({
                 ends. */}
             {sizes.length > 0 && (
               <View className="mt-4 rounded-xl bg-white p-3" style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                <Text className="mb-2 text-sm font-semibold text-[#1B2430]">{t('dishSizeSectionTitle')}</Text>
+                {/* Real bug (2026-10-28): plain full-width Text, same
+                    textAlign:'auto' issue as CategoryCard's own title. */}
+                <Text className="mb-2 text-sm font-semibold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                  {t('dishSizeSectionTitle')}
+                </Text>
                 {/* Blue outline for every selectable tag, filled blue once
                     picked (2026-09-24, per the user's explicit design
                     request) — was a neutral gray border/dark text by
                     default before. */}
-                <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                <View className="flex-wrap" style={{ flexDirection: rowDirection, gap: 8 }}>
                   {sizes.map((size) => {
                     // Per-size discount shown directly on its own tag
                     // (2026-10-01, per explicit request) — picking it already
@@ -2501,7 +2643,7 @@ export function DishDetailModal({
               const isDonenessGroup = group.name === DONENESS_GROUP_NAME;
               return (
                 <View key={group.id} className="mt-4 rounded-xl bg-white p-3" style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                  <View className="flex-row items-center" style={{ gap: 6 }}>
+                  <View className="items-center" style={{ flexDirection: rowDirection, gap: 6 }}>
                     <Text className="text-sm font-semibold text-[#1B2430]">{group.name}</Text>
                     {/* Doneness: the red "חובה לבחור" hint is dropped
                         entirely (per explicit request) — no replacement
@@ -2528,7 +2670,35 @@ export function DishDetailModal({
                       photo-less option gets the same sticker as a small
                       badge next to its tag instead, since there's no image
                       to attach it to. */}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-2" contentContainerStyle={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingEnd: 4 }}>
+                  {/* Real bug (2026-10-28, per explicit request — e.g. a
+                      single drink option like Weihenstephan landing on the
+                      left instead of the right): rowDirection correctly
+                      orders the tiles RELATIVE to each other, but a
+                      horizontal ScrollView's content box is sized to its
+                      own content by default (not the viewport) — when there
+                      are too few tiles to fill the width, that narrow box
+                      still has to sit SOMEWHERE within the viewport, and
+                      with no flexGrow it only ever takes the smallest size
+                      it can, leaving the extra space on whichever side
+                      happens to be "after" it. flexGrow: 1 makes the content
+                      box always at least fill the viewport, so justifyContent
+                      (default flex-start, already the correct physical side
+                      thanks to rowDirection) actually has room to anchor the
+                      tiles against — harmless once there are enough tiles to
+                      overflow and scroll, since flexGrow never shrinks
+                      content narrower than it needs to be. */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    className="mt-2"
+                    contentContainerStyle={{
+                      flexDirection: rowDirection,
+                      alignItems: 'flex-start',
+                      flexGrow: 1,
+                      gap: 10,
+                      ...(physicalReadingEnd(isRTL) === 'left' ? { paddingLeft: 4 } : { paddingRight: 4 }),
+                    }}
+                  >
                     {(optionsByGroup.get(group.id) ?? []).map((option) => {
                       const selected = (selections.get(group.id) ?? new Set()).has(option.id);
                       const unavailable = unavailableOptionIds.has(option.id);
@@ -2592,7 +2762,7 @@ export function DishDetailModal({
                       const only = sizesForType[0];
                       if (!only) return null;
                       return (
-                        <Text key={optionId} className="mt-1.5 text-xs" style={{ color: colors.textMuted }}>
+                        <Text key={optionId} className="mt-1.5 text-xs" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
                           {t('dishServingResolvedPrefix').replace('{option}', option?.name ?? '')}
                           <Text className="font-bold" style={{ color: colors.ink }}>
                             {t(only.container_type === 'bottle' ? 'dishServingResolvedBoldBottle' : 'dishServingResolvedBoldDraft')}
@@ -2605,10 +2775,10 @@ export function DishDetailModal({
                       <View key={optionId} className="mt-2">
                         {hasBothTypes && (
                           <>
-                            <Text className="text-xs font-medium" style={{ color: colors.textMuted }}>
+                            <Text className="text-xs font-medium" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
                               {t('dishServingContainerSectionTitle').replace('{option}', option?.name ?? '')}
                             </Text>
-                            <View className="mt-1.5 flex-row flex-wrap" style={{ gap: 8 }}>
+                            <View className="mt-1.5 flex-wrap" style={{ flexDirection: rowDirection, gap: 8 }}>
                               {(['bottle', 'draft'] as const).map((type) => (
                                 <Pressable
                                   key={type}
@@ -2645,14 +2815,14 @@ export function DishDetailModal({
                                 segment is the FULL attached word ("מהחבית",
                                 not just "חבית"), per the explicit request to
                                 emphasize every letter fused to it. */}
-                            <Text className="mt-2 text-xs font-medium" style={{ color: colors.textMuted }}>
+                            <Text className="mt-2 text-xs font-medium" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
                               {t(chosenType === 'bottle' ? 'dishServingSizeTitlePrefixBottle' : 'dishServingSizeTitlePrefixDraft')}
                               <Text className="font-bold" style={{ color: colors.ink }}>
                                 {t(chosenType === 'bottle' ? 'dishServingSizeTitleBoldBottle' : 'dishServingSizeTitleBoldDraft')}
                               </Text>
                               {t(chosenType === 'bottle' ? 'dishServingSizeTitleSuffixBottle' : 'dishServingSizeTitleSuffixDraft').replace('{option}', option?.name ?? '')}
                             </Text>
-                            <View className="mt-1.5 flex-row flex-wrap" style={{ gap: 8 }}>
+                            <View className="mt-1.5 flex-wrap" style={{ flexDirection: rowDirection, gap: 8 }}>
                               {sizesForType.map((variant) => (
                                 <Pressable
                                   key={variant.id}
@@ -2670,7 +2840,7 @@ export function DishDetailModal({
                           </>
                         )}
                         {chosenType && sizesForType.length === 1 && (
-                          <Text className="mt-2 text-xs" style={{ color: colors.textMuted }}>
+                          <Text className="mt-2 text-xs" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
                             {t('dishServingResolvedPrefix').replace('{option}', option?.name ?? '')}
                             <Text className="font-bold" style={{ color: colors.ink }}>
                               {t(chosenType === 'bottle' ? 'dishServingResolvedBoldBottle' : 'dishServingResolvedBoldDraft')}
@@ -2683,12 +2853,18 @@ export function DishDetailModal({
                   })}
                   {/* Addon hint moved to the card's bottom (2026-09-24, per
                       the user's explicit request) — was beside the group
-                      title before. alignSelf: 'flex-start' is the physical
-                      right under this app's real I18nManager RTL (same
+                      title before, anchored to the physical right (same
                       convention already established elsewhere in this file,
-                      e.g. PriceRow's own flex-end/physical-left comment). */}
+                      e.g. PriceRow's own physical-left anchoring).
+                      Real bug (2026-10-28): see visualColumnAlign's own
+                      comment in i18n.tsx — this went through the same stuck
+                      I18nManager.isRTL flag as flexDirection does, so the
+                      literal alignSelf: 'flex-start' was just as unreliable. */}
                   {isAddonGroup && (
-                    <View className="mt-2 flex-row items-center" style={{ gap: 4, alignSelf: 'flex-start' }}>
+                    <View
+                      className="mt-2 items-center"
+                      style={{ flexDirection: rowDirection, gap: 4, alignSelf: visualColumnAlign(physicalReadingStart(isRTL)) }}
+                    >
                       {/* "!" marker on the single-choice case only
                           (2026-09-24) — a real Ionicons glyph now, not a
                           plain Text character, matching the "ניהול חשבון"
@@ -2714,7 +2890,7 @@ export function DishDetailModal({
             {/* bg-white, not colors.background (2026-09-24) — the sheet
                 itself now uses that same color, which would make these
                 circles blend invisibly into it. */}
-            <View className="mt-6 flex-row items-center justify-center" style={{ gap: 16 }}>
+            <View className="mt-6 items-center justify-center" style={{ flexDirection: rowDirection, gap: 16 }}>
               <Pressable onPress={() => setQuantity((q) => Math.max(1, q - 1))} className="h-9 w-9 items-center justify-center rounded-full bg-white">
                 <Ionicons name="remove" size={18} color="#1B2430" />
               </Pressable>
@@ -2733,8 +2909,8 @@ export function DishDetailModal({
             <Pressable
               onPress={canAdd ? handleAdd : undefined}
               disabled={!canAdd}
-              className="flex-row items-center justify-between rounded-xl px-4 py-4"
-              style={{ backgroundColor: canAdd ? colors.royalBlue : '#9CA3AF' }}
+              className="items-center justify-between rounded-xl px-4 py-4"
+              style={{ flexDirection: rowDirection, backgroundColor: canAdd ? colors.royalBlue : '#9CA3AF' }}
             >
               <Text className="text-base font-semibold text-white">
                 {soldOut ? t('dishSoldOutButton') : editingItem ? t('updateOrderItemButton') : t('addToOrderButton')}
@@ -2771,7 +2947,8 @@ export function DishDetailModal({
 // round-white-badge-on-blue convention from add-participants.tsx's own
 // selection counter.
 export function CartBarInlineTrigger() {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const items = useCartStore((s) => s.items);
   const setCartOpen = useCartStore((s) => s.setCartOpen);
 
@@ -2786,10 +2963,10 @@ export function CartBarInlineTrigger() {
     // size.
     <Pressable
       onPress={() => setCartOpen(true)}
-      className="flex-row items-center justify-between rounded-xl px-4"
-      style={{ backgroundColor: colors.royalBlue, minHeight: 48 }}
+      className="items-center justify-between rounded-xl px-4"
+      style={{ flexDirection: rowDirection, backgroundColor: colors.royalBlue, minHeight: 48 }}
     >
-      <View className="flex-row items-center" style={{ gap: 8 }}>
+      <View className="items-center" style={{ flexDirection: rowDirection, gap: 8 }}>
         <Text className="text-base font-semibold text-white">{t('cartBarLabel')}</Text>
         <View className="items-center justify-center rounded-full bg-white" style={{ height: 20, width: 20 }}>
           <Text className="text-xs font-bold" style={{ color: colors.royalBlue }}>
@@ -2805,7 +2982,7 @@ export function CartBarInlineTrigger() {
           first in source, ₪ second — same reasoning as there, matches how
           this app's plain "₪{amount}" already renders physically (symbol on
           the visual left, number on the right). */}
-      <View className="flex-row items-center" style={{ gap: 4 }}>
+      <View className="items-center" style={{ flexDirection: rowDirection, gap: 4 }}>
         <Text className="text-lg font-semibold text-white">{formatPrice(cartTotal(items))}</Text>
         <Text className="text-lg font-semibold text-white">₪</Text>
       </View>
@@ -2861,7 +3038,7 @@ function SpecialRequestModal({
   onCancel: () => void;
   onSave: (text: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const [text, setText] = useState(initialText);
 
   useEffect(() => {
@@ -2887,7 +3064,7 @@ function SpecialRequestModal({
             multiline
             autoFocus
           />
-          <View className="mt-4 flex-row-reverse" style={{ gap: 12 }}>
+          <View className="mt-4" style={{ flexDirection: visualRowDirection(!isRTL), gap: 12 }}>
             <Pressable onPress={() => onSave(text.trim())} className="flex-1 items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
               <Text className="font-semibold text-white">{t('save')}</Text>
             </Pressable>
@@ -2918,7 +3095,8 @@ function CartModal({
   // detail modal itself already lives.
   onEditItem: (item: CartLineItem) => void;
 }) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
   const items = useCartStore((s) => s.items);
   const removeItem = useCartStore((s) => s.removeItem);
   const clear = useCartStore((s) => s.clear);
@@ -2975,7 +3153,7 @@ function CartModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
         <View className="max-h-[85%] rounded-t-2xl bg-white">
-          <View className="flex-row items-center justify-between border-b p-4" style={{ borderColor: colors.border }}>
+          <View className="items-center justify-between border-b p-4" style={{ flexDirection: rowDirection, borderColor: colors.border }}>
             <Text className="text-lg font-bold text-[#1B2430]">{t('cartTitle')}</Text>
             <Pressable onPress={onClose} hitSlop={10}>
               <Ionicons name="close" size={24} color="#6E6A61" />
@@ -2993,31 +3171,34 @@ function CartModal({
               in is email+password only, SMS MFA is still deferred per
               sms_mfa_deferred — so there is no real value to mask here yet. */}
           <View className="border-b px-4 py-3" style={{ borderColor: colors.border }}>
-            <View className="flex-row items-center" style={{ gap: 8 }}>
+            <View className="items-center" style={{ flexDirection: rowDirection, gap: 8 }}>
               <Ionicons name="person-outline" size={15} color="#6E6A61" />
-              <Text className="flex-1 text-xs text-[#1B2430]" numberOfLines={1}>
+              {/* Real bug (2026-10-28): flex-1 Text with no explicit
+                  textAlign — same issue as CategoryCard's own title, see
+                  that fix's comment in i18n.tsx (physicalReadingStart). */}
+              <Text className="flex-1 text-xs text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }} numberOfLines={1}>
                 {t('orderedByLabel')} {displayName ?? '—'}
               </Text>
             </View>
-            <View className="mt-1.5 flex-row items-center" style={{ gap: 8 }}>
+            <View className="mt-1.5 items-center" style={{ flexDirection: rowDirection, gap: 8 }}>
               <Ionicons name="mail-outline" size={15} color="#6E6A61" />
-              <Text className="flex-1 text-xs text-[#1B2430]" numberOfLines={1}>
+              <Text className="flex-1 text-xs text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }} numberOfLines={1}>
                 {email ?? '—'}
               </Text>
             </View>
-            <View className="mt-1.5 flex-row items-center" style={{ gap: 8 }}>
+            <View className="mt-1.5 items-center" style={{ flexDirection: rowDirection, gap: 8 }}>
               <Ionicons name="grid-outline" size={15} color="#6E6A61" />
               <Text className="text-xs text-[#1B2430]">
                 {t('accountStripTableLabel')}: {tableNumber ?? '—'}
               </Text>
             </View>
-            <View className="mt-1.5 flex-row items-center" style={{ gap: 8 }}>
+            <View className="mt-1.5 items-center" style={{ flexDirection: rowDirection, gap: 8 }}>
               <Ionicons name="receipt-outline" size={15} color="#6E6A61" />
               <Text className="text-xs text-[#1B2430]">
                 {t('personalAccountNumberLabel')}: {subAccountNumber ?? '—'}
               </Text>
             </View>
-            <View className="mt-1.5 flex-row items-center" style={{ gap: 8 }}>
+            <View className="mt-1.5 items-center" style={{ flexDirection: rowDirection, gap: 8 }}>
               <Ionicons name="lock-closed-outline" size={15} color="#6E6A61" />
               <Text className="text-xs text-[#1B2430]">
                 {t('cartOrderSecretCodeLabel')}: {reviewVerificationCode ?? '—'}
@@ -3034,11 +3215,12 @@ function CartModal({
               {items.map((item) => {
                 const photoUrl = dishById.get(item.dishId)?.photo_urls[0] ?? null;
                 return (
-                  <View key={item.id} className="mb-3 flex-row items-center" style={{ gap: 10 }}>
+                  <View key={item.id} className="mb-3 items-center" style={{ flexDirection: rowDirection, gap: 10 }}>
                     {/* Dish photo on the physical right (2026-10-11, user
-                        request) — first in JSX so native RTL mirroring
-                        places it there, same convention as every other
-                        first-in-source-renders-right element in this file.
+                        request) — driven through rowDirection (see i18n.tsx's
+                        visualRowDirection), not plain first-in-JSX native
+                        mirroring, which this app's native RTL flag can't be
+                        relied on for (2026-10-27 real bug, see AppHeader.tsx).
                         Falls back to a plain placeholder tile for a dish
                         with no photo, rather than leaving a gap. */}
                     {photoUrl ? (
@@ -3048,12 +3230,18 @@ function CartModal({
                         <MaterialCommunityIcons name="room-service-outline" size={20} color="#9CA3AF" />
                       </View>
                     )}
+                    {/* Real bug (2026-10-28): plain block Texts stretch to
+                        fill this column's full width by default, same as
+                        CategoryCard's own title — explicit textAlign needed
+                        since 'auto' depends on the stuck native RTL flag. */}
                     <View className="flex-1">
-                      <Text className="text-sm font-semibold text-[#1B2430]">
+                      <Text className="text-sm font-semibold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
                         {item.quantity}× {item.dishName}
                       </Text>
                       {(item.sizeOptionName || item.modifierSummary) && (
-                        <Text className="mt-0.5 text-xs text-[#9CA3AF]">{[item.sizeOptionName, item.modifierSummary].filter(Boolean).join(' · ')}</Text>
+                        <Text className="mt-0.5 text-xs text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                          {[item.sizeOptionName, item.modifierSummary].filter(Boolean).join(' · ')}
+                        </Text>
                       )}
                     </View>
                     <Text className="text-base font-semibold text-[#1B2430]">₪{formatPrice(item.unitPrice * item.quantity)}</Text>
@@ -3100,18 +3288,22 @@ function CartModal({
           {items.length > 0 && (
             <Pressable
               onPress={() => setSpecialRequestModalOpen(true)}
-              className="flex-row items-center border-t px-4 py-3"
-              style={{ gap: 8, borderColor: colors.border }}
+              className="items-center border-t px-4 py-3"
+              style={{ flexDirection: rowDirection, gap: 8, borderColor: colors.border }}
             >
               <Ionicons name="create-outline" size={16} color={colors.royalBlue} />
-              <Text className="flex-1 text-sm font-medium" style={{ color: colors.royalBlue }} numberOfLines={2}>
+              <Text
+                className="flex-1 text-sm font-medium"
+                style={{ color: colors.royalBlue, textAlign: physicalReadingStart(isRTL) }}
+                numberOfLines={2}
+              >
                 {specialRequest || t('addSpecialRequestLabel')}
               </Text>
             </Pressable>
           )}
 
           <View className="border-t px-4 py-3" style={{ borderColor: colors.border }}>
-            <View className="mb-3 flex-row items-center justify-between">
+            <View className="mb-3 items-center justify-between" style={{ flexDirection: rowDirection }}>
               <Text className="text-sm font-medium text-[#6E6A61]">{t('cartTotalLabel')}</Text>
               <Text className="text-xl font-bold text-[#1B2430]">₪{formatPrice(cartTotal(items))}</Text>
             </View>
@@ -3310,7 +3502,10 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
           t={t}
         />
       ) : (
-        <View className="flex-row border-b bg-white" style={{ borderColor: colors.border }}>
+        // Real bug (2026-10-27): plain flex-row relied on a native RTL flag
+        // that doesn't reliably flip on a real device — driven explicitly
+        // instead (see i18n.tsx's visualRowDirection).
+        <View style={{ flexDirection: visualRowDirection(isRTL), borderBottomWidth: 1, borderColor: colors.border, backgroundColor: '#FFFFFF' }}>
           {(['food', 'drink'] as MenuSection[]).map((s) => (
             <Pressable
               key={s}
@@ -3318,8 +3513,8 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
                 setSection(s);
                 setCategoryId(null);
               }}
-              className="flex-1 flex-row items-center justify-center py-3"
-              style={{ gap: 6, borderBottomWidth: section === s ? 2 : 0, borderColor: colors.royalBlue }}
+              className="flex-1 items-center justify-center py-3"
+              style={{ flexDirection: visualRowDirection(isRTL), gap: 6, borderBottomWidth: section === s ? 2 : 0, borderColor: colors.royalBlue }}
             >
               {s === 'food' ? (
                 <MaterialCommunityIcons name="room-service-outline" size={17} color={section === s ? colors.royalBlue : '#6E6A61'} />
@@ -3339,7 +3534,7 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
           {/* Only the category name text itself is tappable (2026-10-01, per
               explicit request) — the chevron icon is now purely decorative,
               not part of the touch target. */}
-          <View className="flex-row items-center gap-1 p-3">
+          <View className="items-center gap-1 p-3" style={{ flexDirection: visualRowDirection(isRTL) }}>
             <Ionicons name={isRTL ? 'chevron-forward' : 'chevron-back'} size={16} color={colors.royalBlue} />
             <Pressable onPress={() => setCategoryId(null)} hitSlop={8}>
               <Text className="text-sm font-medium" style={{ color: colors.royalBlue }}>

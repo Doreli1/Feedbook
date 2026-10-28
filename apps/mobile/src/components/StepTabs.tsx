@@ -1,4 +1,5 @@
 import { Text, View } from 'react-native';
+import { useI18n, visualRowDirection } from '../lib/i18n';
 import { colors } from '../theme';
 
 interface Step {
@@ -28,6 +29,7 @@ interface Step {
 // request — a deliberate divergence from the web version's palette, not an
 // inconsistency.
 export function StepTabs({ steps }: { steps: [Step, Step] }) {
+  const { isRTL } = useI18n();
   return (
     <View className="border-b px-4 pb-3 pt-4" style={{ borderColor: colors.border, backgroundColor: colors.background }}>
       {/* Explicit percentage width per column instead of flex-1 — the
@@ -37,7 +39,7 @@ export function StepTabs({ steps }: { steps: [Step, Step] }) {
           percentages + justify-between sidestep that entirely and also
           guarantee the two columns sit at an equal, symmetric distance
           from the screen edges regardless of how long either label is. */}
-      <View className="flex-row justify-between">
+      <View className="justify-between" style={{ flexDirection: visualRowDirection(isRTL) }}>
         {steps.map((step) => {
           const isDone = step.status === 'done';
           return (
