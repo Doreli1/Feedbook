@@ -218,14 +218,14 @@ function ParticipantItemTable({
     <div className="overflow-hidden rounded border border-border bg-surface">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border bg-neutral-100 dark:bg-neutral-600">
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnDish')}</th>
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnQuantity')}</th>
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnUnitPrice')}</th>
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnLineTotal')}</th>
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnStatus')}</th>
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnCancellationReason')}</th>
-            {!sessionClosed && <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnAction')}</th>}
+          <tr className="border-b border-border bg-[#002D86]">
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnDish')}</th>
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnQuantity')}</th>
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnUnitPrice')}</th>
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnLineTotal')}</th>
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnStatus')}</th>
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnCancellationReason')}</th>
+            {!sessionClosed && <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnAction')}</th>}
           </tr>
         </thead>
         <tbody>
@@ -315,7 +315,10 @@ function ParticipantSummaryRow({
   const [subTab, setSubTab] = useState<'orders' | 'events'>('orders');
   return (
     <>
-      <tr className="cursor-pointer border-b border-border last:border-b-0 hover:bg-surface-2" onClick={onToggle}>
+      {/* Hover: Booking.com-style pale blue (2026-10-28, per explicit
+          request/reference) — the same "trustworthy blue" the Design
+          System's own intro cites as this app's inspiration. */}
+      <tr className="cursor-pointer border-b border-border last:border-b-0 hover:bg-[#F2F9FE]" onClick={onToggle}>
         <td className="px-3 py-2 text-sm font-bold text-ink">
           {isBar ? t('accountsBarTicketLabel') : t('accountsSubAccountLabel')} {participant.displayNumber}
         </td>
@@ -336,7 +339,13 @@ function ParticipantSummaryRow({
       </tr>
       {expanded && (
         <tr className="border-b border-border last:border-b-0">
-          <td colSpan={6} className="bg-surface-2/40 p-3" onClick={(e) => e.stopPropagation()}>
+          {/* Level 3 of the nested row-hierarchy background convention
+              (Design System, 2026-10-28) — var(--surface-2) at full
+              opacity, one step further than level 2's var(--bg), so this
+              deepest level (orders/event journal per diner) stays legible
+              against the level-2 panel it sits inside instead of matching
+              it exactly. */}
+          <td colSpan={6} className="bg-surface-2 p-3" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex gap-1 border-b border-border">
               {/* Same hover/selection treatment as every other tab pair in
                   this module (border-accent bg-accent-soft selected). */}
@@ -404,11 +413,11 @@ function EventJournalTable({ sessionId }: { sessionId: string }) {
     <div className="overflow-hidden rounded border border-border bg-surface">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border bg-neutral-100 dark:bg-neutral-600">
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnDate')}</th>
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnEventType')}</th>
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnAmount')}</th>
-            <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnReason')}</th>
+          <tr className="border-b border-border bg-[#002D86]">
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnDate')}</th>
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnEventType')}</th>
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnAmount')}</th>
+            <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnReason')}</th>
           </tr>
         </thead>
         <tbody>
@@ -476,12 +485,12 @@ function AccountDetailPanel({
       <div className="overflow-hidden rounded border border-border bg-surface">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border bg-neutral-100 dark:bg-neutral-600">
-              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPersonalAccountId')}</th>
-              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPaymentShare')}</th>
-              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTip')}</th>
-              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnPaymentMethod')}</th>
-              <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSessionStatus')}</th>
+            <tr className="border-b border-border bg-[#002D86]">
+              <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnPersonalAccountId')}</th>
+              <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnPaymentShare')}</th>
+              <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnTip')}</th>
+              <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnPaymentMethod')}</th>
+              <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnSessionStatus')}</th>
               <th className="px-2 py-2"></th>
             </tr>
           </thead>
@@ -621,7 +630,9 @@ function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expa
         return (
           <tr
             key={line?.key ?? 'empty'}
-            className={`cursor-pointer border-b border-border ${isHovered ? 'bg-surface-2' : ''}`}
+            // Same Booking.com-style pale-blue hover as
+            // ParticipantSummaryRow's own row (2026-10-28).
+            className={`cursor-pointer border-b border-border ${isHovered ? 'bg-[#F2F9FE]' : ''}`}
             onClick={onToggle}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
@@ -640,7 +651,12 @@ function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expa
                       {t('tableNumberLabel')} {row.tableNumber}
                       {row.isBar && <span className="text-muted-foreground"> ({t('accountsBarLabel')})</span>}
                     </span>
-                    <span className="text-muted-foreground">{t('accountsSummaryTimeLabel')}: {formatTime(row.openedAt)}</span>
+                    {/* Omitted for the bar (2026-11-01, per explicit
+                        request): its "general account" is really the
+                        whole day's cumulative open account across all
+                        operating hours, not one session with a single
+                        meaningful opening time the way a table's is. */}
+                    {!row.isBar && <span className="text-muted-foreground">{t('accountsSummaryTimeLabel')}: {formatTime(row.openedAt)}</span>}
                   </div>
                 </td>
               </>
@@ -705,7 +721,11 @@ function AccountRowGroup({
     <Fragment key={row.sessionId}>
       <AccountSummaryRows row={row} expanded={expanded} onToggle={onToggle} />
       {expanded && (
-        <tr className="border-b border-border bg-surface-2/40">
+        // Level 2 of the nested row-hierarchy background convention
+        // (Design System, 2026-10-28) — var(--bg), the platform's own
+        // page background, not a diluted --surface-2 — breaks this
+        // child-level panel from the white master row above it.
+        <tr className="border-b border-border bg-background">
           <td colSpan={MASTER_COL_COUNT}>
             <AccountDetailPanel
               row={row}
@@ -735,6 +755,13 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
   // of stacked sections also made the status filter redundant (the tab
   // itself picks open vs. paid) — removed rather than kept alongside it.
   const [mainTab, setMainTab] = useState<'open' | 'history'>('open');
+
+  // A second, independent sub-tab axis (2026-11-01, per explicit request,
+  // same pattern as ServiceScreen's own "קריאות שירות"/"אי-התאמות" split) —
+  // the bar's whole accounts flow (open + history both) gets its own tab,
+  // instead of bar and table sessions being mixed into one list. Each
+  // location tab keeps its own independent open/history choice above.
+  const [locationTab, setLocationTab] = useState<'tables' | 'bar'>('tables');
 
   // Period filter — only shown/applied on the "היסטוריה" tab, by closed_at
   // (closing/payment date, not opened_at — per explicit correction: a
@@ -801,6 +828,7 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
     // on both "פתוחים כעת" and "היסטוריה", so the two controls never
     // overlap/conflict.
     const matchesCommonFilters = (row: AccountRow) => {
+      if (row.isBar !== (locationTab === 'bar')) return false;
       if (tableFilter !== '' && row.tableNumber !== tableFilter) return false;
       if (query) {
         const matchesAccountId = row.sessionAccountNumber.toLowerCase().includes(query);
@@ -827,7 +855,7 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
       .sort((a, b) => new Date(b.closedAt!).getTime() - new Date(a.closedAt!).getTime());
 
     return { openRows: open, historyRows: history };
-  }, [rows, periodFrom, periodTo, searchText, tableFilter, paymentMethodFilter]);
+  }, [rows, periodFrom, periodTo, searchText, tableFilter, paymentMethodFilter, locationTab]);
 
   const periodLabel = periodFrom === periodTo ? formatYMDDisplay(periodFrom) : `${formatYMDDisplay(periodFrom)}–${formatYMDDisplay(periodTo)}`;
 
@@ -859,6 +887,33 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
         </div>
       ) : (
         <>
+          {/* Location sub-tabs (2026-11-01, per explicit request) — pill
+              buttons, same style as ServiceScreen's own "קריאות
+              שירות"/"אי-התאמות" split, deliberately distinct from the
+              underline-style open/history tab bar right below so the two
+              independent axes (location, then open/history within it)
+              read as two separate tiers, not one flat row of four tabs. */}
+          <div className="mb-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setLocationTab('tables')}
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                locationTab === 'tables' ? 'border-accent bg-accent text-white' : 'border-border bg-white text-ink hover:bg-surface-2'
+              }`}
+            >
+              {t('accountsLocationTablesTab')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocationTab('bar')}
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                locationTab === 'bar' ? 'border-accent bg-accent text-white' : 'border-border bg-white text-ink hover:bg-surface-2'
+              }`}
+            >
+              {t('accountsLocationBarTab')}
+            </button>
+          </div>
+
           <div className="mb-4 flex gap-1 border-b border-border">
             {/* Hover/selection treatment matches DashboardShell's own main
                 tab bar exactly (2026-10-25, per explicit request). */}
@@ -979,18 +1034,18 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
           <div className="overflow-x-auto rounded border border-border bg-surface">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-neutral-100 dark:bg-neutral-600">
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnAccountId')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTable')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnItems')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnQuantity')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnUnitPrice')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnLineTotal')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSessionStatus')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnCredit')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnCash')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnSummary')}</th>
-                  <th className="px-3 py-2 text-start text-sm font-bold text-ink">{t('accountsColumnTip')}</th>
+                <tr className="border-b border-border bg-[#002D86]">
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnAccountId')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnTable')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnItems')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnQuantity')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnUnitPrice')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnLineTotal')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnSessionStatus')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnCredit')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnCash')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnSummary')}</th>
+                  <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnTip')}</th>
                   <th className="px-2 py-2"></th>
                 </tr>
               </thead>

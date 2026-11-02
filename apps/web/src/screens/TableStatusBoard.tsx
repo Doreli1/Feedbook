@@ -1,31 +1,46 @@
 import { useState } from 'react';
 import type { RestaurantTable } from '@feedbook/types';
 import { supabase } from '../lib/supabase';
-import { CheckIcon } from '../components/Icons';
+import { CheckIcon, AlertIcon } from '../components/Icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
+import { useBarStatus } from '../lib/useBarStatus';
+import { useRestaurantStatus } from '../lib/useRestaurantStatus';
 
 type TableStatus = 'available' | 'occupied' | 'awaiting_cleaning';
+// 'closed' (2026-11-02) is a display-only state, never stored on
+// tables.status — it's what an 'available' table shows once the
+// restaurant's own hours say it's closed (see restaurant_is_active), so a
+// real "come sit here" availability is never implied while the restaurant
+// isn't actually taking new arrivals. An occupied/awaiting_cleaning table
+// keeps showing its real physical state regardless — someone may still be
+// there, or it may still need clearing, whether or not the restaurant is
+// "open" right now.
+type DisplayStatus = TableStatus | 'closed';
 
-const STATUS_LABEL_KEYS: Record<TableStatus, TranslationKey> = {
+const STATUS_LABEL_KEYS: Record<DisplayStatus, TranslationKey> = {
   available: 'tableStatusAvailable',
   occupied: 'tableStatusOccupied',
   awaiting_cleaning: 'tableStatusAwaitingCleaning',
+  closed: 'tableStatusClosed',
 };
 
-const STATUS_PILL_CLASSES: Record<TableStatus, string> = {
+const STATUS_PILL_CLASSES: Record<DisplayStatus, string> = {
   available: 'bg-success-soft text-success',
   occupied: 'bg-danger-soft text-danger',
   awaiting_cleaning: 'bg-warning-soft text-warning',
+  closed: 'bg-danger-soft text-danger',
 };
 
-const STATUS_DOT_CLASSES: Record<TableStatus, string> = {
+const STATUS_DOT_CLASSES: Record<DisplayStatus, string> = {
   available: 'bg-success',
   occupied: 'bg-danger',
   awaiting_cleaning: 'bg-warning',
+  closed: 'bg-danger',
 };
 
 interface Props {
+  restaurantId: string;
   tables: RestaurantTable[];
   onRefresh: () => void;
 }
@@ -38,10 +53,17 @@ interface Props {
 // per-table. scan-qr sets 'occupied' when a diner joins; close-session sets
 // 'awaiting_cleaning' once every share is paid — staff clear it back to
 // 'available' here once the table is physically ready again.
-export function TableStatusBoard({ tables, onRefresh }: Props) {
+export function TableStatusBoard({ restaurantId, tables, onRefresh }: Props) {
   const { t } = useI18n();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Not every restaurant has a bar — the hook still runs (rules of hooks),
+  // but its queries are harmless no-ops when there's no table_type='bar'
+  // row for it to find. The card itself is only rendered when barTable
+  // exists, right below.
+  const { active: barActive } = useBarStatus(restaurantId);
+  const barTable = tables.find((table) => table.table_type === 'bar' && !table.archived_at);
+  const { active: restaurantActive } = useRestaurantStatus(restaurantId);
 
   async function handleMarkAvailable(tableId: string) {
     setError(null);
@@ -71,21 +93,43 @@ export function TableStatusBoard({ tables, onRefresh }: Props) {
 
       {error && <div className="mb-4 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>}
 
-      {sorted.length === 0 ? (
+      {restaurantActive === false && (
+        <div className="mb-4 flex items-start gap-2 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
+          <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{t('tableStatusBoardClosedBanner')}</span>
+        </div>
+      )}
+
+      {sorted.length === 0 && !barTable ? (
         <p className="text-sm text-muted-foreground">{t('tableQuickAddHint')}</p>
       ) : (
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+          {barTable && (
+            <div className="rounded-lg border border-border bg-surface-2 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-ink">{t('tableTypeBar')}</span>
+                <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${barActive ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${barActive ? 'bg-success' : 'bg-danger'}`} />
+                  {barActive ? t('barStatusActiveLabel') : t('barStatusInactiveLabel')}
+                </span>
+              </div>
+            </div>
+          )}
           {sorted.map((table) => {
             const status = (table.status as TableStatus | null) ?? 'available';
+            // Real occupancy state is untouched — only how an 'available'
+            // table is LABELED changes once the restaurant is closed (see
+            // the DisplayStatus type's own comment above).
+            const displayStatus: DisplayStatus = status === 'available' && restaurantActive === false ? 'closed' : status;
             return (
               <div key={table.id} className="rounded-lg border border-border bg-surface-2 p-3">
                 <div className="mb-1.5 flex items-center justify-between gap-2">
                   <span className="text-sm font-bold text-ink">
                     {t('tableNumberLabel')} {table.table_number}
                   </span>
-                  <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${STATUS_PILL_CLASSES[status]}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT_CLASSES[status]}`} />
-                    {t(STATUS_LABEL_KEYS[status])}
+                  <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${STATUS_PILL_CLASSES[displayStatus]}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT_CLASSES[displayStatus]}`} />
+                    {t(STATUS_LABEL_KEYS[displayStatus])}
                   </span>
                 </div>
                 {status === 'awaiting_cleaning' && (

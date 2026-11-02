@@ -14,6 +14,7 @@ import type {
 import { TrashIcon, PencilIcon, SparklesIcon, InfoIcon, CloseIcon, ChevronDownIcon } from './Icons';
 import { Tooltip } from './Tooltip';
 import { Toggle } from './Toggle';
+import { ConfirmDialog } from './ConfirmDialog';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { ingredientStockStatus } from '../lib/ingredientStatus';
@@ -120,6 +121,13 @@ export function MenuManager({ restaurantId, categories, dishes, dishSizeOptions,
 
   return (
     <div>
+      {/* Dominant title + warm, second-person description (2026-10-29, per
+          explicit request) — same convention as every other Dashboard
+          module's own header (see AccountsScreen.tsx's accountsTitle/
+          accountsSubtitle). */}
+      <h1 className="mb-1 text-2xl font-bold tracking-tight text-ink">{t('menuManagerTitle')}</h1>
+      <p className="mb-4 text-sm text-muted-foreground">{t('menuManagerSubtitle')}</p>
+
       {error && (
         <div className="mb-4 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
           {error}
@@ -169,21 +177,34 @@ export function MenuManager({ restaurantId, categories, dishes, dishSizeOptions,
 // existing one, since every category defaulted to 'food' in the DB before
 // this control existed and staff need a way to fix that retroactively, not
 // just set it correctly going forward.
-function SectionToggle({ value, onChange }: { value: 'food' | 'drink'; onChange: (v: 'food' | 'drink') => void }) {
+// size="lg" (2026-10-29, per explicit request) — used on each category
+// card's own header, alongside its now-also-enlarged title, so the two
+// read as one dominant row; the "add new category" form below keeps the
+// original compact size (default, unset) since it sits beside a plain
+// text input there, not a page-level heading.
+function SectionToggle({ value, onChange, size = 'sm' }: { value: 'food' | 'drink'; onChange: (v: 'food' | 'drink') => void; size?: 'sm' | 'lg' }) {
   const { t } = useI18n();
+  // sm (default, used on the "add new category" form) is sized to match
+  // its row siblings exactly — the category-name <input> and "add" <button>
+  // both use px-3/py-2/text-sm with no extra wrapper padding, so the
+  // toggle's own wrapper here drops to p-0 rather than stacking its own
+  // padding on top of the buttons' (2026-11-01, per explicit request — the
+  // two previously read at visibly different heights).
+  const padding = size === 'lg' ? 'px-4 py-2' : 'px-3 py-2';
+  const textSize = 'text-sm';
   return (
-    <div className="inline-flex shrink-0 rounded border border-border p-0.5 text-xs">
+    <div className={`inline-flex shrink-0 rounded border border-border ${size === 'lg' ? 'p-1' : 'p-0'} ${textSize}`}>
       <button
         type="button"
         onClick={() => onChange('food')}
-        className={`rounded px-2.5 py-1 font-medium transition-colors ${value === 'food' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-accent-soft'}`}
+        className={`rounded font-medium transition-colors ${padding} ${value === 'food' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-accent-soft'}`}
       >
         {t('categorySectionFood')}
       </button>
       <button
         type="button"
         onClick={() => onChange('drink')}
-        className={`rounded px-2.5 py-1 font-medium transition-colors ${value === 'drink' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-accent-soft'}`}
+        className={`rounded font-medium transition-colors ${padding} ${value === 'drink' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-accent-soft'}`}
       >
         {t('categorySectionDrink')}
       </button>
@@ -250,15 +271,34 @@ function CategoryCard({
     onRefresh();
   }
 
+  // Drives the single flag toggle's own on/off look (2026-10-29, per
+  // explicit request — moved from two separate bulk buttons inside the
+  // accordion to one toggle beside the edit icon, on the collapsed
+  // header). There's no real menu_categories column backing this — it's
+  // still the same per-dish bulk action underneath — so the aggregate
+  // reads "on" whenever every dish actually is (or the category is still
+  // empty, matching dishes.bar_orderable's own DB default of true: a new
+  // category should look available-at-the-bar from the start, not off by
+  // default). Clicking it flips every dish to the opposite of this.
+  const allBarOrderable = dishes.length === 0 || dishes.every((d) => d.bar_orderable);
+
+  // Confirmation guard, OFF direction only (2026-10-29, per explicit
+  // request) — turning this off is a bulk overwrite of every dish's own
+  // bar_orderable value, so it gets a dimmed-backdrop, centered modal with
+  // a fuller explanation before it runs; turning it back on is harmless
+  // and stays a single click.
+  const [confirmBarOff, setConfirmBarOff] = useState(false);
+
   return (
-    // While collapsed, the ENTIRE card (including its own padding above and
-    // below the header line) opens the category — not just the thin header
-    // row (2026-10-01, per explicit request/screenshot: the visible beige
-    // box is one card, and only the icon line inside it was actually
-    // clickable). Only attached while collapsed: once expanded, the card
-    // also contains the dish list and "add dish" button, which must stay
-    // independently clickable without also closing the category on every
-    // click inside it.
+    <>
+    {/* While collapsed, the ENTIRE card (including its own padding above and
+        below the header line) opens the category — not just the thin header
+        row (2026-10-01, per explicit request/screenshot: the visible beige
+        box is one card, and only the icon line inside it was actually
+        clickable). Only attached while collapsed: once expanded, the card
+        also contains the dish list and "add dish" button, which must stay
+        independently clickable without also closing the category on every
+        click inside it. */}
     <div
       className={`rounded border border-border bg-surface-2 p-4 ${expanded ? '' : 'cursor-pointer'}`}
       onClick={expanded ? undefined : () => setExpanded(true)}
@@ -278,7 +318,9 @@ function CategoryCard({
         className="mb-3 flex flex-wrap items-center gap-2 cursor-pointer"
       >
         <div onClick={(e) => e.stopPropagation()}>
-          <SectionToggle value={category.section === 'drink' ? 'drink' : 'food'} onChange={(v) => void changeSection(v)} />
+          {/* size="lg" (2026-10-29, per explicit request) — reads as one
+              dominant row together with the now-also-enlarged title. */}
+          <SectionToggle value={category.section === 'drink' ? 'drink' : 'food'} onChange={(v) => void changeSection(v)} size="lg" />
         </div>
         {renaming ? (
           <input
@@ -295,10 +337,24 @@ function CategoryCard({
               }
             }}
             autoFocus
-            className="font-heading flex-1 rounded border border-accent px-2 py-1 text-sm font-semibold text-ink"
+            className="font-heading flex-1 rounded border border-accent px-3 py-1.5 text-xl font-bold text-ink"
           />
         ) : (
-          <h2 className="font-heading flex-1 text-sm font-semibold text-ink">{category.name}</h2>
+          // text-xl/font-bold (2026-10-29, per explicit request) — was
+          // text-sm/font-semibold, same size as ordinary body text; a
+          // category name is this card's own heading, not a label.
+          <h2 className="font-heading flex-1 text-xl font-bold text-ink">{category.name}</h2>
+        )}
+        {hasBar && (
+          <Tooltip content={t('categoryBarOrderableTooltip')}>
+            <div onClick={(e) => e.stopPropagation()}>
+              <Toggle
+                checked={allBarOrderable}
+                onChange={(v) => (v ? void setAllBarOrderable(true) : setConfirmBarOff(true))}
+                label={t('categoryBarOrderableTooltip')}
+              />
+            </div>
+          </Tooltip>
         )}
         <Tooltip content={t('editCategory')}>
           <button
@@ -342,31 +398,6 @@ function CategoryCard({
 
       {expanded && (
         <>
-          {hasBar && dishes.length > 0 && (
-            <div className="mb-2 flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">{t('dishBarOrderableBulkLabel')}</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void setAllBarOrderable(true);
-                }}
-                className="rounded border border-border px-2 py-1 font-medium text-accent hover:bg-accent-soft"
-              >
-                {t('dishBarOrderableBulkOn')}
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void setAllBarOrderable(false);
-                }}
-                className="rounded border border-border px-2 py-1 font-medium text-muted-foreground hover:bg-danger-soft hover:text-danger"
-              >
-                {t('dishBarOrderableBulkOff')}
-              </button>
-            </div>
-          )}
           <div className="space-y-2">
             {dishes.map((dish) =>
               editingDishId === dish.id ? (
@@ -424,6 +455,19 @@ function CategoryCard({
         </>
       )}
     </div>
+    <ConfirmDialog
+      open={confirmBarOff}
+      title={t('categoryBarOrderableOffConfirmTitle')}
+      description={t('categoryBarOrderableOffConfirmDescription')}
+      confirmLabel={t('categoryBarOrderableOffConfirmLabel')}
+      cancelLabel={t('cancel')}
+      onConfirm={() => {
+        setConfirmBarOff(false);
+        void setAllBarOrderable(false);
+      }}
+      onCancel={() => setConfirmBarOff(false)}
+    />
+    </>
   );
 }
 

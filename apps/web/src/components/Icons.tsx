@@ -46,6 +46,20 @@ export function InfoIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) 
   );
 }
 
+// "!" attention marker (2026-11-02) — circle-exclamation, same hand-drawn
+// style as InfoIcon above (dot at the bottom instead of the top, line
+// above it) — mirrors the mobile app's own alert-circle convention: an
+// attention mark is always a real icon, never plain "!" text.
+export function AlertIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M10 6.5v4.5" />
+      <circle cx="10" cy="13.5" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function QrCodeIcon({ className = 'h-4 w-4' }: { className?: string }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -299,6 +313,20 @@ export function ReviewsTabIcon({ className = 'h-4 w-4' }: { className?: string }
   return (
     <svg viewBox="0 0 512 512" fill="none" stroke="currentColor" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M480,208H308L256,48,204,208H32l140,96L118,464,256,364,394,464,340,304Z" />
+    </svg>
+  );
+}
+
+// Dashboard "בר" tab (2026-11-01) — a plain cocktail/martini glass, hand-
+// drawn to match this file's own stroke-outline convention (512 viewBox,
+// strokeWidth 32, round caps/joins) rather than guessing at an exact
+// third-party glyph's path data.
+export function BarTabIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 512 512" fill="none" stroke="currentColor" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M96 96 L256 288 L416 96 Z" />
+      <line x1="256" y1="288" x2="256" y2="416" />
+      <line x1="176" y1="464" x2="336" y2="464" />
     </svg>
   );
 }

@@ -23,7 +23,11 @@ interface Props {
   onFocusHandled: () => void;
 }
 
-const HIGHLIGHT_DURATION_MS = 4000;
+// Exported (2026-11-01) — reused verbatim by BarOrdersScreen.tsx so the two
+// screens' status colors/labels/timing can never drift apart from each
+// other the way the active-queue/history pair once did (see the comment
+// on statusPillClasses below for that earlier incident).
+export const HIGHLIGHT_DURATION_MS = 4000;
 
 // Bubble tooltip on hover (2026-10-11, user request) — replaces the plain
 // browser `title` attribute (no styling, a slow native delay) with a real
@@ -58,7 +62,7 @@ function HoverTooltip({ text, children }: { text: string; children: ReactNode })
 // mobile app's "בצעו שינויים במנה" to change this item after it had
 // already entered the kitchen's prep queue; staff need to notice the
 // requirement changed instead of silently preparing the pre-edit version.
-function EditedAttentionBadge({ t }: { t: (key: TranslationKey) => string }) {
+export function EditedAttentionBadge({ t }: { t: (key: TranslationKey) => string }) {
   return (
     <HoverTooltip text={t('kitchenItemEditedTooltip')}>
       <span className="ms-1.5 inline-flex shrink-0 items-center align-middle text-accent">
@@ -73,7 +77,7 @@ function EditedAttentionBadge({ t }: { t: (key: TranslationKey) => string }) {
 // (staff_manage_own_restaurant_order_items) is the only gate needed. The
 // status_updated_at column updates itself via trg_order_item_status_updated_at
 // (20260914100000), so this never needs to set it explicitly.
-async function advanceStatus(id: string, next: 'ready' | 'served', onDone: () => void) {
+export async function advanceStatus(id: string, next: 'ready' | 'served', onDone: () => void) {
   await supabase.from('order_items').update({ status: next }).eq('id', id);
   onDone();
 }
@@ -87,16 +91,16 @@ async function advanceStatus(id: string, next: 'ready' | 'served', onDone: () =>
 // runs as the caller (security invoker), so the same staff_manage_own_
 // restaurant_order_items RLS still gates it, exactly like the plain updates
 // above — and it never touches status, since the item is already cancelled.
-async function recordCancellationDecision(id: string, restock: boolean, onDone: () => void) {
+export async function recordCancellationDecision(id: string, restock: boolean, onDone: () => void) {
   await supabase.rpc('record_cancellation_inventory_decision', { p_order_item_id: id, p_restock: restock });
   onDone();
 }
 
-function elapsedMinutes(placedAt: string): number {
+export function elapsedMinutes(placedAt: string): number {
   return Math.max(0, Math.round((Date.now() - new Date(placedAt).getTime()) / 60000));
 }
 
-function statusLabelKey(status: KitchenItemStatus): TranslationKey {
+export function statusLabelKey(status: KitchenItemStatus): TranslationKey {
   if (status === 'ready') return 'kitchenStatusReady';
   if (status === 'served') return 'kitchenStatusServed';
   if (status === 'cancelled') return 'kitchenStatusCancelled';
@@ -111,7 +115,7 @@ function statusLabelKey(status: KitchenItemStatus): TranslationKey {
 // Yellow = still being worked on, green = a good/complete outcome
 // (ready or served — distinguished from each other by their text label,
 // not color), red = cancelled.
-function statusPillClasses(status: KitchenItemStatus): string {
+export function statusPillClasses(status: KitchenItemStatus): string {
   if (status === 'ready' || status === 'served') return 'bg-success-soft text-success';
   if (status === 'cancelled') return 'bg-danger-soft text-danger';
   return 'bg-warning-soft text-warning';
@@ -124,7 +128,7 @@ function statusPillClasses(status: KitchenItemStatus): string {
 // status pill's own green already says "done", so freezing the timer here
 // avoids a confusing red "elapsed" next to a green "ready"), and a dish
 // with no prep time set never gets a false/default color.
-function elapsedTimeClasses(item: KitchenOrderItem): string {
+export function elapsedTimeClasses(item: KitchenOrderItem): string {
   if (item.status !== 'in_progress' || item.prepTimeMinutes === null) return 'text-muted-foreground';
   const ratio = elapsedMinutes(item.placedAt) / item.prepTimeMinutes;
   if (ratio <= 1) return 'text-success';
@@ -138,13 +142,22 @@ export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusReque
   const [section, setSection] = useState<'active' | 'history'>('active');
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
 
+  // De-duplication against the bar's own screen (2026-11-01, per explicit
+  // request): a bar-origin item only belongs in the kitchen's queue if the
+  // kitchen actually prepares it. A table's own order is unaffected — this
+  // only narrows bar-ticket rows, which the bar screen shows in full
+  // regardless of section, so nothing bar-origin is ever dropped entirely,
+  // only kept from also cluttering the kitchen's queue with e.g. a glass of
+  // wine the bar pours itself.
+  const belongsInKitchen = (item: KitchenOrderItem) => item.barTicketNumber === null || item.section === 'food';
+
   // Cancelled-but-undecided items are fetched by useOrders (they're a live,
   // actionable queue, not filed-away history) but rendered in their own
   // banner rather than mixed into the cooking queue below — the kitchen
   // action here is "record what happened to the ingredients", nothing to do
   // with cook/ready/serve.
-  const activeItems = items.filter((item) => item.status !== 'cancelled');
-  const pendingCancellations = items.filter((item) => item.status === 'cancelled' && item.cancellationRestocked === null);
+  const activeItems = items.filter((item) => item.status !== 'cancelled' && belongsInKitchen(item));
+  const pendingCancellations = items.filter((item) => item.status === 'cancelled' && item.cancellationRestocked === null && belongsInKitchen(item));
 
   // A cancellation notification always names an order_item directly, and a
   // cancelled item always lives in history — no lookup needed, just jump
@@ -264,19 +277,18 @@ export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusReque
                     >
                       <td className="px-2 py-2.5 tabular-nums font-medium text-ink">{index + 1}</td>
                       <td className="px-2 py-2.5">
-                        {/* A bar order's badge shows the pickup ticket, not
-                            the (fixed, non-informative) "בר" table
-                            identifier — that's the whole point of the
-                            ticket: it's what staff and the diner actually
-                            match at handoff. */}
-                        <span
-                          className={`inline-block shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            item.barTicketNumber !== null ? 'bg-warning-soft text-warning' : 'bg-accent-soft text-accent'
-                          }`}
-                        >
-                          {item.barTicketNumber !== null
-                            ? `${t('kitchenBarTicketLabel')} #${String(item.barTicketNumber).padStart(4, '0')}`
-                            : `${t('kitchenTableLabel')} ${item.tableNumber}`}
+                        {/* This column answers "where did it come from" —
+                            table number, or just "בר" (2026-11-01, real bug
+                            fix: used to show the pickup ticket here too,
+                            duplicating what the personal-account column
+                            now shows and reading as a second order number
+                            instead of a location). */}
+                        {/* One uniform blue, no more orange-for-bar split
+                            (2026-11-01, per explicit request), plus
+                            whitespace-nowrap so a longer table number never
+                            wraps the badge onto a second line. */}
+                        <span className="inline-block shrink-0 whitespace-nowrap rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent">
+                          {item.barTicketNumber !== null ? t('kitchenBarLocationLabel') : `${t('kitchenTableLabel')} ${item.tableNumber}`}
                         </span>
                       </td>
                       <td className="px-2 py-2.5 tabular-nums text-muted-foreground">{item.sessionAccountNumber ?? '—'}</td>
@@ -466,14 +478,8 @@ function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId
                   className={`border-b border-border transition-colors last:border-0 ${item.id === highlightedItemId ? 'bg-accent-soft' : 'hover:bg-surface-2'}`}
                 >
                   <td className="px-2 py-2.5">
-                    <span
-                      className={`inline-block shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        item.barTicketNumber !== null ? 'bg-warning-soft text-warning' : 'bg-accent-soft text-accent'
-                      }`}
-                    >
-                      {item.barTicketNumber !== null
-                        ? `${t('kitchenBarTicketLabel')} #${String(item.barTicketNumber).padStart(4, '0')}`
-                        : `${t('kitchenTableLabel')} ${item.tableNumber}`}
+                    <span className="inline-block shrink-0 whitespace-nowrap rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent">
+                      {item.barTicketNumber !== null ? t('kitchenBarLocationLabel') : `${t('kitchenTableLabel')} ${item.tableNumber}`}
                     </span>
                   </td>
                   <td className="px-2 py-2.5 tabular-nums text-muted-foreground">{item.sessionAccountNumber ?? '—'}</td>

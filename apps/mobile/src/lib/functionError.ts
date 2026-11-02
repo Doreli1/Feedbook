@@ -12,12 +12,20 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 // EDIT_WINDOW_EXPIRED, TABLE_NOT_ACTIVE, ...) silently fell through to the
 // generic fallback message instead of its real one (found 2026-09-19, while
 // the user was deliberately trying to trigger an insufficient-stock error).
-export async function extractFunctionErrorCode(error: unknown): Promise<string | undefined> {
-  if (!(error instanceof FunctionsHttpError)) return undefined;
+// Extended 2026-11-02 to also surface an error's `details` (e.g.
+// RESTAURANT_NOT_ACTIVE/BAR_NOT_ACTIVE carrying the hours to show) — a
+// Response body can only be read once, so resolveTableToken.ts needs code
+// and details from the same call rather than reading .json() twice.
+export async function extractFunctionError(error: unknown): Promise<{ code?: string; details?: Record<string, unknown> }> {
+  if (!(error instanceof FunctionsHttpError)) return {};
   try {
-    const body = (await error.context.json()) as { error?: { code?: string } };
-    return body?.error?.code;
+    const body = (await error.context.json()) as { error?: { code?: string; details?: Record<string, unknown> } };
+    return { code: body?.error?.code, details: body?.error?.details };
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+export async function extractFunctionErrorCode(error: unknown): Promise<string | undefined> {
+  return (await extractFunctionError(error)).code;
 }

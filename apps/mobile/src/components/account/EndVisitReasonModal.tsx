@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useI18n, visualRowDirection } from '../../lib/i18n';
+import { useI18n, physicalReadingStart, visualRowDirection } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { colors } from '../../theme';
 
@@ -66,21 +66,19 @@ export function EndVisitReasonModal({ visible, busy, onBack, onConfirm }: Props)
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleBack}>
       <View className="flex-1 items-center justify-center bg-black/40 px-6">
         <View className="w-full max-w-sm rounded-2xl bg-white p-5">
-          <Text className="mb-3 text-lg font-bold text-[#1B2430]">{t('endVisitReasonTitle')}</Text>
+          <Text className="mb-3 text-lg font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+            {t('endVisitReasonTitle')}
+          </Text>
 
           <View className="mb-1">
-            {[...REASON_KEYS, 'other' as const].map((key, index) => {
+            {[...REASON_KEYS, 'other' as const].map((key) => {
               const isSelected = selectedKey === key;
-              const isLast = index === REASON_KEYS.length;
               return (
-                <Pressable
-                  key={key}
-                  onPress={() => setSelectedKey(key)}
-                  className="items-center gap-3 py-3"
-                  style={{ flexDirection: visualRowDirection(isRTL), ...(!isLast ? { borderBottomWidth: 1, borderColor: colors.border } : {}) }}
-                >
-                  <Text className="flex-1 text-sm text-[#1B2430]">{key === 'other' ? t('endVisitReasonOther') : t(key)}</Text>
-                  {isSelected && <Ionicons name="checkmark" size={18} color={colors.royalBlue} />}
+                <Pressable key={key} onPress={() => setSelectedKey(key)} className="items-center gap-3 py-3" style={{ flexDirection: visualRowDirection(isRTL) }}>
+                  <Text className="flex-1 text-sm text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                    {key === 'other' ? t('endVisitReasonOther') : t(key)}
+                  </Text>
+                  <Ionicons name={isSelected ? 'radio-button-on' : 'radio-button-off'} size={20} color={isSelected ? colors.royalBlue : colors.textMuted} />
                 </Pressable>
               );
             })}
@@ -93,7 +91,7 @@ export function EndVisitReasonModal({ visible, busy, onBack, onConfirm }: Props)
               placeholder={t('endVisitReasonOtherPlaceholder')}
               placeholderTextColor="#9CA3AF"
               className="mb-2 mt-2 rounded-xl border px-4 py-3 text-sm text-[#1B2430]"
-              style={{ borderColor: colors.border, minHeight: 44 }}
+              style={{ borderColor: colors.border, minHeight: 44, textAlign: physicalReadingStart(isRTL) }}
               multiline
               autoFocus
             />

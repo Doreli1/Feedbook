@@ -27,13 +27,13 @@ export interface KitchenOrderItem {
   // a plain SELECT here never has to touch user_profiles.
   barTicketNumber: number | null;
   barDisplayName: string | null;
-  // Table orders (unlike bar orders, which already have their own distinct
-  // ticket-based identity above) had no way to tell which specific diner at
-  // a shared table an order came from — requested 2026-09-19, after the
-  // notification feature raised the same gap: "שולחן 5" alone doesn't say
-  // which of that table's diners placed/cancelled it. Null for bar orders
-  // (session_account_number/sub_account_number exist there too, but the
-  // ticket already serves the same purpose more usefully).
+  // sessionAccountNumber is the table_session's own general account number
+  // — populated for a bar order exactly like a table order (real bug fix
+  // 2026-11-01, see useOrders.ts's own mapping comment). subAccountNumber
+  // is the PERSONAL identity within that account: a table diner's own
+  // sub_account_number, or — for a bar order — the padded pickup-ticket
+  // number instead, per PRD §5.1.5 (same convention useAccounts.ts already
+  // used for its own displayNumber field).
   sessionAccountNumber: string | null;
   subAccountNumber: string | null;
   // Optional per-dish expected cooking time, set in the menu editor — null
@@ -50,6 +50,14 @@ export interface KitchenOrderItem {
   // edited. Surfaced as an attention flag so staff notice the requirement
   // changed instead of silently preparing the pre-edit version.
   editedAt: string | null;
+  // The dish's own category section (2026-11-01, added to de-duplicate the
+  // kitchen queue against the new bar screen — see KitchenScreen.tsx's own
+  // filter) — 'food' needs real kitchen prep, 'drink' is bar-made start to
+  // finish regardless of who ordered it. Only meaningful in combination
+  // with barTicketNumber: a table's own drink order still shows in the
+  // kitchen queue today (unchanged, out of scope of that specific request)
+  // — this field only drives whether a BAR-origin item also belongs here.
+  section: 'food' | 'drink';
 }
 
 interface RawRow {
@@ -60,7 +68,7 @@ interface RawRow {
   quantity: number;
   cancellation_restocked: boolean | null;
   edited_at: string | null;
-  dishes: { name: string; prep_time_minutes: number | null } | null;
+  dishes: { name: string; prep_time_minutes: number | null; menu_categories: { section: 'food' | 'drink' } | null } | null;
   dish_size_options: { name: string } | null;
   order_item_modifiers: { dish_modifier_options: { name: string } | null }[] | null;
   orders: {
@@ -88,7 +96,7 @@ export function useOrders(restaurantId: string | undefined) {
     const { data } = await supabase
       .from('order_items')
       .select(
-        'id, order_id, status, status_updated_at, quantity, cancellation_restocked, edited_at, dishes(name, prep_time_minutes), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, special_request, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number, table_type)))',
+        'id, order_id, status, status_updated_at, quantity, cancellation_restocked, edited_at, dishes(name, prep_time_minutes, menu_categories(section)), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, special_request, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number, table_type)))',
       )
       .eq('orders.table_sessions.restaurant_id', restaurantId)
       // A cancelled item is included here too, but only while it still
@@ -108,6 +116,11 @@ export function useOrders(restaurantId: string | undefined) {
         placedAt: row.orders!.placed_at,
         quantity: row.quantity,
         dishName: row.dishes?.name ?? '',
+        // Defaults to 'food' only if the join somehow comes back empty
+        // (should be impossible — every dish has a category) rather than
+        // leaving this undefined, which would make the bar screen's own
+        // filter silently drop the row.
+        section: row.dishes?.menu_categories?.section ?? 'food',
         sizeName: row.dish_size_options?.name ?? null,
         modifierSummary: (row.order_item_modifiers ?? [])
           .map((m) => m.dish_modifier_options?.name)
@@ -117,8 +130,20 @@ export function useOrders(restaurantId: string | undefined) {
         barTicketNumber: row.orders!.bar_ticket_number,
         barDisplayName: null,
         cancellationRestocked: row.cancellation_restocked,
-        sessionAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.table_sessions?.session_account_number ?? null) : null,
-        subAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.session_participants?.sub_account_number ?? null) : null,
+        // Real bug fix (2026-11-01, user report comparing this screen
+        // against AccountsScreen.tsx's own useAccounts.ts): a bar order
+        // still belongs to a real table_session with its own general
+        // account number — only its PERSONAL identity is the pickup
+        // ticket instead of a sub_account_number, per PRD §5.1.5 ("שורת בר
+        // מוצגת לפי מספרי כרטיסי האיסוף... במקום מספרי חשבון-משנה
+        // אישיים"), not the whole row. Previously nulled both for any bar
+        // order, which just hid the general account's own number instead
+        // of actually matching that PRD rule.
+        sessionAccountNumber: row.orders!.table_sessions?.session_account_number ?? null,
+        subAccountNumber:
+          row.orders!.bar_ticket_number !== null
+            ? String(row.orders!.bar_ticket_number).padStart(4, '0')
+            : (row.orders!.session_participants?.sub_account_number ?? null),
         prepTimeMinutes: row.dishes?.prep_time_minutes ?? null,
         specialRequest: row.orders!.special_request,
         editedAt: row.edited_at,

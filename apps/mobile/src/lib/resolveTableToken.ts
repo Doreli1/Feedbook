@@ -1,6 +1,7 @@
 import type { useRouter } from 'expo-router';
 import { supabase } from './supabase';
-import { extractFunctionErrorCode } from './functionError';
+import { extractFunctionError } from './functionError';
+import { rulesFromHours, getTodayHourLines } from './formatHours';
 import type { TranslationKey } from './translations';
 
 type Router = ReturnType<typeof useRouter>;
@@ -27,16 +28,33 @@ export interface ScanQrResponse {
 // deep-link route expo-router matches for `feedbook://table/<token>`, tapped
 // from outside the app — e.g. a phone's own camera app) — both are "I now
 // have a qr_token, resolve it" and must behave identically from here on.
+export interface ScanFailure {
+  ok: false;
+  messageKey: TranslationKey;
+  // 2026-11-02: RESTAURANT_NOT_ACTIVE/BAR_NOT_ACTIVE are a normal "closed
+  // right now" state, not a real failure — scan-qr.tsx/table/[token].tsx
+  // use this to show a friendlier, non-red modal instead of the generic
+  // error one. Everything else (invalid code, archived table, awaiting
+  // cleaning) stays 'error'.
+  tone: 'error' | 'info';
+  // Today's open-close ranges (e.g. "09:00-22:00"), already day-agnostic —
+  // no translation needed to display these, just a lead sentence around
+  // them. Only set when tone is 'info' and the relevant hours were
+  // actually configured; an empty array means "closed all day today", not
+  // "no data".
+  hoursLines?: string[];
+}
+
 export async function resolveTableToken(
   qrToken: string,
   router: Router,
   options?: { navigate?: 'push' | 'replace' },
-): Promise<{ ok: true } | { ok: false; messageKey: TranslationKey }> {
+): Promise<{ ok: true } | ScanFailure> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) {
-    return { ok: false, messageKey: 'qrSessionExpired' };
+    return { ok: false, messageKey: 'qrSessionExpired', tone: 'error' };
   }
 
   const { data, error } = await supabase.functions.invoke<ScanQrResponse>('scan-qr', {
@@ -44,10 +62,36 @@ export async function resolveTableToken(
   });
 
   if (error || !data) {
-    const code = await extractFunctionErrorCode(error);
+    const { code, details } = await extractFunctionError(error);
+
+    if (code === 'RESTAURANT_NOT_ACTIVE') {
+      const isCertified = details?.kosher_status === 'certified';
+      return {
+        ok: false,
+        messageKey: 'restaurantNotActive',
+        tone: 'info',
+        hoursLines: getTodayHourLines(rulesFromHours(details?.hours), isCertified),
+      };
+    }
+    if (code === 'BAR_NOT_ACTIVE') {
+      // Same fallback order as bar_is_active() itself: the bar's own
+      // hours if it has any configured, else the restaurant's general
+      // hours — showing an empty "closed all day" line from the wrong
+      // schedule would be misleading.
+      const barRules = rulesFromHours(details?.bar_hours);
+      const rules = barRules.length > 0 ? barRules : rulesFromHours(details?.hours);
+      return { ok: false, messageKey: 'barClosedScanMessage', tone: 'info', hoursLines: getTodayHourLines(rules, false) };
+    }
+
     return {
       ok: false,
-      messageKey: code === 'TABLE_NOT_ACTIVE' ? 'tableNotActive' : 'invalidQrCode',
+      tone: 'error',
+      messageKey:
+        code === 'TABLE_NOT_ACTIVE'
+          ? 'tableNotActive'
+          : code === 'TABLE_ARCHIVED'
+            ? 'tableArchived'
+            : 'invalidQrCode',
     };
   }
 
@@ -83,4 +127,14 @@ export async function resolveTableToken(
     },
   });
   return { ok: true };
+}
+
+// Shared by scan-qr.tsx/table/[token].tsx so the "closed right now" body
+// text (lead sentence + today's hours, or an explicit "closed today" line)
+// is composed identically in both places instead of copied twice.
+export function buildScanFailureMessage(outcome: ScanFailure, t: (key: TranslationKey) => string): string {
+  const base = t(outcome.messageKey);
+  if (outcome.tone !== 'info' || !outcome.hoursLines) return base;
+  const hoursPart = outcome.hoursLines.length > 0 ? `${t('todayHoursPrefix')} ${outcome.hoursLines.join(', ')}` : t('closedTodayMessage');
+  return `${base} ${hoursPart}`;
 }

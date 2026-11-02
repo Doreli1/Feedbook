@@ -106,6 +106,11 @@ export function TopBar({
 // this side it's meant to serve "every kind of message/request a diner
 // sends the restaurant" — a feature not built yet, so this renders the icon
 // only, with no click behavior, dropdown, or badge until that's defined.
+//
+// Decision (2026-11-01, per explicit request): once this gets a real
+// dropdown, its own unread-message dots must use the same bg-danger (red)
+// convention as the bell's notification dots above — see the `!n.read`
+// line in NotificationsBell's render, a few lines up in this file.
 function EnvelopeButton() {
   const { t } = useI18n();
   return (
@@ -237,7 +242,7 @@ function NotificationBell({ notifications }: { notifications: TopBarNotification
                     const content = (
                       <>
                         <div className="flex items-start gap-2">
-                          {!n.read && <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
+                          {!n.read && <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-danger" />}
                           <p className={`text-sm ${n.read ? 'font-normal text-muted-foreground' : 'font-medium text-ink'}`}>{n.title}</p>
                         </div>
                         {n.subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{n.subtitle}</p>}

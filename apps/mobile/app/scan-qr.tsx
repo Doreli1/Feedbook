@@ -7,7 +7,7 @@ import { AppHeader, HeaderBackButton, HeaderMenu } from '../src/components/AppHe
 import { ErrorModal } from '../src/components/ErrorModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
 import { goBackOrHome } from '../src/lib/goBackOrHome';
-import { resolveTableToken } from '../src/lib/resolveTableToken';
+import { resolveTableToken, buildScanFailureMessage, type ScanFailure } from '../src/lib/resolveTableToken';
 import { useI18n } from '../src/lib/i18n';
 import { colors } from '../src/theme';
 
@@ -33,7 +33,10 @@ export default function ScanQrScreen() {
   const { t } = useI18n();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // 2026-11-02: holds the full outcome now, not just a message string —
+  // RESTAURANT_NOT_ACTIVE/BAR_NOT_ACTIVE need their tone/hours alongside
+  // the lead sentence to render the friendlier "we're closed" modal.
+  const [failure, setFailure] = useState<ScanFailure | null>(null);
   const handledRef = useRef(false);
 
   async function handleScanned(result: BarcodeScanningResult) {
@@ -42,7 +45,7 @@ export default function ScanQrScreen() {
     if (!qrToken) {
       handledRef.current = true;
       setScanning(false);
-      setError(t('invalidQrScanned'));
+      setFailure({ ok: false, messageKey: 'invalidQrScanned', tone: 'error' });
       return;
     }
 
@@ -50,11 +53,11 @@ export default function ScanQrScreen() {
     setScanning(false);
 
     const outcome = await resolveTableToken(qrToken, router, { navigate: 'push' });
-    if (!outcome.ok) setError(t(outcome.messageKey));
+    if (!outcome.ok) setFailure(outcome);
   }
 
   function retry() {
-    setError(null);
+    setFailure(null);
     handledRef.current = false;
     setScanning(true);
   }
@@ -72,7 +75,7 @@ export default function ScanQrScreen() {
   useFocusEffect(
     useCallback(() => {
       setScanning(true);
-      setError(null);
+      setFailure(null);
       handledRef.current = false;
       return () => setScanning(false);
     }, []),
@@ -128,10 +131,11 @@ export default function ScanQrScreen() {
       </View>
 
       <ErrorModal
-        visible={error !== null}
-        title={t('scanFailedTitle')}
-        message={error ?? ''}
-        dismissLabel={t('tryAgain')}
+        visible={failure !== null}
+        title={failure?.tone === 'info' ? t('restaurantClosedTitle') : t('scanFailedTitle')}
+        message={failure ? buildScanFailureMessage(failure, t) : ''}
+        dismissLabel={failure?.tone === 'info' ? t('gotIt') : t('tryAgain')}
+        tone={failure?.tone}
         onDismiss={retry}
       />
     </View>

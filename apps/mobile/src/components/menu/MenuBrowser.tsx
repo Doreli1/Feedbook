@@ -3142,6 +3142,16 @@ function CartModal({
       if (code === 'INSUFFICIENT_STOCK') setErrorMessage(t('insufficientStockMessage'));
       else if (code === 'DISH_NOT_AVAILABLE') setErrorMessage(t('dishNotAvailableMessage'));
       else if (code === 'MISSING_REQUIRED_MODIFIER') setErrorMessage(t('missingRequiredModifierMessage'));
+      // 2026-11-02: an already-seated bar diner trying to order after the
+      // bar closed (place_order_transaction now enforces this too, not
+      // just scan-qr) — reuses the same message resolveTableToken.ts shows
+      // when the bar is closed at scan time.
+      else if (code === 'BAR_NOT_ACTIVE') setErrorMessage(t('barNotActive'));
+      // 2026-11-02: the kitchen's own closing cutoff (separate from the
+      // bar) — the cart contains a food dish and the kitchen has already
+      // stopped taking them for the day, even though the session itself
+      // is still open.
+      else if (code === 'KITCHEN_CLOSED') setErrorMessage(t('kitchenClosedMessage'));
       else setErrorMessage(t('placeOrderFailedMessage'));
       return;
     }

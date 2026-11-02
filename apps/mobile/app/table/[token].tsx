@@ -3,7 +3,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSession } from '../../src/lib/useSession';
 import { ErrorModal } from '../../src/components/ErrorModal';
-import { resolveTableToken } from '../../src/lib/resolveTableToken';
+import { resolveTableToken, buildScanFailureMessage, type ScanFailure } from '../../src/lib/resolveTableToken';
 import { useI18n } from '../../src/lib/i18n';
 import { colors } from '../../src/theme';
 
@@ -21,18 +21,18 @@ export default function TableDeepLinkScreen() {
   const { status } = useSession();
   const router = useRouter();
   const { t } = useI18n();
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ScanFailure | null>(null);
 
   useEffect(() => {
     if (status !== 'signed-in') return;
     let cancelled = false;
     void resolveTableToken(token, router).then((outcome) => {
-      if (!cancelled && !outcome.ok) setError(t(outcome.messageKey));
+      if (!cancelled && !outcome.ok) setFailure(outcome);
     });
     return () => {
       cancelled = true;
     };
-  }, [status, token, router, t]);
+  }, [status, token, router]);
 
   if (status === 'signed-out') {
     router.replace('/sign-in');
@@ -45,10 +45,11 @@ export default function TableDeepLinkScreen() {
       <Text className="text-sm text-[#6E6A61]">{t('openingTable')}</Text>
 
       <ErrorModal
-        visible={error !== null}
-        title={t('openTableFailedTitle')}
-        message={error ?? ''}
+        visible={failure !== null}
+        title={failure?.tone === 'info' ? t('restaurantClosedTitle') : t('openTableFailedTitle')}
+        message={failure ? buildScanFailureMessage(failure, t) : ''}
         dismissLabel={t('gotIt')}
+        tone={failure?.tone}
         onDismiss={() => router.replace('/profile')}
       />
     </View>

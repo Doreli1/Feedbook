@@ -115,6 +115,21 @@ const translations = {
     tryAgain: 'ניסיון נוסף',
     qrSessionExpired: 'החיבור לחשבון פג. התחברו שוב ונסו לסרוק את הקוד פעם נוספת.',
     tableNotActive: 'השולחן הזה אינו פעיל כרגע. פנו לצוות המסעדה לקבלת עזרה.',
+    barNotActive: 'הבר סגור כרגע. בדקו את שעות הפעילות ונסו שוב מאוחר יותר.',
+    // Scan-flow specific (2026-11-02) — distinct from barNotActive above,
+    // which MenuBrowser.tsx's place-order error still uses as a plain
+    // inline cart message ("can't order more right now"), a different
+    // context than "can't scan in right now" below (shown inside the
+    // friendly closed-modal, with today's hours appended after it).
+    barClosedScanMessage: 'אפשר לחזור ולסרוק כשהבר פתוח.',
+    tableArchived: 'השולחן הזה אינו בשימוש יותר. פנו לצוות המסעדה לקבלת עזרה.',
+    // Shortened 2026-11-02 — the hours themselves now follow right after
+    // this sentence (buildScanFailureMessage), so repeating "check the
+    // hours" here was redundant.
+    restaurantClosedTitle: 'המסעדה סגורה כרגע',
+    todayHoursPrefix: 'שעות הפעילות היום:',
+    closedTodayMessage: 'סגורים היום.',
+    restaurantNotActive: 'אפשר לחזור ולסרוק כשהמסעדה פתוחה.',
     invalidQrCode: 'קוד ה-QR לא תקין. ודאו שאתם סורקים את הקוד שעל השולחן ונסו שוב.',
     openingTable: 'פותחים את השולחן…',
     openTableFailedTitle: 'לא הצלחנו לפתוח את השולחן',
@@ -284,6 +299,7 @@ const translations = {
     missingRequiredServingVariantMessage: 'יש לבחור פורמט הגשה (בקבוק/חבית) לתוספת שנבחרה לפני ההוספה להזמנה.',
     insufficientStockMessage: 'אחד או יותר מהמרכיבים הנדרשים אזל מהמלאי כרגע.',
     dishNotAvailableMessage: 'המנה שבחרתם אינה זמינה יותר.',
+    kitchenClosedMessage: 'המטבח סגור כעת — ניתן להזמין שתייה בלבד.',
     orderPlacedTitle: 'ההזמנה נשלחה למטבח!',
 
     // Orders tab — live status tracker (Stage 5, 2026-09-14)
@@ -293,7 +309,7 @@ const translations = {
     orderStatusReady: 'מוכנה',
     orderStatusServed: 'הוגשה',
     orderBarTicketLabel: 'מספר הזמנה',
-    modifyItemButton: 'בצעו שינויים במנה',
+    modifyItemButton: 'בצעו שינויים',
     cancelItemButton: 'ביטול הזמנה',
     editWindowExpiredMessage: 'חלון השינויים/הביטול (5 דקות מרגע ההזמנה) חלף.',
     itemAlreadyReadyMessage: 'אי אפשר יותר לשנות מנה שכבר בהכנה מתקדמת או שהוגשה.',
@@ -301,8 +317,7 @@ const translations = {
     orderEstimatedPrepTimeLabel: 'זמן הכנה משוער:',
     orderEstimatedPrepTimeValue: 'כ-{minutes} דק׳',
     orderGreetingLabel: 'תודה {name}!',
-    orderEditPolicyBullet: 'תוכלו לבצע שינויים אונליין מרגע ביצוע ההזמנה ולא יאוחר מ-{minutes} דקות אחריה',
-    orderFreeCancelBullet: 'ביטול חינם',
+    orderEditPolicyBullet: 'תוכלו לבצע שינויים או לבטל את ההזמנה אונליין, מרגע ביצוע ההזמנה ולא יאוחר מ-{minutes} דקות אחריה',
     orderEditWindowPassedNote: 'חלון הזמן לביצוע שינויים או ביטול (עד {minutes} דקות מרגע ההזמנה) כבר חלף.',
 
     // Cancellation reason modal (2026-09-19) — shown before a cancel request
@@ -521,6 +536,13 @@ const translations = {
     tryAgain: 'Try again',
     qrSessionExpired: 'Your session has expired. Please sign in again and scan the code once more.',
     tableNotActive: "This table isn't active right now. Please ask the restaurant staff for help.",
+    barNotActive: "The bar is closed right now. Check the opening hours and try again later.",
+    barClosedScanMessage: "You can come back and scan once the bar is open.",
+    tableArchived: "This table is no longer in use. Please ask the restaurant staff for help.",
+    restaurantClosedTitle: "The restaurant is closed right now",
+    todayHoursPrefix: "Today's hours:",
+    closedTodayMessage: 'Closed today.',
+    restaurantNotActive: "You can come back and scan once the restaurant is open.",
     invalidQrCode: "This QR code isn't valid. Make sure you're scanning the code on the table and try again.",
     openingTable: 'Opening the table…',
     openTableFailedTitle: "We couldn't open the table",
@@ -661,6 +683,7 @@ const translations = {
     missingRequiredServingVariantMessage: 'Please choose a serving format (bottle/draft) for the selected add-on before adding this to your order.',
     insufficientStockMessage: 'One or more required ingredients are currently out of stock.',
     dishNotAvailableMessage: 'The dish you selected is no longer available.',
+    kitchenClosedMessage: 'The kitchen is closed right now — only drinks can be ordered.',
     orderPlacedTitle: 'Your order was sent to the kitchen!',
 
     // Orders tab — live status tracker (Stage 5, 2026-09-14)
@@ -678,8 +701,7 @@ const translations = {
     orderEstimatedPrepTimeLabel: 'Estimated prep time:',
     orderEstimatedPrepTimeValue: '~{minutes} min',
     orderGreetingLabel: 'Thanks {name}!',
-    orderEditPolicyBullet: 'You can make changes online from the moment you order and up to {minutes} minutes after',
-    orderFreeCancelBullet: 'Free cancellation',
+    orderEditPolicyBullet: 'You can make changes or cancel the order online, from the moment you order and up to {minutes} minutes after',
     orderEditWindowPassedNote: 'The window to make changes or cancel (up to {minutes} minutes after ordering) has passed.',
 
     // Cancellation reason modal (2026-09-19) — shown before a cancel request

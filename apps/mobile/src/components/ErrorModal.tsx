@@ -1,5 +1,6 @@
 import { Modal, Pressable, Text, View } from 'react-native';
 import { useI18n, physicalReadingStart } from '../lib/i18n';
+import { colors } from '../theme';
 
 interface Props {
   visible: boolean;
@@ -7,12 +8,17 @@ interface Props {
   message: string;
   dismissLabel: string;
   onDismiss: () => void;
+  // 'info' (2026-11-02) — a normal, expected state (the restaurant/bar is
+  // simply closed right now), not something that actually failed: the
+  // title loses its alarm-red color so this doesn't read as an error.
+  // Defaults to 'error', the original M-09 look, for every other call site.
+  tone?: 'error' | 'info';
 }
 
 // M-09 (Mobile UI Spec §5) — a red title, an exact explanation of what went
 // wrong, and where to go next — never a bare "משהו השתבש". Reused for every
 // blocked action across the app (invalid QR, inactive table, auth failure).
-export function ErrorModal({ visible, title, message, dismissLabel, onDismiss }: Props) {
+export function ErrorModal({ visible, title, message, dismissLabel, onDismiss, tone = 'error' }: Props) {
   const { isRTL } = useI18n();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
@@ -22,7 +28,7 @@ export function ErrorModal({ visible, title, message, dismissLabel, onDismiss }:
               textAlign:'auto' issue found across the rest of the app —
               this one is shared by every blocked-action error across the
               app, so the fix covers all of them at once. */}
-          <Text className="mb-2 text-lg font-bold text-[#DC2626]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+          <Text className="mb-2 text-lg font-bold" style={{ textAlign: physicalReadingStart(isRTL), color: tone === 'info' ? colors.royalBlue : '#DC2626' }}>
             {title}
           </Text>
           <Text className="mb-5 text-sm leading-5 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>

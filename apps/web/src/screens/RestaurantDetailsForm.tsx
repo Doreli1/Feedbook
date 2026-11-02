@@ -11,6 +11,8 @@ import { KosherCertificateUpload } from '../components/KosherCertificateUpload';
 import { Toggle } from '../components/Toggle';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
+import { followScheduleLabelKey } from '../lib/useBarStatus';
+import { findUncontainedBarRule } from '../lib/hoursContainment';
 
 type SaveState = 'idle' | 'incomplete' | 'saving' | 'saved' | 'error';
 
@@ -126,6 +128,26 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
   const [phonePrefix, setPhonePrefix] = useState(() => parsePhone(restaurant?.phone ?? null).prefix);
   const [phoneNumber, setPhoneNumber] = useState(() => parsePhone(restaurant?.phone ?? null).number);
   const [hourRules, setHourRules] = useState<HourRule[]>(() => parseHours(restaurant?.hours ?? null));
+  // Bar's own schedule (2026-11-02, hybrid schedule+override — see
+  // bar_is_active/bar_close_if_inactive in
+  // 20261102090000_bar_active_status.sql), independent of the restaurant's
+  // own `hours` above. Shown only once an existing restaurant is being
+  // edited (same gating as the kosher section further below), regardless
+  // of whether a bar table currently exists — harmless to configure in
+  // advance, and avoids threading `tables` into this form just for a
+  // visibility gate.
+  const [barHourRules, setBarHourRules] = useState<HourRule[]>(() => parseHours(restaurant?.bar_hours ?? null));
+  const [barOverride, setBarOverride] = useState<'open' | 'closed' | null>(
+    (restaurant?.bar_manual_override as 'open' | 'closed' | null) ?? null,
+  );
+  // Kitchen closing cutoff (2026-11-02, user request) — common restaurant
+  // practice: the kitchen stops taking new food orders some minutes before
+  // the restaurant's own closing time, while drinks stay orderable right up
+  // to closing (place_order_transaction's own kitchen_is_open check). One
+  // number per restaurant, not per hours-rule.
+  const [kitchenCutoff, setKitchenCutoff] = useState(
+    restaurant?.kitchen_closes_minutes_before != null ? String(restaurant.kitchen_closes_minutes_before) : '',
+  );
   const [cancellationWindow, setCancellationWindow] = useState(
     restaurant?.cancellation_window_minutes != null ? String(restaurant.cancellation_window_minutes) : '',
   );
@@ -152,6 +174,18 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     return `${days} ${r.open}-${r.close}`;
   });
 
+  const completeBarRules = barHourRules.filter(isRuleComplete);
+  const formattedBarHours = completeBarRules.map((r) => {
+    const days = r.fromDay === r.toDay ? dayLabel(r.fromDay) : `${dayLabel(r.fromDay)}-${dayLabel(r.toDay)}`;
+    return `${days} ${r.open}-${r.close}`;
+  });
+
+  const barOverrideOptions: { value: 'open' | 'closed' | null; labelKey: TranslationKey }[] = [
+    { value: null, labelKey: followScheduleLabelKey(completeBarRules.length > 0, completeRules.length > 0) },
+    { value: 'open', labelKey: 'barOverrideOpenNowLabel' },
+    { value: 'closed', labelKey: 'barOverrideCloseNowLabel' },
+  ];
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -168,7 +202,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, address, phone, hourRules, logoFile, description, cuisineTags, cancellationWindow, vatRate]);
+  }, [name, address, phone, hourRules, barHourRules, barOverride, kitchenCutoff, logoFile, description, cuisineTags, cancellationWindow, vatRate]);
 
   // Shared by every exit path below — clears the pending debounce timer and
   // fires the save immediately instead of waiting out the rest of the
@@ -235,6 +269,14 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     setHourRules((rules) => rules.filter((r) => r.key !== key));
   }
 
+  function updateBarRule(key: string, patch: Partial<HourRule>) {
+    setBarHourRules((rules) => rules.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  function removeBarRule(key: string) {
+    setBarHourRules((rules) => rules.filter((r) => r.key !== key));
+  }
+
   const isCertified = restaurant?.kosher_status === 'certified';
   // Local-only reveal state for the "כשרות" toggle below — off by default
   // for a not-yet-certified restaurant, so the (required) upload field stays
@@ -262,14 +304,33 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     setSaveState('saving');
     setErrorMessage(null);
 
-    const hours = {
-      rules: completeRules.map((r) => ({
-        fromDay: Number(r.fromDay),
-        toDay: Number(r.toDay),
-        open: r.open,
-        close: r.close,
-      })),
-    };
+    const generalRules = completeRules.map((r) => ({
+      fromDay: Number(r.fromDay),
+      toDay: Number(r.toDay),
+      open: r.open,
+      close: r.close,
+    }));
+    const barRules = completeBarRules.map((r) => ({
+      fromDay: Number(r.fromDay),
+      toDay: Number(r.toDay),
+      open: r.open,
+      close: r.close,
+    }));
+    const hours = { rules: generalRules };
+    const bar_hours = { rules: barRules };
+
+    // Bar hours must always fit inside the restaurant's own general hours
+    // (2026-11-02, user decision) — bar_is_active() already enforces this
+    // unconditionally at runtime, so a rule that fails this check would
+    // silently never take effect; blocking the save here is what actually
+    // tells the owner that, instead of letting them believe it was saved.
+    const uncontained = findUncontainedBarRule(barRules, generalRules);
+    if (uncontained) {
+      const days = uncontained.fromDay === uncontained.toDay ? dayLabel(String(uncontained.fromDay)) : `${dayLabel(String(uncontained.fromDay))}-${dayLabel(String(uncontained.toDay))}`;
+      setErrorMessage(t('barHoursOutsideGeneralHours').replace('{range}', `${days} ${uncontained.open}-${uncontained.close}`));
+      setSaveState('error');
+      return;
+    }
 
     if (!restaurantId) {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/register-restaurant`, {
@@ -317,6 +378,9 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         address,
         phone,
         hours,
+        bar_hours,
+        bar_manual_override: barOverride,
+        kitchen_closes_minutes_before: kitchenCutoff.trim() === '' ? null : Number(kitchenCutoff),
         logo_url: nextLogoUrl,
         description: description.trim() || null,
         cuisine_tags: cuisineTags,
@@ -593,6 +657,114 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           <p dir="auto" className="mb-4 rounded bg-accent-soft px-3 py-2 text-xs text-ink-soft">
             {formattedHours.join(', ')}
           </p>
+        )}
+
+        <label className="mb-1 block text-sm font-bold text-ink">{t('kitchenCutoffLabel')}</label>
+        <div className="mb-1 flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            value={kitchenCutoff}
+            onChange={(e) => setKitchenCutoff(e.target.value.replace(/\D/g, ''))}
+            placeholder="0"
+            className="w-24 rounded border border-border px-3 py-2 text-sm"
+          />
+          <span className="text-xs text-muted-foreground">{t('kitchenCutoffUnit')}</span>
+        </div>
+        <p className="mb-4 text-[10px] text-muted-foreground">{t('kitchenCutoffHelp')}</p>
+
+        {restaurant && (
+          <>
+            <label className="mb-1 block text-sm font-bold text-ink">{t('barHoursSectionHeading')}</label>
+            <p className="mb-2 text-[10px] text-muted-foreground">{t('barHoursSectionHint')}</p>
+            <div className="mb-2 space-y-2">
+              {barHourRules.map((rule) => (
+                <div key={rule.key} className="flex flex-wrap items-center gap-1.5 rounded border border-border bg-surface-2 p-2">
+                  <span className="text-xs text-muted-foreground">{t('hoursDaysFrom')}</span>
+                  <select
+                    value={rule.fromDay}
+                    onChange={(e) => updateBarRule(rule.key, { fromDay: e.target.value })}
+                    className="rounded border border-border px-1.5 py-1 text-xs"
+                  >
+                    <option value="" />
+                    {DAY_KEYS.map((key, i) => (
+                      <option key={key} value={i}>
+                        {t(key)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-muted-foreground">{t('hoursDaysTo')}</span>
+                  <select
+                    value={rule.toDay}
+                    onChange={(e) => updateBarRule(rule.key, { toDay: e.target.value })}
+                    className="rounded border border-border px-1.5 py-1 text-xs"
+                  >
+                    <option value="" />
+                    {DAY_KEYS.map((key, i) => (
+                      <option key={key} value={i}>
+                        {t(key)}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="time"
+                    value={rule.open}
+                    onChange={(e) => updateBarRule(rule.key, { open: e.target.value })}
+                    className="rounded border border-border px-1.5 py-1 text-xs"
+                  />
+                  <span className="text-xs text-muted-foreground">{t('hoursDaysTo')}</span>
+                  <input
+                    type="time"
+                    value={rule.close}
+                    onChange={(e) => updateBarRule(rule.key, { close: e.target.value })}
+                    className="rounded border border-border px-1.5 py-1 text-xs"
+                  />
+                  <Tooltip content={t('hoursRemoveRange')} className="ms-auto">
+                    <button
+                      type="button"
+                      onClick={() => removeBarRule(rule.key)}
+                      aria-label={t('hoursRemoveRange')}
+                      className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </Tooltip>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setBarHourRules((rules) => [...rules, newRule()])}
+              className="mb-3 w-full rounded border border-dashed border-border-strong py-1.5 text-xs text-accent hover:bg-accent-soft"
+            >
+              {t('hoursAddRange')}
+            </button>
+
+            {formattedBarHours.length > 0 && (
+              <p dir="auto" className="mb-3 rounded bg-accent-soft px-3 py-2 text-xs text-ink-soft">
+                {formattedBarHours.join(', ')}
+              </p>
+            )}
+
+            {/* Manual override (2026-11-02) — same restaurants.bar_manual_override
+                column BarOrdersScreen's own quick toggle writes, so either
+                side always reflects the other's latest change. */}
+            <div className="mb-1 inline-flex rounded border border-border p-0.5 text-xs">
+              {barOverrideOptions.map((opt) => (
+                <button
+                  key={String(opt.value)}
+                  type="button"
+                  onClick={() => setBarOverride(opt.value)}
+                  className={`rounded px-3 py-1.5 font-medium transition-colors ${
+                    barOverride === opt.value ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-accent-soft'
+                  }`}
+                >
+                  {t(opt.labelKey)}
+                </button>
+              ))}
+            </div>
+            <p className="mb-4 text-[10px] text-muted-foreground">{t('barOverrideHint')}</p>
+          </>
         )}
 
         <label className="mb-1 block text-sm font-bold text-ink">{t('cancellationWindow')}</label>

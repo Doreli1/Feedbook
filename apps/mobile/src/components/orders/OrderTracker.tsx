@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Dish } from '@feedbook/types';
-import { useI18n, visualRowDirection } from '../../lib/i18n';
+import { useI18n, physicalReadingStart, visualRowDirection } from '../../lib/i18n';
 import type { TranslationKey } from '../../lib/translations';
 import { supabase } from '../../lib/supabase';
 import { extractFunctionErrorCode } from '../../lib/functionError';
@@ -155,6 +155,7 @@ const NOTE_LINE_HEIGHT = 20;
 
 function PolicyBullet({ text }: { text: string }) {
   const { isRTL } = useI18n();
+  const textAlign = physicalReadingStart(isRTL);
   return (
     // items-start on the row (so a wrapped second line doesn't pull the
     // icon down with it), but the icon itself lives in its own
@@ -174,7 +175,7 @@ function PolicyBullet({ text }: { text: string }) {
       <View style={{ height: BULLET_LINE_HEIGHT, justifyContent: 'center' }}>
         <MaterialCommunityIcons name="check-bold" size={15} color="#16A34A" />
       </View>
-      <Text className="flex-1 text-xs text-[#6E6A61]" style={{ lineHeight: BULLET_LINE_HEIGHT }}>
+      <Text className="flex-1 text-xs text-[#6E6A61]" style={{ lineHeight: BULLET_LINE_HEIGHT, textAlign }}>
         {text}
       </Text>
     </View>
@@ -265,13 +266,19 @@ function OrderItemCard({
         // work by (never this diner's own persistent account number,
         // which stays private to them) — this is what to watch for and
         // match against the printed label at pickup.
-        <View className="mb-2 self-start rounded-full px-2.5 py-1" style={{ backgroundColor: colors.smoking }}>
+        //
+        // alignSelf set explicitly from isRTL, not the logical `self-start`
+        // (2026-11-01, real bug — user report: this badge stayed pinned to
+        // the physical left even in Hebrew) — same class of bug as every
+        // other native-RTL-mirroring-can't-be-trusted fix in this file, see
+        // i18n.tsx.
+        <View className="mb-2 rounded-full px-2.5 py-1" style={{ backgroundColor: colors.smoking, alignSelf: isRTL ? 'flex-end' : 'flex-start' }}>
           <Text className="text-xs font-bold text-white">
             {t('orderBarTicketLabel')} #{String(item.barTicketNumber).padStart(4, '0')}
           </Text>
         </View>
       )}
-      <Text className="text-base font-semibold text-[#1B2430]">
+      <Text className="text-base font-semibold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
         {item.quantity}× {item.dishName}
       </Text>
       {(item.ratingCount > 0 || item.feedstarsEligible) && (
@@ -338,7 +345,6 @@ function OrderItemCard({
       {canModify && (
         <View className="mt-3" style={{ gap: 5 }}>
           <PolicyBullet text={t('orderEditPolicyBullet').replace('{minutes}', String(editWindowMinutes))} />
-          <PolicyBullet text={t('orderFreeCancelBullet')} />
         </View>
       )}
 
@@ -392,12 +398,24 @@ function OrderItemCard({
             <View style={{ width: 1, height: 24, backgroundColor: colors.border }} />
           </>
         )}
-        <View className="flex-1 items-center">
+        {/* items-center only when prep time is also shown, splitting the
+            row 50/50 (each half's own content centered within it) — with
+            no prep time this box is the row's ONLY child, so flex-1 alone
+            stretches it full-width, and items-center (View's default
+            flexDirection is column, so this is horizontal centering) was
+            putting the price dead-center on the screen instead of at the
+            physical left the design calls for (2026-11-01, real bug — user
+            report with a no-prep-time dish). alignItems removed for that
+            case; the Text's own literal textAlign:'left' takes over
+            instead — a fixed physical value matching this row's own
+            documented "price always physical left" design intent above,
+            not a reading-direction-relative one. */}
+        <View className={item.prepTimeMinutes !== null ? 'flex-1 items-center' : 'flex-1'}>
           {/* (unitPrice + modifiersUnitTotal) * quantity (2026-10-11, real
               bug fix) — used to show unitPrice*quantity alone, silently
               dropping any priced add-on (e.g. a surcharged drink modifier)
               from the total. */}
-          <Text className="text-xl font-bold" style={{ color: colors.royalBlue }}>
+          <Text className="text-xl font-bold" style={{ color: colors.royalBlue, ...(item.prepTimeMinutes === null ? { textAlign: 'left' as const } : {}) }}>
             ₪{formatPrice((item.unitPrice + item.modifiersUnitTotal) * item.quantity)}
           </Text>
         </View>
@@ -453,7 +471,7 @@ interface OrderFocusRequest {
 const HIGHLIGHT_DURATION_MS = 4000;
 
 export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: OrderFocusRequest | null; onFocusHandled?: () => void }) {
-  const { t } = useI18n();
+  const { t, isRTL } = useI18n();
   const sessionId = useTableSessionStore((s) => s.sessionId);
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
   // Powers the live "בצעו שינויים במנה" edit flow (2026-10-11, user
@@ -678,7 +696,9 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
             // display-name line), corrected 2026-09-19 after the blue
             // version read as visually inconsistent with the rest of the
             // app's type treatment.
-            <Text className="mb-2 text-lg font-bold text-[#1B2430]">{t('orderGreetingLabel').replace('{name}', firstName)}</Text>
+            <Text className="mb-2 text-lg font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('orderGreetingLabel').replace('{name}', firstName)}
+            </Text>
           )}
           {visibleItems.map((item) => (
             <OrderItemCard

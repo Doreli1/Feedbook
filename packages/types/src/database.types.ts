@@ -1400,6 +1400,8 @@ export type Database = {
       restaurants: {
         Row: {
           address: string | null;
+          bar_hours: Json | null;
+          bar_manual_override: string | null;
           cancellation_window_minutes: number | null;
           created_at: string;
           created_by: string | null;
@@ -1407,6 +1409,7 @@ export type Database = {
           description: string | null;
           hours: Json | null;
           id: string;
+          kitchen_closes_minutes_before: number | null;
           kosher_certificate_expires_at: string | null;
           kosher_certificate_uploaded_at: string | null;
           kosher_certificate_url: string | null;
@@ -1424,6 +1427,8 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           address?: string | null;
+          bar_hours?: Json | null;
+          bar_manual_override?: string | null;
           cancellation_window_minutes?: number | null;
           created_at?: string;
           created_by?: string | null;
@@ -1431,6 +1436,7 @@ export type Database = {
           description?: string | null;
           hours?: Json | null;
           id?: string;
+          kitchen_closes_minutes_before?: number | null;
           kosher_certificate_expires_at?: string | null;
           kosher_certificate_uploaded_at?: string | null;
           kosher_certificate_url?: string | null;
@@ -1447,6 +1453,8 @@ export type Database = {
         };
         Update: {
           address?: string | null;
+          bar_hours?: Json | null;
+          bar_manual_override?: string | null;
           cancellation_window_minutes?: number | null;
           created_at?: string;
           created_by?: string | null;
@@ -1454,6 +1462,7 @@ export type Database = {
           description?: string | null;
           hours?: Json | null;
           id?: string;
+          kitchen_closes_minutes_before?: number | null;
           kosher_certificate_expires_at?: string | null;
           kosher_certificate_uploaded_at?: string | null;
           kosher_certificate_url?: string | null;
@@ -1745,6 +1754,7 @@ export type Database = {
       };
       tables: {
         Row: {
+          archived_at: string | null;
           capacity: number;
           created_at: string;
           id: string;
@@ -1758,6 +1768,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          archived_at?: string | null;
           capacity: number;
           created_at?: string;
           id?: string;
@@ -1770,6 +1781,7 @@ export type Database = {
           table_type?: string | null;
         };
         Update: {
+          archived_at?: string | null;
           capacity?: number;
           created_at?: string;
           id?: string;
@@ -1910,6 +1922,9 @@ export type Database = {
           order_id: string;
         }[];
       };
+      bar_close_if_inactive: { Args: { p_restaurant_id: string }; Returns: boolean };
+      bar_hours_active_now: { Args: { p_bar_hours: Json; p_now?: string }; Returns: boolean };
+      bar_is_active: { Args: { p_restaurant_id: string }; Returns: boolean };
       calculate_bill_split: { Args: { p_payment_id: string }; Returns: undefined };
       current_manager_restaurant_ids: { Args: Record<PropertyKey, never>; Returns: string[] };
       current_participant_ids: { Args: Record<PropertyKey, never>; Returns: string[] };
@@ -1977,6 +1992,7 @@ export type Database = {
           user_id: string;
         }[];
       };
+      kitchen_is_open: { Args: { p_restaurant_id: string }; Returns: boolean };
       get_unavailable_modifier_options: {
         Args: { p_restaurant_id: string };
         Returns: {
@@ -2031,6 +2047,7 @@ export type Database = {
       replace_dish_ingredients: { Args: { p_dish_id: string; p_rows: Json }; Returns: undefined };
       restaurant_hours_excludes_saturday: { Args: { p_hours: Json }; Returns: boolean };
       restaurant_hours_strip_saturday: { Args: { p_hours: Json }; Returns: Json };
+      restaurant_is_active: { Args: { p_restaurant_id: string }; Returns: boolean };
       restock_inventory_for_order_item: { Args: { p_order_item_id: string }; Returns: undefined };
       session_participant_profiles: {
         Args: { p_session_id: string };

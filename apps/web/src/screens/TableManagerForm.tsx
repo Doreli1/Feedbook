@@ -136,10 +136,26 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
   const [addingCustomTable, setAddingCustomTable] = useState(false);
   const [editingTableId, setEditingTableId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set right after a delete silently fell back to archiving instead (see
+  // handleDeleteGroup/handleDeleteCustomTable below) — a neutral note, not
+  // an error, so it gets its own state rather than reusing `error`'s red
+  // styling.
+  const [archivedNote, setArchivedNote] = useState(false);
   const [qrTables, setQrTables] = useState<RestaurantTable[] | null>(null);
 
-  const groups = groupPresetTables(tables);
-  const customTables = tables.filter((table) => !table.table_type);
+  // A table with any session history can never actually be hard-deleted
+  // (foreign-key violation, by design — see handleDeleteGroup below), so
+  // "removing" one archives it instead (archived_at set) rather than
+  // deleting the row. Archived tables are excluded from every active
+  // list/check here and shown in their own section further down instead,
+  // with a restore action.
+  const activeTables = tables.filter((table) => !table.archived_at);
+  const archivedTables = tables.filter((table) => table.archived_at);
+
+  const groups = groupPresetTables(activeTables);
+  const customTables = activeTables.filter((table) => !table.table_type);
+  const archivedGroups = groupPresetTables(archivedTables);
+  const archivedCustomTables = archivedTables.filter((table) => !table.table_type);
   const openPresetDef = TABLE_TYPE_PRESETS.find((p) => p.key === openPreset);
 
   function openQuickAdd(preset: (typeof TABLE_TYPE_PRESETS)[number]) {
@@ -159,15 +175,18 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
     if (!preset) return;
     // Defensive re-check: the chip itself is disabled once a singleton
     // exists, but a stale panel left open across a refresh (another tab
-    // creating it, say) shouldn't be able to insert a second one.
-    if (preset.singleton && tables.some((table) => table.table_type === preset.key)) return;
+    // creating it, say) shouldn't be able to insert a second one. Only an
+    // ACTIVE singleton blocks this — an archived one is exactly what the
+    // partial unique index (one_bar_table_per_restaurant) now allows
+    // re-creating around.
+    if (preset.singleton && activeTables.some((table) => table.table_type === preset.key)) return;
     const quantity = preset.singleton ? 1 : Number(quickQuantity);
     const capacity = Number(quickCapacity);
     if (!Number.isInteger(quantity) || quantity < 1 || !Number.isInteger(capacity) || capacity < 1) return;
 
     setError(null);
     setBusyKey('quick-add');
-    const numbers = preset.fixedNumber ? [preset.fixedNumber] : nextTableNumbers(tables, quantity);
+    const numbers = preset.fixedNumber ? [preset.fixedNumber] : nextTableNumbers(activeTables, quantity);
     const rows = numbers.map((table_number) => ({
       restaurant_id: restaurant.id,
       table_number,
@@ -206,7 +225,7 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
         setBusyKey(null);
         return;
       }
-      const numbers = nextTableNumbers(tables, delta);
+      const numbers = nextTableNumbers(activeTables, delta);
       const capacity = group.capacity;
       const rows = numbers.map((table_number) => ({
         restaurant_id: restaurant.id,
@@ -224,7 +243,7 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
         return;
       }
     } else {
-      const groupTables = tables
+      const groupTables = activeTables
         .filter((table) => table.table_type === group.type && table.capacity === group.capacity && table.smoking_allowed === group.smokingAllowed && table.is_outdoor === group.isOutdoor)
         .sort((a, b) => b.created_at.localeCompare(a.created_at));
       const idsToRemove = groupTables.slice(0, -delta).map((table) => table.id);
@@ -263,24 +282,68 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
     onRefresh();
   }
 
+  // A table that already has any table_sessions history (even fully closed)
+  // can never actually be hard-deleted — table_sessions_table_id_fkey has no
+  // ON DELETE clause, by design, so it never silently orphans real order/
+  // payment/review history (diagnosed 2026-11-02 against a real bar table).
+  // Postgres surfaces that as error code 23503 (foreign_key_violation) —
+  // when that's what blocked the delete, fall back to archiving the table
+  // instead (reversible, loses nothing) rather than just showing the raw
+  // constraint error. Any other failure still surfaces as a real error.
+  async function deleteOrArchive(ids: string[]): Promise<{ ok: true; archived: boolean } | { ok: false; message: string }> {
+    const { error: deleteError } = await supabase.from('tables').delete().in('id', ids);
+    if (!deleteError) return { ok: true, archived: false };
+    if (deleteError.code !== '23503') return { ok: false, message: deleteError.message };
+
+    const { error: archiveError } = await supabase.from('tables').update({ archived_at: new Date().toISOString() }).in('id', ids);
+    if (archiveError) return { ok: false, message: archiveError.message };
+    return { ok: true, archived: true };
+  }
+
   async function handleDeleteGroup(group: TableGroup) {
     setError(null);
+    setArchivedNote(false);
     setBusyKey(group.key);
-    const { error: deleteError } = await supabase.from('tables').delete().in('id', group.ids);
+    const result = await deleteOrArchive(group.ids);
     setBusyKey(null);
-    if (deleteError) {
-      setError(deleteError.message);
+    if (!result.ok) {
+      setError(result.message);
       return;
     }
+    if (result.archived) setArchivedNote(true);
     setConfirmingDeleteKey(null);
     onRefresh();
   }
 
   async function handleDeleteCustomTable(tableId: string) {
     setError(null);
-    const { error: deleteError } = await supabase.from('tables').delete().eq('id', tableId);
-    if (deleteError) {
-      setError(deleteError.message);
+    setArchivedNote(false);
+    const result = await deleteOrArchive([tableId]);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    if (result.archived) setArchivedNote(true);
+    onRefresh();
+  }
+
+  async function handleRestoreGroup(group: TableGroup) {
+    setError(null);
+    setBusyKey(group.key);
+    const { error: restoreError } = await supabase.from('tables').update({ archived_at: null }).in('id', group.ids);
+    setBusyKey(null);
+    if (restoreError) {
+      setError(restoreError.message);
+      return;
+    }
+    onRefresh();
+  }
+
+  async function handleRestoreCustomTable(tableId: string) {
+    setError(null);
+    const { error: restoreError } = await supabase.from('tables').update({ archived_at: null }).eq('id', tableId);
+    if (restoreError) {
+      setError(restoreError.message);
       return;
     }
     onRefresh();
@@ -307,11 +370,16 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
             {error}
           </div>
         )}
+        {archivedNote && (
+          <div className="mb-4 rounded border-l-4 border-accent bg-accent-soft px-3 py-2 text-sm text-ink">
+            {t('tableArchivedInsteadOfDeletedNote')}
+          </div>
+        )}
 
         <p className="mb-2 text-xs text-muted-foreground">{t('tableQuickAddHint')}</p>
         <div className="mb-3 flex flex-wrap gap-2">
           {TABLE_TYPE_PRESETS.map((preset) => {
-            const alreadyExists = !!preset.singleton && tables.some((table) => table.table_type === preset.key);
+            const alreadyExists = !!preset.singleton && activeTables.some((table) => table.table_type === preset.key);
             return (
               <Tooltip key={preset.key} content={alreadyExists ? t('tableBarAlreadyExists') : null}>
                 <button
@@ -637,6 +705,52 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
             </button>
           )}
         </div>
+
+        {(archivedGroups.length > 0 || archivedCustomTables.length > 0) && (
+          <div className="mb-6 border-t border-border pt-4">
+            <p className="mb-1 text-xs font-semibold text-muted-foreground">{t('tableArchiveSectionTitle')}</p>
+            <p className="mb-2 text-[10px] text-muted-foreground">{t('tableArchiveSectionHint')}</p>
+            <div className="space-y-2">
+              {archivedGroups.map((group) => {
+                const preset = TABLE_TYPE_PRESETS.find((p) => p.key === group.type);
+                const label = preset ? t(preset.labelKey) : group.type;
+                return (
+                  <div key={group.key} className="flex items-center gap-3 rounded bg-surface-2 p-3 opacity-75">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-ink">
+                        {preset?.singleton ? label : `${group.ids.length} ${t('tableGroupCountLabel')} · ${t('tableTypeLabel')}: ${label}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleRestoreGroup(group)}
+                      disabled={busyKey === group.key}
+                      className="shrink-0 rounded border border-accent px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent-soft disabled:opacity-50"
+                    >
+                      {t('tableArchiveRestoreAction')}
+                    </button>
+                  </div>
+                );
+              })}
+              {archivedCustomTables.map((table) => (
+                <div key={table.id} className="flex items-center gap-3 rounded bg-surface-2 p-3 opacity-75">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">
+                      {t('tableNumberLabel')} {table.table_number}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleRestoreCustomTable(table.id)}
+                    className="shrink-0 rounded border border-accent px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent-soft"
+                  >
+                    {t('tableArchiveRestoreAction')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {footer}
       </div>

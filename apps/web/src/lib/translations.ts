@@ -83,6 +83,25 @@ const translations = {
     hoursDaysTo: 'עד',
     hoursAddRange: '+ הוספת טווח שעות',
     hoursRemoveRange: 'הסרה',
+    // Bar's own schedule (2026-11-02) — independent of the restaurant's
+    // general hours above, reusing the exact same hoursDaysFrom/
+    // hoursDaysTo/hoursAddRange/hoursRemoveRange/day* editor. Only shown
+    // once an existing restaurant is being edited (same gating as the
+    // kosher section), regardless of whether a bar table currently exists —
+    // harmless to configure in advance, and avoids threading `tables` into
+    // this form just for a visibility gate.
+    // Kitchen closing cutoff (2026-11-02) — common restaurant practice:
+    // the kitchen stops taking food orders some minutes before the
+    // restaurant's own closing time; drinks stay orderable regardless.
+    kitchenCutoffLabel: 'סגירת מטבח לפני סגירת המסעדה',
+    kitchenCutoffUnit: 'דקות',
+    kitchenCutoffHelp: 'כמה דקות לפני שעת הסגירה הכללית המטבח מפסיק לקבל הזמנות מנות. 0 או ריק = המטבח פתוח עד שעת הסגירה עצמה. הזמנות שתייה אינן מושפעות.',
+    barHoursSectionHeading: 'שעות פעילות בר',
+    // Updated 2026-11-02 (reversed decision) — the bar is no longer an
+    // independent schedule; it must always fit inside the restaurant's own
+    // general hours (see findUncontainedBarRule in hoursContainment.ts).
+    barHoursSectionHint: 'חייבות להיות בתוך שעות הפעילות הכלליות של המסעדה. ללא טווח מוגדר, הבר פעיל כל עוד המסעדה עצמה פעילה (אלא אם הופעל מתג ידני).',
+    barHoursOutsideGeneralHours: 'טווח שעות הבר "{range}" חורג משעות הפעילות הכלליות של המסעדה. יש להתאים את אחד מהם לפני השמירה.',
     daySun: "א'",
     dayMon: "ב'",
     dayTue: "ג'",
@@ -133,6 +152,13 @@ const translations = {
     addCategory: 'הוספת קטגוריה',
     editCategory: 'עריכת שם הקטגוריה',
     deleteCategory: 'מחיקת קטגוריה',
+    // Dashboard's own "תפריטים" module header (2026-10-29, per explicit
+    // request) — distinct from menuSetupTitle above, which is the
+    // registration wizard's own step framing, not this ongoing-management
+    // screen's. Same warm, second-person tone as accountsTitle/Subtitle.
+    menuManagerTitle: 'תפריטים',
+    menuManagerSubtitle:
+      'כאן בונים ומנהלים את התפריט המלא של המסעדה - קטגוריות, מנות, מחירים, תוספות וזמינות. כל עדכון שתשמרו כאן מתעדכן אצל הסועדים באפליקציה מיידית, כך שהתפריט שהם רואים תמיד משקף בדיוק את מה שבאמת מוגש היום.',
     addDish: '+ הוספת מנה',
     editDish: 'עריכת מנה',
     deleteDish: 'מחיקת מנה',
@@ -209,9 +235,19 @@ const translations = {
     // bar_orderable (2026-10-15) — מוצג רק למסעדה עם שורת בר פעילה
     // (Implementation Plan §10, תנאי ההפעלה).
     dishBarOrderableLabel: 'ניתן להזמין גם מהבר',
-    dishBarOrderableBulkLabel: 'זמינות בבר לכל הקטגוריה:',
-    dishBarOrderableBulkOn: 'הפעלה',
-    dishBarOrderableBulkOff: 'כיבוי',
+    // Moved from a two-button bulk action inside the category's open
+    // accordion to a single flag toggle beside the edit icon, on the
+    // card's own collapsed header (2026-10-29, per explicit request).
+    categoryBarOrderableTooltip: 'זמין גם מהבר (לכל הקטגוריה)',
+    // Safety-net confirmation shown only when switching the toggle OFF
+    // (2026-10-29, per explicit request) — this is a bulk action that
+    // overwrites every dish's own bar_orderable value, including dishes a
+    // manager may have set individually, so turning it off deserves a
+    // second look; turning it back on doesn't need the same friction.
+    categoryBarOrderableOffConfirmTitle: 'כיבוי זמינות מהבר לכל הקטגוריה',
+    categoryBarOrderableOffConfirmDescription:
+      'הפעולה תסמן את כל המנות בקטגוריה הזו כלא זמינות להזמנה מהבר - כולל מנות שסומנו בעבר כזמינות מהבר בנפרד, באופן ידני. ניתן להדליק את המתג שוב בכל שלב, אך אז תצטרכו לסמן מחדש כל מנה שתרצו להחריג.',
+    categoryBarOrderableOffConfirmLabel: 'המשך',
     dishDiscountLabel: 'הנחה (לא חובה)',
     dishDiscountHint: 'אם מוגדר, באפליקציה יוצג המחיר המקורי עם קו חוצה לצידו המחיר המוזל ואחוז ההנחה.',
     dishDiscountModePercent: 'לפי אחוז',
@@ -236,6 +272,11 @@ const translations = {
     tableStatusAvailable: 'פנוי',
     tableStatusOccupied: 'תפוס',
     tableStatusAwaitingCleaning: 'ממתין לניקיון',
+    // 2026-11-02 — display-only status an 'available' table shows once
+    // restaurant_is_active says the restaurant is closed (see
+    // TableStatusBoard.tsx's DisplayStatus comment).
+    tableStatusClosed: 'סגור',
+    tableStatusBoardClosedBanner: 'המסעדה סגורה כעת לפי שעות הפעילות — שולחנות פנויים מוצגים כ"סגור" ולא ניתן לפתוח בהם חשבון חדש.',
     tableMarkCleanAction: 'נוקה — סימון כפנוי',
 
     // TableManagerForm
@@ -278,6 +319,17 @@ const translations = {
     tableGroupDeleteConfirm: 'למחוק את כל השולחנות מהקבוצה?',
     tableGroupDeleteCancel: 'ביטול',
     tableGroupDeleteConfirmButton: 'מחיקת הקבוצה',
+    // Archive-not-delete fallback (2026-11-02 — see
+    // 20261102091500_table_archive.sql): a table that already has any
+    // session history can never actually be deleted (foreign-key
+    // violation, by design — protects real order/payment history), so the
+    // delete action falls back to archiving it instead, silently and
+    // automatically. This note explains that outcome to whoever clicked
+    // "מחיקת הקבוצה" and the table just disappeared rather than erroring.
+    tableArchivedInsteadOfDeletedNote: 'לשולחן זה כבר יש היסטוריית הזמנות, ולכן לא ניתן למחוק אותו לצמיתות — הוא הועבר לארכיון במקום. ניתן לשחזר אותו בכל עת למטה.',
+    tableArchiveSectionTitle: 'שולחנות בארכיון',
+    tableArchiveSectionHint: 'שולחנות אלו אינם מופיעים עוד במפת השולחנות, אך כל ההיסטוריה שלהם נשמרה במלואה.',
+    tableArchiveRestoreAction: 'שחזור',
     tableCustomSectionTitle: 'שולחנות מותאמים אישית',
     addCustomTable: '+ הוספת שולחן מותאם אישית',
     tableGroupIncrement: 'הוספת שולחן נוסף לקבוצה',
@@ -338,6 +390,7 @@ const translations = {
     dashboardTabMenu: 'תפריט',
     dashboardTabInventory: 'מלאי',
     dashboardTabOrders: 'הזמנות ומטבח',
+    dashboardTabBar: 'בר',
     dashboardTabService: 'אי-התאמות ושירות',
     dashboardTabReviews: 'חוות דעת',
     dashboardTabTables: 'שולחנות',
@@ -350,6 +403,12 @@ const translations = {
     // but no longer rendered by AccountsScreen.tsx.
     accountsTitle: 'חשבונות',
     accountsSubtitle: 'כאן תמצאו תמונה חיה ומלאה של כל חשבון במסעדה - שולחנות רגילים בעמדת הבר יחד, מתעדכנת בזמן אמת. כל שורה מרכזת עבורכם את ההזמנות, ביטולי המנות, הסכום לתשלום, הטיפ ואמצעי התשלום של אותו שולחן, ובלחיצה אחת נפתח גם פירוט מדויק לפי כל סועד וסועד.',
+    // Location sub-tabs (2026-11-01, per explicit request) — same pattern
+    // as ServiceScreen's own "קריאות שירות"/"אי-התאמות" split: the bar's
+    // whole accounts flow gets its own tab instead of being mixed into the
+    // same list as regular tables.
+    accountsLocationTablesTab: 'שולחנות',
+    accountsLocationBarTab: 'בר',
     accountsComingSoonTitle: 'מודול חשבונות בבנייה',
     accountsComingSoonMessage: 'תשלום, תפיסת מסגרת (הולד) והיסטוריית חשבונות (billing-history) עדיין לא נבנו — שלב 6 בתוכנית היישום.',
     accountsNoSessionsYet: 'אין עדיין ביקורים לתצוגה.',
@@ -458,7 +517,40 @@ const translations = {
     kitchenTitle: 'הזמנות ומטבח',
     kitchenSubtitle: 'הזמנות פעילות שמגיעות מהאפליקציה, בזמן אמת.',
     kitchenEmpty: 'אין כרגע הזמנות פעילות.',
+    // Bar's own dedicated screen (BarOrdersScreen.tsx, 2026-11-01, per
+    // explicit request) — the bar is physically separate and runs
+    // independently, so it gets its own focused view; the kitchen screen
+    // above still shows every order (bar included), so staff there never
+    // lose visibility. Every column/empty-state label is shared with the
+    // kitchen's own strings above (kitchenColumn*/kitchenActiveTab/etc.) —
+    // only the module header is distinct.
+    barOrdersTitle: 'הזמנות בר',
+    barOrdersSubtitle: 'כל ההזמנות שהתקבלו בבר - משקאות ומנות שהוזמנו ישירות מעמדת הבר - במקום אחד, נפרד מתור המטבח הראשי.',
+    // Bar active/inactive status (2026-11-02, hybrid schedule+override —
+    // see bar_is_active/bar_close_if_inactive in
+    // 20261102090000_bar_active_status.sql). The indicator+toggle live here
+    // for quick daily staff access; the actual weekly schedule is edited in
+    // RestaurantDetailsForm.tsx's own section further below.
+    barStatusActiveLabel: 'הבר פעיל כעת',
+    barStatusInactiveLabel: 'הבר סגור כעת',
+    // Dynamic "follow schedule" label (2026-11-02, user request) — names
+    // whichever schedule actually governs the bar right now (see
+    // followScheduleLabelKey in useBarStatus.ts), instead of a generic
+    // "לפי לוח זמנים" that didn't say which one.
+    barOverrideFollowBarHoursLabel: 'לפי שעות פעילות הבר',
+    barOverrideFollowGeneralHoursLabel: 'לפי שעות הפעילות הכלליות',
+    barOverrideAlwaysActiveLabel: 'פעיל תמיד (לא הוגדרו שעות)',
+    barOverrideOpenNowLabel: 'פתח עכשיו',
+    barOverrideCloseNowLabel: 'סגור עכשיו',
+    barOverrideHint: 'מתג ידני גובר על השעות עד שתחזרו לאפשרות הראשונה.',
     kitchenTableLabel: 'שולחן',
+    // Table/Ticket column's own bar-row value (2026-11-01, real bug fix —
+    // user report: that column showed "הזמנה #0011", the same wording as
+    // the order-identification badge in the pending-cancellations banner,
+    // which reads as just another order number rather than *where* the
+    // order's from — the ticket number itself moved to the personal-
+    // account column instead, matching useAccounts.ts's own convention).
+    kitchenBarLocationLabel: 'בר',
     kitchenAccountLabel: 'חשבון',
     kitchenElapsedMinutes: 'לפני {minutes} דק׳',
 
@@ -785,6 +877,12 @@ const translations = {
     phonePrefixPlaceholder: 'Prefix',
     phoneNumberPlaceholder: '1234567',
     phoneInvalid: 'Enter a prefix and a 7-digit number',
+    kitchenCutoffLabel: 'Kitchen closes before restaurant closing',
+    kitchenCutoffUnit: 'minutes',
+    kitchenCutoffHelp: "How many minutes before the general closing time the kitchen stops taking food orders. 0 or blank = kitchen is open until closing itself. Drink orders are unaffected.",
+    barHoursSectionHeading: 'Bar operating hours',
+    barHoursSectionHint: "Must always fit inside the restaurant's own general hours. With no range set, the bar is active whenever the restaurant itself is (unless a manual toggle is on).",
+    barHoursOutsideGeneralHours: 'The bar hours range "{range}" falls outside the restaurant\'s general hours. Adjust one of them before saving.',
     hours: 'Operating hours',
     hoursDaysFrom: 'From',
     hoursDaysTo: 'to',
@@ -832,6 +930,9 @@ const translations = {
     addCategory: 'Add category',
     editCategory: 'Edit category name',
     deleteCategory: 'Delete category',
+    menuManagerTitle: 'Menu',
+    menuManagerSubtitle:
+      "Here you build and manage the restaurant's full menu — categories, dishes, prices, add-ons, and availability. Every update you save here reaches diners in the app immediately, so the menu they see always reflects exactly what's really being served today.",
     addDish: '+ Add dish',
     editDish: 'Edit dish',
     deleteDish: 'Delete dish',
@@ -906,9 +1007,11 @@ const translations = {
     dishFeedstarsEligibleLabelDrink: 'This drink participates in the Feedstars benefits program',
     dishFeedstarsBadge: 'Feedstars',
     dishBarOrderableLabel: 'Also orderable from the bar',
-    dishBarOrderableBulkLabel: 'Bar availability for this whole category:',
-    dishBarOrderableBulkOn: 'Turn on',
-    dishBarOrderableBulkOff: 'Turn off',
+    categoryBarOrderableTooltip: 'Also available from the bar (whole category)',
+    categoryBarOrderableOffConfirmTitle: 'Turn off bar availability for this category',
+    categoryBarOrderableOffConfirmDescription:
+      "This marks every dish in this category as unavailable to order from the bar - including dishes that were previously set as bar-available individually, by hand. You can switch it back on at any time, but you'll need to re-mark any dish you want to exclude.",
+    categoryBarOrderableOffConfirmLabel: 'Continue',
     dishDiscountLabel: 'Discount (optional)',
     dishDiscountHint: 'When set, the app shows the original price crossed out next to the discounted price and the discount percentage.',
     dishDiscountModePercent: 'By percentage',
@@ -930,6 +1033,8 @@ const translations = {
     tableStatusAvailable: 'Available',
     tableStatusOccupied: 'Occupied',
     tableStatusAwaitingCleaning: 'Awaiting cleaning',
+    tableStatusClosed: 'Closed',
+    tableStatusBoardClosedBanner: 'The restaurant is currently closed per its hours — available tables show as "Closed" and cannot start a new bill.',
     tableMarkCleanAction: 'Cleaned — mark available',
 
     // TableManagerForm
@@ -972,6 +1077,10 @@ const translations = {
     tableGroupDeleteConfirm: 'Delete all tables in this group?',
     tableGroupDeleteCancel: 'Cancel',
     tableGroupDeleteConfirmButton: 'Delete group',
+    tableArchivedInsteadOfDeletedNote: "This table already has order history, so it can't be permanently deleted — it was archived instead. You can restore it any time below.",
+    tableArchiveSectionTitle: 'Archived tables',
+    tableArchiveSectionHint: "These tables no longer appear on the floor plan, but their full history is preserved.",
+    tableArchiveRestoreAction: 'Restore',
     tableCustomSectionTitle: 'Custom tables',
     addCustomTable: '+ Add custom table',
     tableGroupIncrement: 'Add one more table to the group',
@@ -1032,6 +1141,7 @@ const translations = {
     dashboardTabMenu: 'Menu',
     dashboardTabInventory: 'Inventory',
     dashboardTabOrders: 'Orders & Kitchen',
+    dashboardTabBar: 'Bar',
     dashboardTabService: 'Discrepancies & Service',
     dashboardTabReviews: 'Reviews',
     dashboardTabTables: 'Tables',
@@ -1040,6 +1150,8 @@ const translations = {
     // Accounts screen — real content (2026-10-21).
     accountsTitle: 'Accounts',
     accountsSubtitle: 'Here you’ll find a live, complete picture of every account in the restaurant — regular tables and the bar counter together, updating in real time. Each row brings together that table’s orders, cancelled dishes, amount due, tip, and payment method, and one click opens a precise breakdown for every diner.',
+    accountsLocationTablesTab: 'Tables',
+    accountsLocationBarTab: 'Bar',
     accountsComingSoonTitle: 'Accounts module in progress',
     accountsComingSoonMessage: 'Payment, order holds, and billing history haven’t been built yet — Stage 6 in the Implementation Plan.',
     accountsNoSessionsYet: 'No visits to show yet.',
@@ -1147,7 +1259,18 @@ const translations = {
     kitchenTitle: 'Orders & Kitchen',
     kitchenSubtitle: 'Active orders coming in from the app, in real time.',
     kitchenEmpty: 'No active orders right now.',
+    barOrdersTitle: 'Bar Orders',
+    barOrdersSubtitle: 'Every order the bar received - drinks and dishes ordered straight from the bar - in one place, separate from the main kitchen queue.',
+    barStatusActiveLabel: 'Bar is active now',
+    barStatusInactiveLabel: 'Bar is closed now',
+    barOverrideFollowBarHoursLabel: "Follow the bar's hours",
+    barOverrideFollowGeneralHoursLabel: "Follow the general hours",
+    barOverrideAlwaysActiveLabel: 'Always active (no hours set)',
+    barOverrideOpenNowLabel: 'Open now',
+    barOverrideCloseNowLabel: 'Close now',
+    barOverrideHint: 'A manual toggle overrides the hours until you switch back to the first option.',
     kitchenTableLabel: 'Table',
+    kitchenBarLocationLabel: 'Bar',
     kitchenAccountLabel: 'Account',
     kitchenElapsedMinutes: '{minutes} min ago',
 

@@ -1,11 +1,11 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Restaurant } from '@feedbook/types';
 import { TopBar, type TopBarNotification } from './TopBar';
-import { AccountsTabIcon, BellIcon, DashboardIcon, InventoryIcon, MenuTabIcon, OrdersTabIcon, ReviewsTabIcon, TablesTabIcon, TeamTabIcon } from './Icons';
+import { AccountsTabIcon, BarTabIcon, BellIcon, DashboardIcon, InventoryIcon, MenuTabIcon, OrdersTabIcon, ReviewsTabIcon, TablesTabIcon, TeamTabIcon } from './Icons';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
-export type DashboardTab = 'overview' | 'accounts' | 'menu' | 'inventory' | 'orders' | 'service' | 'reviews' | 'tables' | 'team';
+export type DashboardTab = 'overview' | 'accounts' | 'menu' | 'inventory' | 'orders' | 'bar' | 'service' | 'reviews' | 'tables' | 'team';
 
 // Stage 6/7 prep (2026-10-13, user request): "חשבונות" placed right after
 // "בקרת מסעדה" (overview) — it's billing/financial, closer in kind to the
@@ -14,13 +14,18 @@ export type DashboardTab = 'overview' | 'accounts' | 'menu' | 'inventory' | 'ord
 // Both render as skeleton/coming-soon screens for now, same convention
 // already established for ServiceScreen's own "אי-התאמות" sub-tab — real
 // payment (Stage 6) and review (Stage 7) logic isn't built yet.
-const TABS: DashboardTab[] = ['overview', 'accounts', 'menu', 'inventory', 'orders', 'service', 'reviews', 'tables', 'team'];
+const TABS: DashboardTab[] = ['overview', 'accounts', 'menu', 'inventory', 'orders', 'bar', 'service', 'reviews', 'tables', 'team'];
 const TAB_LABEL_KEYS: Record<DashboardTab, TranslationKey> = {
   overview: 'dashboardTabOverview',
   accounts: 'dashboardTabAccounts',
   menu: 'dashboardTabMenu',
   inventory: 'dashboardTabInventory',
   orders: 'dashboardTabOrders',
+  // Placed right after "הזמנות ומטבח" (2026-11-01, per explicit request) —
+  // the bar is its own physical, independently-run station, but its own
+  // orders are still a close sibling to the kitchen's, not an unrelated
+  // module like reviews/tables/team.
+  bar: 'dashboardTabBar',
   service: 'dashboardTabService',
   reviews: 'dashboardTabReviews',
   tables: 'dashboardTabTables',
@@ -36,6 +41,7 @@ const TAB_ICONS: Record<DashboardTab, ComponentType<{ className?: string }>> = {
   menu: MenuTabIcon,
   inventory: InventoryIcon,
   orders: OrdersTabIcon,
+  bar: BarTabIcon,
   // Reuses the same bell glyph as TopBar's own notification bell (BellIcon,
   // Icons.tsx) rather than a new one-off icon — this tab's whole purpose is
   // surfacing the notifications that bell announces.
@@ -50,6 +56,10 @@ interface Props {
   restaurantAddress?: string;
   activeTab: DashboardTab;
   onTabChange: (tab: DashboardTab) => void;
+  // Gates the "בר" tab (2026-11-01, per explicit request) — true when the
+  // Tables module has at least one table_type='bar' row. A restaurant with
+  // no bar never sees an empty, irrelevant tab.
+  hasBar: boolean;
   lowStockCount: number;
   // Open + acknowledged (not-yet-resolved) service calls — same always-on
   // "current state" badge treatment as lowStockCount, added alongside the
@@ -89,6 +99,7 @@ export function DashboardShell({
   restaurantAddress,
   activeTab,
   onTabChange,
+  hasBar,
   lowStockCount,
   openServiceCallsCount,
   tabNotificationCounts,
@@ -121,7 +132,7 @@ export function DashboardShell({
 
       <div className="border-b border-border bg-surface px-4 sm:px-8">
         <nav className="mx-auto flex max-w-6xl gap-1">
-          {TABS.map((tab) => {
+          {TABS.filter((tab) => tab !== 'bar' || hasBar).map((tab) => {
             // Unified into one small badge per tab (2026-09-20) — previously
             // the inventory tab's always-on low-stock pill (warning/amber)
             // and any tab's unread-notification pill (danger/red) sat inline

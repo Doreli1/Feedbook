@@ -213,6 +213,22 @@ Deno.serve(async (req) => {
     if (message.includes("SESSION_NOT_OPEN")) {
       return errorResponse("SESSION_NOT_OPEN", "The session is not open for orders", 409);
     }
+    // 2026-11-02: a bar-type session can stay 'open' past the bar's own
+    // active window (e.g. an unpaid balance, see
+    // 20261102093000_bar_close_if_inactive_skip_unpaid.sql) — same
+    // BAR_NOT_ACTIVE scan-qr already uses, now also enforced here so an
+    // already-seated diner can't keep ordering after the bar closes.
+    if (message.includes("BAR_NOT_ACTIVE")) {
+      return errorResponse("BAR_NOT_ACTIVE", "The bar is not open right now", 409);
+    }
+    // 2026-11-02: the kitchen closes some configurable number of minutes
+    // before the restaurant's own closing time (restaurants.
+    // kitchen_closes_minutes_before) — rejects the whole order when it
+    // contains any food-section dish past that cutoff; a drinks-only order
+    // still goes through normally.
+    if (message.includes("KITCHEN_CLOSED")) {
+      return errorResponse("KITCHEN_CLOSED", "The kitchen is closed — only drinks can be ordered right now", 409);
+    }
     if (message.includes("DISH_NOT_AVAILABLE")) {
       return errorResponse("DISH_NOT_AVAILABLE", "One or more dishes are not available", 422);
     }

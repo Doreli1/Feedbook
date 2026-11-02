@@ -7,6 +7,7 @@ import { DashboardShell, type DashboardTab } from '../components/DashboardShell'
 import { MenuManager } from '../components/MenuManager';
 import { ProfitabilityCard } from '../components/ProfitabilityCard';
 import { AccountsScreen } from './AccountsScreen';
+import { BarOrdersScreen } from './BarOrdersScreen';
 import { IngredientsScreen } from './IngredientsScreen';
 import { KitchenScreen } from './KitchenScreen';
 import { PurchaseOrdersScreen } from './PurchaseOrdersScreen';
@@ -284,6 +285,7 @@ function ApprovedDashboard({
       restaurantAddress={restaurant.address ?? undefined}
       activeTab={tab}
       onTabChange={setTab}
+      hasBar={tables.some((table) => table.table_type === 'bar' && !table.archived_at)}
       lowStockCount={lowStock.length}
       openServiceCallsCount={waiterCalls.filter((c) => c.status !== 'resolved').length}
       tabNotificationCounts={tabNotificationCounts}
@@ -341,7 +343,7 @@ function ApprovedDashboard({
             dishSizeOptions={dishSizeOptions}
             ingredients={ingredients}
             onRefresh={refreshMenu}
-            hasBar={tables.some((t) => t.table_type === 'bar')}
+            hasBar={tables.some((t) => t.table_type === 'bar' && !t.archived_at)}
           />
         </div>
       )}
@@ -368,13 +370,19 @@ function ApprovedDashboard({
         />
       )}
 
+      {/* Same underlying orderItems/refreshOrders as the kitchen tab above
+          (2026-11-01, per explicit request) — one shared fetch, filtered
+          differently per screen, not a second independent data source that
+          could drift out of sync with it. */}
+      {tab === 'bar' && <BarOrdersScreen restaurantId={restaurant.id} items={orderItems} onRefreshOrders={refreshOrders} />}
+
       {tab === 'service' && <ServiceScreen calls={waiterCalls} onResolve={resolveWaiterCall} />}
 
       {tab === 'reviews' && <ReviewsScreen />}
 
       {tab === 'tables' && (
         <div className="space-y-4">
-          <TableStatusBoard tables={tables} onRefresh={refreshTables} />
+          <TableStatusBoard restaurantId={restaurant.id} tables={tables} onRefresh={refreshTables} />
           <TableManagerContent restaurant={restaurant} tables={tables} onRefresh={refreshTables} />
         </div>
       )}

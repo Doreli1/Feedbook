@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 /* Design tokens — see "Feedbook Design System" artifact for the full
-   rationale. Booking-inspired but deliberately distinct palette (teal-green
-   accent, not blue-on-blue) with real light/dark support via
-   prefers-color-scheme, not just a light-only mockup. */
+   rationale. Real light/dark support via prefers-color-scheme, not just a
+   light-only mockup. Accent updated 2026-10-28 (experiment, per explicit
+   request) from the original teal-green to a navy/pale-blue pairing. */
 :root {
   --bg: #f6f4ef;
   --surface: #ffffff;
@@ -15,9 +15,16 @@
   --ink-muted: #5b6472;
   --text: #1b2430;
   --text-muted: #6e6a61;
-  --accent: #1b7a6e;
-  --accent-hover: #145f56;
-  --accent-soft: #e4f1ee;
+  /* Real experiment (2026-10-28, per explicit request): swapped from the
+     teal-green accent this file's own top comment describes to a navy
+     matching --ink exactly, with a Booking.com-inspired pale-blue soft
+     variant — replaces every green-tinted surface across the app that
+     reads off these three tokens (tab hover/active states, buttons,
+     badges, links), not just the Accounts screen this direction started
+     from. */
+  --accent: #13314f;
+  --accent-hover: #0d2338;
+  --accent-soft: #f2f9fe;
   --success: #2f7d4f;
   --success-soft: #e7f3ea;
   --danger: #b23b3b;
@@ -45,9 +52,12 @@
     --ink-muted: #93a3b5;
     --text: #e9eef3;
     --text-muted: #9aa3ae;
-    --accent: #3fb6a6;
-    --accent-hover: #57c9b9;
-    --accent-soft: #12332f;
+    /* Kept constant across themes (not inverted like --ink) — same navy
+       reads correctly on both light and dark surfaces, same reasoning as
+       --chrome-bg above. */
+    --accent: #13314f;
+    --accent-hover: #1f4a73;
+    --accent-soft: #15283a;
     --success: #57b37b;
     --success-soft: #123322;
     --danger: #e07a7a;

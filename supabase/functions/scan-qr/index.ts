@@ -38,8 +38,12 @@ function jsonResponse(body: unknown, status: number) {
   });
 }
 
-function errorResponse(code: string, message: string, status: number) {
-  return jsonResponse({ error: { code, message } }, status);
+// details (2026-11-02): carries the restaurant/bar hours so the mobile
+// client can show "we're closed, here's when we're open" rather than a
+// bare failure — see resolveTableToken.ts's RESTAURANT_NOT_ACTIVE/
+// BAR_NOT_ACTIVE handling.
+function errorResponse(code: string, message: string, status: number, details?: Record<string, unknown>) {
+  return jsonResponse({ error: { code, message, ...(details ? { details } : {}) } }, status);
 }
 
 function randomSessionAccountNumber(): string {
@@ -86,13 +90,20 @@ Deno.serve(async (req) => {
   const { data: table, error: tableError } = await admin
     .from("tables")
     .select(
-      "*, restaurant:restaurants(id, name, logo_url, description, cuisine_tags, cancellation_window_minutes, address, phone, hours, kosher_status, kosher_certificate_url)",
+      "*, restaurant:restaurants(id, name, logo_url, description, cuisine_tags, cancellation_window_minutes, address, phone, hours, bar_hours, kosher_status, kosher_certificate_url)",
     )
     .eq("qr_code_token", qrToken)
     .maybeSingle();
 
   if (tableError || !table) {
     return errorResponse("INVALID_QR_CODE", "QR code is not valid", 400);
+  }
+
+  // Archived (2026-11-02): a table retired via TableManagerForm.tsx's
+  // archive-not-delete fallback (see 20261102091500_table_archive.sql) — its
+  // QR code must stop working, but the row and all its history stay intact.
+  if (table.archived_at) {
+    return errorResponse("TABLE_ARCHIVED", "This table is no longer in use", 409);
   }
 
   // The shared bar (table_type='bar') never participates in occupied/
@@ -104,8 +115,44 @@ Deno.serve(async (req) => {
   // session directly instead of gating on status the way a real table does.
   const isBar = table.table_type === "bar";
 
+  // Restaurant active/inactive (2026-11-02, schedule-only — see
+  // 20261102103000_restaurant_active_status.sql). Scoped to non-bar tables
+  // here because the bar gets its OWN check just below (bar_is_active
+  // itself now also hard-requires restaurant_is_active — see
+  // 20261102120000_bar_bounded_by_restaurant_hours.sql — so a closed
+  // restaurant always closes its bar too; that gate lives inside
+  // bar_is_active, not duplicated here). Only gates NEW sessions here — an
+  // already-seated diner's existing session is left alone (no auto-close,
+  // no order block), unlike the bar's perpetual-tab model.
+  if (!isBar) {
+    const { data: restaurantActive } = await admin.rpc("restaurant_is_active", { p_restaurant_id: table.restaurant_id });
+    if (!restaurantActive) {
+      return errorResponse("RESTAURANT_NOT_ACTIVE", "The restaurant is not open right now", 409, {
+        hours: table.restaurant.hours,
+        kosher_status: table.restaurant.kosher_status,
+      });
+    }
+  }
+
   if (!isBar && table.status === "awaiting_cleaning") {
     return errorResponse("TABLE_NOT_ACTIVE", "This table is not accepting new sessions right now", 409);
+  }
+
+  // Bar active/inactive (2026-11-02, hybrid schedule+override — see
+  // 20261102090000_bar_active_status.sql). bar_close_if_inactive both
+  // answers "is it active right now" AND, as a side effect when it isn't,
+  // lazily closes any lingering open table_sessions row for the bar — the
+  // auto-close this feature needs, since there's no cron to do it on a
+  // schedule. Scanning in is one of the two moments this gets checked
+  // (BarOrdersScreen loading is the other).
+  if (isBar) {
+    const { data: barActive } = await admin.rpc("bar_close_if_inactive", { p_restaurant_id: table.restaurant_id });
+    if (!barActive) {
+      return errorResponse("BAR_NOT_ACTIVE", "The bar is not open right now", 409, {
+        bar_hours: table.restaurant.bar_hours,
+        hours: table.restaurant.hours,
+      });
+    }
   }
 
   let session: { id: string; session_account_number: string; status: string } | null = null;

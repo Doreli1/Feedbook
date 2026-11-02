@@ -102,8 +102,16 @@ export function useOrderHistory(restaurantId: string | undefined) {
         barTicketNumber: row.orders!.bar_ticket_number,
         cancellationRestocked: row.cancellation_restocked,
         cancellationReason: row.cancellation_reason,
-        sessionAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.table_sessions?.session_account_number ?? null) : null,
-        subAccountNumber: row.orders!.bar_ticket_number === null ? (row.orders!.session_participants?.sub_account_number ?? null) : null,
+        // Same real bug fix as useOrders.ts (2026-11-01) — a bar order's
+        // general account number was being hidden along with its personal
+        // identity, when only the latter should differ (padded ticket
+        // number instead of a sub_account_number), matching
+        // useAccounts.ts's own displayNumber convention.
+        sessionAccountNumber: row.orders!.table_sessions?.session_account_number ?? null,
+        subAccountNumber:
+          row.orders!.bar_ticket_number !== null
+            ? String(row.orders!.bar_ticket_number).padStart(4, '0')
+            : (row.orders!.session_participants?.sub_account_number ?? null),
         specialRequest: row.orders!.special_request,
         editedAt: row.edited_at,
       }))
