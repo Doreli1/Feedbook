@@ -4,7 +4,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Restaurant, RestaurantTable } from '@feedbook/types';
 import { WizardShell } from '../components/WizardShell';
-import { TrashIcon, PencilIcon, QrCodeIcon } from '../components/Icons';
+import { TrashIcon, PencilIcon, QrCodeIcon, ArchiveBoxIcon } from '../components/Icons';
 import { TableQrModal } from '../components/TableQrModal';
 import { Tooltip } from '../components/Tooltip';
 import { useI18n } from '../lib/i18n';
@@ -175,11 +175,12 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
     if (!preset) return;
     // Defensive re-check: the chip itself is disabled once a singleton
     // exists, but a stale panel left open across a refresh (another tab
-    // creating it, say) shouldn't be able to insert a second one. Only an
-    // ACTIVE singleton blocks this — an archived one is exactly what the
-    // partial unique index (one_bar_table_per_restaurant) now allows
-    // re-creating around.
-    if (preset.singleton && activeTables.some((table) => table.table_type === preset.key)) return;
+    // creating it, say) shouldn't be able to insert a second one. Checked
+    // against ALL tables, archived included (2026-11-02, reverted the
+    // active-only version from earlier the same day) — a restaurant has
+    // exactly one conceptual bar; the only way back once it's archived is
+    // restoring that same row below, never creating a parallel new one.
+    if (preset.singleton && tables.some((table) => table.table_type === preset.key)) return;
     const quantity = preset.singleton ? 1 : Number(quickQuantity);
     const capacity = Number(quickCapacity);
     if (!Number.isInteger(quantity) || quantity < 1 || !Number.isInteger(capacity) || capacity < 1) return;
@@ -379,9 +380,14 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
         <p className="mb-2 text-xs text-muted-foreground">{t('tableQuickAddHint')}</p>
         <div className="mb-3 flex flex-wrap gap-2">
           {TABLE_TYPE_PRESETS.map((preset) => {
-            const alreadyExists = !!preset.singleton && activeTables.some((table) => table.table_type === preset.key);
+            const alreadyExists = !!preset.singleton && tables.some((table) => table.table_type === preset.key);
+            // Distinguishes the two reasons the chip is disabled: an active
+            // bar already in the main list, vs. one sitting in the archive
+            // section further down that just needs restoring instead of a
+            // new one being created.
+            const existingIsArchived = alreadyExists && !activeTables.some((table) => table.table_type === preset.key);
             return (
-              <Tooltip key={preset.key} content={alreadyExists ? t('tableBarAlreadyExists') : null}>
+              <Tooltip key={preset.key} content={alreadyExists ? t(existingIsArchived ? 'tableBarArchivedExists' : 'tableBarAlreadyExists') : null}>
                 <button
                   type="button"
                   onClick={() => !alreadyExists && openQuickAdd(preset)}
@@ -513,16 +519,24 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
               }
 
               if (isConfirmingDelete) {
+                // The bar always archives in practice (it carries order
+                // history from day one) — told upfront here as an archive
+                // action, not a red "delete" one (2026-11-02, user
+                // request), rather than only explained after the fact via
+                // tableArchivedInsteadOfDeletedNote below.
+                const isBarGroup = !!preset?.singleton;
                 return (
-                  <div key={group.key} className="flex items-center gap-3 rounded border border-danger bg-danger-soft p-3">
-                    <p className="min-w-0 flex-1 text-sm text-danger">{t('tableGroupDeleteConfirm')}</p>
+                  <div key={group.key} className={`flex items-center gap-3 rounded border p-3 ${isBarGroup ? 'border-accent bg-accent-soft' : 'border-danger bg-danger-soft'}`}>
+                    <p className={`min-w-0 flex-1 text-sm ${isBarGroup ? 'text-ink' : 'text-danger'}`}>
+                      {t(isBarGroup ? 'archiveBarConfirm' : 'tableGroupDeleteConfirm')}
+                    </p>
                     <button
                       type="button"
                       onClick={() => void handleDeleteGroup(group)}
                       disabled={isBusy}
-                      className="shrink-0 rounded bg-danger px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      className={`shrink-0 rounded px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 ${isBarGroup ? 'bg-accent' : 'bg-danger'}`}
                     >
-                      {t('tableGroupDeleteConfirmButton')}
+                      {t(isBarGroup ? 'archiveBarConfirmButton' : 'tableGroupDeleteConfirmButton')}
                     </button>
                     <button
                       type="button"
@@ -643,14 +657,14 @@ export function TableManagerContent({ restaurant, tables, onRefresh, footer, onD
                       <PencilIcon className="h-3.5 w-3.5" />
                     </button>
                   </Tooltip>
-                  <Tooltip content={t('deleteTable')}>
+                  <Tooltip content={t(preset?.singleton ? 'archiveTable' : 'deleteTable')}>
                     <button
                       type="button"
                       onClick={() => setConfirmingDeleteKey(group.key)}
-                      aria-label={t('deleteTable')}
-                      className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
+                      aria-label={t(preset?.singleton ? 'archiveTable' : 'deleteTable')}
+                      className={`shrink-0 rounded p-1.5 text-muted-foreground ${preset?.singleton ? 'hover:bg-accent-soft hover:text-accent' : 'hover:bg-danger-soft hover:text-danger'}`}
                     >
-                      <TrashIcon className="h-3.5 w-3.5" />
+                      {preset?.singleton ? <ArchiveBoxIcon className="h-3.5 w-3.5" /> : <TrashIcon className="h-3.5 w-3.5" />}
                     </button>
                   </Tooltip>
                 </div>

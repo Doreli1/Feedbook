@@ -122,11 +122,17 @@ const translations = {
     // context than "can't scan in right now" below (shown inside the
     // friendly closed-modal, with today's hours appended after it).
     barClosedScanMessage: 'אפשר לחזור ולסרוק כשהבר פתוח.',
+    // Title added 2026-11-03 (friendly 'info' tone, same treatment as
+    // restaurantClosedTitle/barClosedTitle) — message body kept exactly as
+    // it was before (user's explicit call), even though it now repeats
+    // "אינו בשימוש" with the title.
+    tableArchivedTitle: 'השולחן אינו בשימוש',
     tableArchived: 'השולחן הזה אינו בשימוש יותר. פנו לצוות המסעדה לקבלת עזרה.',
     // Shortened 2026-11-02 — the hours themselves now follow right after
     // this sentence (buildScanFailureMessage), so repeating "check the
     // hours" here was redundant.
     restaurantClosedTitle: 'המסעדה סגורה כרגע',
+    barClosedTitle: 'הבר סגור כרגע',
     todayHoursPrefix: 'שעות הפעילות היום:',
     closedTodayMessage: 'סגורים היום.',
     restaurantNotActive: 'אפשר לחזור ולסרוק כשהמסעדה פתוחה.',
@@ -538,8 +544,10 @@ const translations = {
     tableNotActive: "This table isn't active right now. Please ask the restaurant staff for help.",
     barNotActive: "The bar is closed right now. Check the opening hours and try again later.",
     barClosedScanMessage: "You can come back and scan once the bar is open.",
+    tableArchivedTitle: "This table isn't in use",
     tableArchived: "This table is no longer in use. Please ask the restaurant staff for help.",
     restaurantClosedTitle: "The restaurant is closed right now",
+    barClosedTitle: 'The bar is closed right now',
     todayHoursPrefix: "Today's hours:",
     closedTodayMessage: 'Closed today.',
     restaurantNotActive: "You can come back and scan once the restaurant is open.",

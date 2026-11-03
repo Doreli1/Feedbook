@@ -802,7 +802,7 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
     };
   }, [session.user.id, restaurantId]);
 
-  function setPreset(preset: 'today' | 'week' | 'month') {
+  function setPreset(preset: 'today' | 'week' | 'month' | 'lastMonth') {
     const now = new Date();
     if (preset === 'today') {
       setPeriodFrom(today);
@@ -812,6 +812,14 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
       weekAgo.setDate(weekAgo.getDate() - 6);
       setPeriodFrom(toYMD(weekAgo));
       setPeriodTo(today);
+    } else if (preset === 'lastMonth') {
+      // The full previous calendar month (1st to last day) — 2026-11-03,
+      // per explicit request — distinct from 'month' below, which is
+      // "this month so far" (1st of the current month through today).
+      const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+      setPeriodFrom(toYMD(firstOfLastMonth));
+      setPeriodTo(toYMD(lastOfLastMonth));
     } else {
       const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       setPeriodFrom(toYMD(firstOfMonth));
@@ -937,9 +945,15 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
             </button>
           </div>
 
-          <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="mb-4 flex flex-col gap-3">
+            {/* Date-range row (history only) kept separate from the
+                search+filter row below it (2026-11-03, aesthetic request) —
+                previously both lived in one flex-wrap container, so which
+                row the search box landed on depended on viewport width
+                instead of being a deliberate choice; now it's always on its
+                own row, directly before "סינון לפי:", regardless of width. */}
             {mainTab === 'history' && (
-              <>
+              <div className="flex flex-wrap items-end gap-3">
                 <div className="flex gap-1">
                   <button type="button" onClick={() => setPreset('today')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
                     {t('accountsPeriodToday')}
@@ -950,6 +964,9 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
                   <button type="button" onClick={() => setPreset('month')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
                     {t('accountsPeriodMonth')}
                   </button>
+                  <button type="button" onClick={() => setPreset('lastMonth')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
+                    {t('accountsPeriodLastMonth')}
+                  </button>
                 </div>
                 <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
                   {t('accountsPeriodFromLabel')}
@@ -959,8 +976,9 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
                   {t('accountsPeriodToLabel')}
                   <input type="date" value={periodTo} min={periodFrom} onChange={(e) => setPeriodTo(e.target.value)} className="rounded border border-border px-2 py-1 text-sm text-ink" />
                 </label>
-              </>
+              </div>
             )}
+            <div className="flex flex-wrap items-end gap-3">
             <div className="flex items-center gap-2">
               <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterSearchLabel')}</span>
               <div className="relative w-80">
@@ -1029,6 +1047,7 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
                 </select>
               </div>
             )}
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded border border-border bg-surface">

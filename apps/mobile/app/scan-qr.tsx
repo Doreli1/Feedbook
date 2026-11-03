@@ -62,6 +62,18 @@ export default function ScanQrScreen() {
     setScanning(true);
   }
 
+  // 2026-11-03, real "stuck in a loop" report: dismissing the
+  // restaurant/bar-closed notice via retry() re-armed the camera, which —
+  // still pointed at the exact same physical QR code that just failed —
+  // immediately re-scanned it and failed again, reopening the same modal
+  // forever. Closing time isn't something rescanning can fix, unlike an
+  // invalid/wrong QR code (where retry() staying on the scanner is
+  // correct), so "הבנתי" here leaves the scanner entirely instead.
+  function dismissClosedNotice() {
+    setFailure(null);
+    goBackOrHome(router);
+  }
+
   // Reached via `push` now (2026-09-10, LIFO back-navigation), so this
   // screen stays mounted underneath restaurant-details/add-participants
   // instead of unmounting — a real bug this surfaced: scanning/handledRef
@@ -132,11 +144,21 @@ export default function ScanQrScreen() {
 
       <ErrorModal
         visible={failure !== null}
-        title={failure?.tone === 'info' ? t('restaurantClosedTitle') : t('scanFailedTitle')}
+        title={
+          failure?.tone !== 'info'
+            ? t('scanFailedTitle')
+            : // Each 'info' outcome gets its own specific title — messageKey
+              // already distinguishes them, no extra field needed.
+              failure.messageKey === 'barClosedScanMessage'
+                ? t('barClosedTitle')
+                : failure.messageKey === 'tableArchived'
+                  ? t('tableArchivedTitle')
+                  : t('restaurantClosedTitle')
+        }
         message={failure ? buildScanFailureMessage(failure, t) : ''}
         dismissLabel={failure?.tone === 'info' ? t('gotIt') : t('tryAgain')}
         tone={failure?.tone}
-        onDismiss={retry}
+        onDismiss={failure?.tone === 'info' ? dismissClosedNotice : retry}
       />
     </View>
   );

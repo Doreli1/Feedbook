@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import type { Restaurant } from '@feedbook/types';
 import { WizardShell } from '../components/WizardShell';
 import { Tooltip } from '../components/Tooltip';
-import { TrashIcon } from '../components/Icons';
+import { TrashIcon, AlertIcon } from '../components/Icons';
 import { OverheadExpensesForm } from '../components/OverheadExpensesForm';
 import { useOverheadExpenses } from '../lib/useOverheadExpenses';
 import { KosherCertificateUpload } from '../components/KosherCertificateUpload';
@@ -13,6 +13,7 @@ import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { followScheduleLabelKey } from '../lib/useBarStatus';
 import { findUncontainedBarRule } from '../lib/hoursContainment';
+import { useTables } from '../lib/useTables';
 
 type SaveState = 'idle' | 'incomplete' | 'saving' | 'saved' | 'error';
 
@@ -155,7 +156,22 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const restaurantId = restaurant?.id ?? null;
+  // Dims the bar-hours section below once the bar table has been archived
+  // (2026-11-02, user request) — editing a schedule for a bar that no
+  // longer exists in the floor plan was confusing. Only fetched in the
+  // edit-existing-restaurant context (same gating as the kosher/bar-hours
+  // sections themselves); harmless no-op query otherwise.
+  const { tables: restaurantTables } = useTables(restaurantId ?? undefined);
+  const barTable = restaurantTables.find((table) => table.table_type === 'bar');
+  const barArchived = barTable?.archived_at != null;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Scrolls the bar-hours panel into view the moment its containment error
+  // first appears (2026-11-03, user request: "תפנה את המשתמש... לאזור
+  // השגיאה") — only on the false→true transition (barHoursErrorSeenRef),
+  // not on every keystroke while the error persists, which would otherwise
+  // yank the page back to the panel on each edit.
+  const barPanelRef = useRef<HTMLDivElement>(null);
+  const barHoursErrorSeenRef = useRef(false);
   // Sub-tab switcher, only meaningful once a real restaurant exists (the
   // onboarding wizard's step 1, where restaurantId is still null, never
   // shows it) — overhead expenses is operational data for an
@@ -180,6 +196,21 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     return `${days} ${r.open}-${r.close}`;
   });
 
+  // Live containment check (2026-11-03, user request — fixes a real bug: the
+  // bar-hours validation only ran inside save(), which blocked the actual
+  // DB write correctly, but handleContinue/handleExit still navigated away
+  // right after as if nothing had gone wrong, so a staff member who clicked
+  // "שמירה" saw the screen close and reasonably assumed it had saved). Now
+  // computed on every render from the current (possibly unsaved) field
+  // values, so the save button can be disabled and the panel can show the
+  // problem BEFORE any save attempt, not just after one fails.
+  const generalRulesNumeric = completeRules.map((r) => ({ fromDay: Number(r.fromDay), toDay: Number(r.toDay), open: r.open, close: r.close }));
+  const barRulesNumeric = completeBarRules.map((r) => ({ fromDay: Number(r.fromDay), toDay: Number(r.toDay), open: r.open, close: r.close }));
+  const uncontainedBarRule = findUncontainedBarRule(barRulesNumeric, generalRulesNumeric);
+  const uncontainedBarRuleText = uncontainedBarRule
+    ? `${uncontainedBarRule.fromDay === uncontainedBarRule.toDay ? dayLabel(String(uncontainedBarRule.fromDay)) : `${dayLabel(String(uncontainedBarRule.fromDay))}-${dayLabel(String(uncontainedBarRule.toDay))}`} ${uncontainedBarRule.open}-${uncontainedBarRule.close}`
+    : null;
+
   const barOverrideOptions: { value: 'open' | 'closed' | null; labelKey: TranslationKey }[] = [
     { value: null, labelKey: followScheduleLabelKey(completeBarRules.length > 0, completeRules.length > 0) },
     { value: 'open', labelKey: 'barOverrideOpenNowLabel' },
@@ -203,6 +234,13 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, address, phone, hourRules, barHourRules, barOverride, kitchenCutoff, logoFile, description, cuisineTags, cancellationWindow, vatRate]);
+
+  useEffect(() => {
+    if (uncontainedBarRule && !barHoursErrorSeenRef.current) {
+      barPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    barHoursErrorSeenRef.current = !!uncontainedBarRule;
+  }, [uncontainedBarRule]);
 
   // Shared by every exit path below — clears the pending debounce timer and
   // fires the save immediately instead of waiting out the rest of the
@@ -253,10 +291,18 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
   // Same flush as handleStepClick, but awaited: "continue" unmounts this
   // screen immediately after, so a fire-and-forget save here would race the
   // unmount and could get cancelled by the debounce effect's own cleanup.
+  // Also the real fix for the "save despite a validation error" bug
+  // (2026-11-03): the button itself is already disabled while
+  // uncontainedBarRule is set, so this check is a backstop, not the
+  // primary guard — but it's what makes the guarantee unconditional rather
+  // than resting entirely on the disabled attribute.
   async function handleContinue() {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
-      if (hasRequiredFields) await save();
+      if (hasRequiredFields) {
+        const saved = await save();
+        if (!saved) return;
+      }
     }
     onNext();
   }
@@ -300,36 +346,29 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     });
   }
 
-  async function save() {
+  // Returns whether the save actually went through — callers that navigate
+  // away afterward (handleContinue) must check this first (2026-11-03, real
+  // bug: they used to navigate away unconditionally, so a staff member who
+  // clicked "שמירה" while uncontainedBarRule was set saw the screen close
+  // as if it had saved, even though save() had correctly refused to write).
+  async function save(): Promise<boolean> {
     setSaveState('saving');
     setErrorMessage(null);
 
-    const generalRules = completeRules.map((r) => ({
-      fromDay: Number(r.fromDay),
-      toDay: Number(r.toDay),
-      open: r.open,
-      close: r.close,
-    }));
-    const barRules = completeBarRules.map((r) => ({
-      fromDay: Number(r.fromDay),
-      toDay: Number(r.toDay),
-      open: r.open,
-      close: r.close,
-    }));
-    const hours = { rules: generalRules };
-    const bar_hours = { rules: barRules };
+    const hours = { rules: generalRulesNumeric };
+    const bar_hours = { rules: barRulesNumeric };
 
     // Bar hours must always fit inside the restaurant's own general hours
     // (2026-11-02, user decision) — bar_is_active() already enforces this
     // unconditionally at runtime, so a rule that fails this check would
-    // silently never take effect; blocking the save here is what actually
-    // tells the owner that, instead of letting them believe it was saved.
-    const uncontained = findUncontainedBarRule(barRules, generalRules);
-    if (uncontained) {
-      const days = uncontained.fromDay === uncontained.toDay ? dayLabel(String(uncontained.fromDay)) : `${dayLabel(String(uncontained.fromDay))}-${dayLabel(String(uncontained.toDay))}`;
-      setErrorMessage(t('barHoursOutsideGeneralHours').replace('{range}', `${days} ${uncontained.open}-${uncontained.close}`));
-      setSaveState('error');
-      return;
+    // silently never take effect. The save button is disabled whenever
+    // uncontainedBarRule is set (see the render below) so this path is now
+    // mostly a backstop for the debounced autosave timer, which fires
+    // independently of button state — the visible, authoritative message
+    // lives in the bar-hours panel itself, not here.
+    if (uncontainedBarRule) {
+      setSaveState('idle');
+      return false;
     }
 
     if (!restaurantId) {
@@ -345,12 +384,12 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       if (!res.ok) {
         setErrorMessage(body?.error?.message ?? 'Save failed, will retry automatically');
         setSaveState('error');
-        return;
+        return false;
       }
       setSaveState('saved');
       onCreated?.(body.restaurant.id);
       onSaved?.();
-      return;
+      return true;
     }
 
     // Keep the existing logo untouched unless a new file was chosen — same
@@ -365,7 +404,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       if (uploadError) {
         setErrorMessage(uploadError.message);
         setSaveState('error');
-        return;
+        return false;
       }
       const { data: publicUrlData } = supabase.storage.from('restaurant-logos').getPublicUrl(path);
       nextLogoUrl = publicUrlData.publicUrl;
@@ -392,12 +431,13 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     if (error) {
       setErrorMessage(error.message);
       setSaveState('error');
-      return;
+      return false;
     }
     setLogoUrl(nextLogoUrl);
     setLogoFile(null);
     setSaveState('saved');
     onSaved?.();
+    return true;
   }
 
   return (
@@ -411,7 +451,14 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       onStepClick={onStepClick && handleStepClick}
       onExit={onExit && handleExit}
     >
-      <div className="card p-8">
+      {/* Topic panels (2026-11-02, user request — corrected same day: each
+          panel is its own plain white `card`, same as every other screen's
+          cards, with NO extra tint of its own; this outer wrapper carries
+          no background at all, so it's WizardShell's own page background
+          (--bg) that actually shows through the gaps between panels, not
+          a color added here. */}
+      <div className="space-y-4">
+      <div className="card p-6">
         <h1 className="mb-1 text-2xl font-bold text-ink">{t('restaurantDetailsTitle')}</h1>
         <p className="mb-6 text-base text-muted-foreground">{t('restaurantDetailsSubtitle')}</p>
 
@@ -422,7 +469,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
             just made more emphatic. Mirrors DashboardShell's own top-level
             tab styling (border-accent + bg-accent-soft + text-accent). */}
         {restaurantId && (
-          <div className="mb-6 flex gap-1 border-b border-border">
+          <div className="flex gap-1 border-b border-border">
             {(['details', 'overhead'] as const).map((tabKey) => (
               <button
                 key={tabKey}
@@ -439,9 +486,11 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
             ))}
           </div>
         )}
+      </div>
 
         {(!restaurantId || subTab === 'details') && (
         <>
+        <div className="card p-4">
         <label className="mb-1 block text-sm font-bold text-ink">{t('restaurantName')}</label>
         <input
           type="text"
@@ -549,7 +598,9 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           <p className="mb-3 text-[10px] text-muted-foreground">{t('cuisineKosherExclusiveHint')}</p>
         )}
         {!isCertified && <div className="mb-3" />}
+        </div>
 
+        <div className="card p-4">
         <label className="mb-1 block text-sm font-bold text-ink">{t('address')}</label>
         <input
           type="text"
@@ -585,7 +636,9 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           <p className="mb-3 text-xs text-danger">{t('phoneInvalid')}</p>
         )}
         {(phoneNumber === '' || isPhoneValid) && <div className="mb-3" />}
+        </div>
 
+        <div className="card p-4">
         <label className="mb-1 block text-sm font-bold text-ink">{t('hours')}</label>
         <div className="mb-2 space-y-2">
           {hourRules.map((rule) => (
@@ -659,6 +712,9 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           </p>
         )}
 
+        </div>
+
+        <div className="card p-4">
         <label className="mb-1 block text-sm font-bold text-ink">{t('kitchenCutoffLabel')}</label>
         <div className="mb-1 flex items-center gap-2">
           <input
@@ -672,9 +728,17 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           <span className="text-xs text-muted-foreground">{t('kitchenCutoffUnit')}</span>
         </div>
         <p className="mb-4 text-[10px] text-muted-foreground">{t('kitchenCutoffHelp')}</p>
+        </div>
 
         {restaurant && (
-          <>
+          <div ref={barPanelRef} className="card p-4">
+            {barArchived && (
+              <div className="mb-2 flex items-start gap-2 rounded border-l-4 border-accent bg-accent-soft px-3 py-2 text-xs text-ink">
+                <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{t('barHoursArchivedNotice')}</span>
+              </div>
+            )}
+            <div className={barArchived ? 'pointer-events-none opacity-50' : undefined}>
             <label className="mb-1 block text-sm font-bold text-ink">{t('barHoursSectionHeading')}</label>
             <p className="mb-2 text-[10px] text-muted-foreground">{t('barHoursSectionHint')}</p>
             <div className="mb-2 space-y-2">
@@ -764,9 +828,22 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
               ))}
             </div>
             <p className="mb-4 text-[10px] text-muted-foreground">{t('barOverrideHint')}</p>
-          </>
+            </div>
+            {/* 2026-11-03, user request: the containment error lives at the
+                BOTTOM of this specific panel, not the generic save-state
+                footer far below — it's what the save button being disabled
+                refers to, so it needs to sit right next to the fields that
+                caused it. */}
+            {uncontainedBarRuleText && (
+              <div className="mt-3 flex items-start gap-2 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-xs text-danger">
+                <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{t('barHoursOutsideGeneralHours').replace('{range}', uncontainedBarRuleText)}</span>
+              </div>
+            )}
+          </div>
         )}
 
+        <div className="card p-4">
         <label className="mb-1 block text-sm font-bold text-ink">{t('cancellationWindow')}</label>
         <div className="mb-1 flex items-center gap-2">
           <input
@@ -796,6 +873,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           <span className="text-xs text-muted-foreground">%</span>
         </div>
         <p className="mb-4 text-[10px] text-muted-foreground">{t('vatRateHelp')}</p>
+        </div>
         </>
         )}
 
@@ -803,6 +881,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           <OverheadExpensesForm expenses={expenses} onSave={saveExpenses} />
         )}
 
+        <div className="card p-4">
         <div className="mb-4 min-h-5 text-xs">
           {saveState === 'incomplete' && <span className="text-muted-foreground">{t('fillRequiredFields')}</span>}
           {saveState === 'saving' && <span className="text-muted-foreground">{t('saving')}</span>}
@@ -837,11 +916,12 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
 
           <button
             onClick={() => void handleContinue()}
-            disabled={!restaurantId}
+            disabled={!restaurantId || !!uncontainedBarRule}
             className={`rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground ${onExit ? 'w-20' : 'w-full'}`}
           >
             {primaryLabel ?? t('continue')}
           </button>
+        </div>
         </div>
       </div>
     </WizardShell>

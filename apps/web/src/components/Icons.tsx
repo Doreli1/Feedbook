@@ -46,6 +46,20 @@ export function InfoIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) 
   );
 }
 
+// Archive box (2026-11-02) — the bar's own "remove" action in
+// TableManagerForm.tsx always archives rather than deletes (it has order
+// history from day one in practice), so it gets this icon instead of
+// TrashIcon to signal that upfront, not just after the fact.
+export function ArchiveBoxIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="3" y="4" width="14" height="3" rx="1" />
+      <path d="M4 7.5v7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-7" />
+      <path d="M8 10.5h4" />
+    </svg>
+  );
+}
+
 // "!" attention marker (2026-11-02) — circle-exclamation, same hand-drawn
 // style as InfoIcon above (dot at the bottom instead of the top, line
 // above it) — mirrors the mobile app's own alert-circle convention: an

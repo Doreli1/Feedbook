@@ -232,5 +232,19 @@ Deno.serve(async (req) => {
     return errorResponse("INTERNAL_ERROR", "Failed to join session", 500);
   }
 
+  // A table now only becomes 'occupied' once someone actually commits to
+  // it — their own personal account number assigned here — not merely by
+  // scanning its QR (2026-11-03, real user report: a diner who scanned,
+  // looked at the restaurant details screen, and backed out without ever
+  // joining left the table stuck "occupied" for nobody). Only the FIRST
+  // participant (existingCount === 0, same test used for is_host above)
+  // triggers this — later participants joining an already-occupied table
+  // are a no-op here. The bar never participates in occupied/available
+  // tracking at all (see scan-qr/index.ts's own long-standing comment on
+  // why), so this is scoped to non-bar tables only, same as that logic.
+  if (!isBar && (existingCount ?? 0) === 0) {
+    await admin.from("tables").update({ status: "occupied" }).eq("id", session.table_id);
+  }
+
   return jsonResponse({ participant }, 201);
 });

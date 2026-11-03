@@ -83,15 +83,24 @@ export async function resolveTableToken(
       return { ok: false, messageKey: 'barClosedScanMessage', tone: 'info', hoursLines: getTodayHourLines(rules, false) };
     }
 
+    // 2026-11-03, user report: an archived table's rejection looked like a
+    // system failure (red "הסריקה לא הצליחה" + "ניסיון נוסף" that would
+    // just immediately re-scan and fail again) — same fix as the
+    // restaurant/bar closed notices: a real, expected state, not an error,
+    // so it gets the friendly 'info' tone (and, via that tone, the
+    // scan-qr.tsx/table/[token].tsx dismiss handlers already leave the
+    // scanner instead of retrying — rescanning an archived table's QR can
+    // never succeed, unlike TABLE_NOT_ACTIVE's awaiting-cleaning state,
+    // which genuinely can clear up if staff act soon, so that one keeps
+    // the ordinary error/retry tone).
+    if (code === 'TABLE_ARCHIVED') {
+      return { ok: false, messageKey: 'tableArchived', tone: 'info' };
+    }
+
     return {
       ok: false,
       tone: 'error',
-      messageKey:
-        code === 'TABLE_NOT_ACTIVE'
-          ? 'tableNotActive'
-          : code === 'TABLE_ARCHIVED'
-            ? 'tableArchived'
-            : 'invalidQrCode',
+      messageKey: code === 'TABLE_NOT_ACTIVE' ? 'tableNotActive' : 'invalidQrCode',
     };
   }
 

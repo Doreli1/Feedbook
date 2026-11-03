@@ -110,7 +110,7 @@ export function TableStatusBoard({ restaurantId, tables, onRefresh }: Props) {
                 <span className="text-sm font-bold text-ink">{t('tableTypeBar')}</span>
                 <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${barActive ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'}`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${barActive ? 'bg-success' : 'bg-danger'}`} />
-                  {barActive ? t('barStatusActiveLabel') : t('barStatusInactiveLabel')}
+                  {barActive ? t('tableStatusBarActive') : t('tableStatusClosed')}
                 </span>
               </div>
             </div>

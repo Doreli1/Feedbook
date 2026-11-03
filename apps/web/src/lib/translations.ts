@@ -96,6 +96,7 @@ const translations = {
     kitchenCutoffLabel: 'סגירת מטבח לפני סגירת המסעדה',
     kitchenCutoffUnit: 'דקות',
     kitchenCutoffHelp: 'כמה דקות לפני שעת הסגירה הכללית המטבח מפסיק לקבל הזמנות מנות. 0 או ריק = המטבח פתוח עד שעת הסגירה עצמה. הזמנות שתייה אינן מושפעות.',
+    barHoursArchivedNotice: 'הבר הועבר לארכיון, ולכן שעות הפעילות שלו אינן ניתנות לעריכה כרגע. ניתן לשחזר אותו במסך ניהול השולחנות.',
     barHoursSectionHeading: 'שעות פעילות בר',
     // Updated 2026-11-02 (reversed decision) — the bar is no longer an
     // independent schedule; it must always fit inside the restaurant's own
@@ -276,6 +277,11 @@ const translations = {
     // restaurant_is_active says the restaurant is closed (see
     // TableStatusBoard.tsx's DisplayStatus comment).
     tableStatusClosed: 'סגור',
+    // Bar's own status pill in TableStatusBoard (2026-11-03, user request) —
+    // just "פעיל"/"סגור" on its own, like every other table card's
+    // single-word status, not the fuller "הבר פעיל כעת" sentence
+    // BarOrdersScreen's own status card still uses elsewhere.
+    tableStatusBarActive: 'פעיל',
     tableStatusBoardClosedBanner: 'המסעדה סגורה כעת לפי שעות הפעילות — שולחנות פנויים מוצגים כ"סגור" ולא ניתן לפתוח בהם חשבון חדש.',
     tableMarkCleanAction: 'נוקה — סימון כפנוי',
 
@@ -308,6 +314,18 @@ const translations = {
     tableTypeBar: 'בר משותף',
     tableBarSeatCountLabel: 'מקומות ישיבה בבר (למידע בלבד)',
     tableBarAlreadyExists: 'כבר קיים בר משותף אחד במסעדה',
+    // 2026-11-02 — a bar in the archive still blocks creating a new one
+    // (there's exactly one conceptual bar; restore it instead), so the
+    // disabled tooltip points there specifically rather than reusing the
+    // active-bar wording above.
+    tableBarArchivedExists: 'יש בר בארכיון — ניתן לשחזר אותו למטה',
+    archiveTable: 'העברה לארכיון',
+    // The bar's own "remove" action is framed as archiving upfront, not a
+    // red delete-then-surprise (2026-11-02, user request) — it carries
+    // order history from day one in practice, so this is the realistic
+    // outcome, not just the fallback one.
+    archiveBarConfirm: 'להעביר את הבר לארכיון? ההיסטוריה שלו תישמר במלואה ותוכלו לשחזר אותו בכל עת.',
+    archiveBarConfirmButton: 'העברה לארכיון',
     tableQuickAddHint: 'בחר/י סוג שולחן כדי להוסיף כמה כאלה בבת אחת',
     tableQuantityLabel: 'כמות',
     tableQuickAddSubmit: 'הוספה',
@@ -415,6 +433,7 @@ const translations = {
     accountsPeriodToday: 'היום',
     accountsPeriodWeek: 'השבוע',
     accountsPeriodMonth: 'החודש',
+    accountsPeriodLastMonth: 'חודש קודם',
     accountsPeriodFromLabel: 'מתאריך',
     accountsPeriodToLabel: 'עד תאריך',
     accountsFilterSearchLabel: 'חיפוש לפי:',
@@ -880,6 +899,7 @@ const translations = {
     kitchenCutoffLabel: 'Kitchen closes before restaurant closing',
     kitchenCutoffUnit: 'minutes',
     kitchenCutoffHelp: "How many minutes before the general closing time the kitchen stops taking food orders. 0 or blank = kitchen is open until closing itself. Drink orders are unaffected.",
+    barHoursArchivedNotice: "The bar has been moved to the archive, so its hours can't be edited right now. You can restore it from the table management screen.",
     barHoursSectionHeading: 'Bar operating hours',
     barHoursSectionHint: "Must always fit inside the restaurant's own general hours. With no range set, the bar is active whenever the restaurant itself is (unless a manual toggle is on).",
     barHoursOutsideGeneralHours: 'The bar hours range "{range}" falls outside the restaurant\'s general hours. Adjust one of them before saving.',
@@ -1034,6 +1054,7 @@ const translations = {
     tableStatusOccupied: 'Occupied',
     tableStatusAwaitingCleaning: 'Awaiting cleaning',
     tableStatusClosed: 'Closed',
+    tableStatusBarActive: 'Active',
     tableStatusBoardClosedBanner: 'The restaurant is currently closed per its hours — available tables show as "Closed" and cannot start a new bill.',
     tableMarkCleanAction: 'Cleaned — mark available',
 
@@ -1066,6 +1087,10 @@ const translations = {
     tableTypeBar: 'Shared bar',
     tableBarSeatCountLabel: 'Bar seats (informational only)',
     tableBarAlreadyExists: 'A shared bar already exists for this restaurant',
+    tableBarArchivedExists: 'There is a bar in the archive — you can restore it below',
+    archiveTable: 'Move to archive',
+    archiveBarConfirm: "Move the bar to the archive? Its full history is preserved and you can restore it any time.",
+    archiveBarConfirmButton: 'Move to archive',
     tableQuickAddHint: 'Pick a table type to add several at once',
     tableQuantityLabel: 'Quantity',
     tableQuickAddSubmit: 'Add',
@@ -1158,6 +1183,7 @@ const translations = {
     accountsPeriodToday: 'Today',
     accountsPeriodWeek: 'This week',
     accountsPeriodMonth: 'This month',
+    accountsPeriodLastMonth: 'Last month',
     accountsPeriodFromLabel: 'From date',
     accountsPeriodToLabel: 'To date',
     accountsFilterSearchLabel: 'Search by:',

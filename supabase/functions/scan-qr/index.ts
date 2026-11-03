@@ -9,8 +9,9 @@
 // change could still be valid until it expires — the is_anonymous check
 // below is the defense-in-depth backstop that actually enforces the policy,
 // not just the config toggle. Resolves a table's qr_code_token to its
-// restaurant + table, and either opens a new table_session (table was
-// 'available') or returns the existing open one (table was 'occupied') —
+// restaurant + table, and either opens a new table_session or returns an
+// existing open one for that table (2026-11-03: looked up directly, not
+// gated on tables.status — see the lookup's own comment below for why) —
 // this is the Deep Link entry point of the whole diner journey (AFD §2.1,
 // §5).
 //
@@ -155,24 +156,25 @@ Deno.serve(async (req) => {
     }
   }
 
-  let session: { id: string; session_account_number: string; status: string } | null = null;
-
-  if (isBar || table.status === "occupied") {
-    const { data: existing } = await admin
-      .from("table_sessions")
-      .select("id, session_account_number, status")
-      .eq("table_id", table.id)
-      .eq("status", "open")
-      .order("opened_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    session = existing ?? null;
-  }
+  // Always looked up directly by table_id now (2026-11-03), not gated on
+  // table.status === 'occupied' — status no longer flips to 'occupied' at
+  // scan time at all (see below), only once someone actually joins, so an
+  // 'available' table can still legitimately have an open, zero-participant
+  // session sitting on it (a diner who scanned, looked around, and backed
+  // out without joining). Looking it up directly means a later scan — by
+  // that same diner coming back, or anyone else — correctly resumes that
+  // same session instead of creating a stray duplicate one.
+  const { data: existing } = await admin
+    .from("table_sessions")
+    .select("id, session_account_number, status")
+    .eq("table_id", table.id)
+    .eq("status", "open")
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  let session: { id: string; session_account_number: string; status: string } | null = existing ?? null;
 
   if (!session) {
-    // Either the table was genuinely 'available', or it was marked
-    // 'occupied' with no matching open session (shouldn't normally happen —
-    // recovered here rather than surfacing a confusing error to a guest).
     let inserted = null;
     for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
       const { data, error } = await admin
@@ -191,9 +193,11 @@ Deno.serve(async (req) => {
       return errorResponse("INTERNAL_ERROR", "Failed to open a table session", 500);
     }
     session = inserted;
-    if (!isBar) {
-      await admin.from("tables").update({ status: "occupied" }).eq("id", table.id);
-    }
+    // tables.status is NOT flipped to 'occupied' here anymore
+    // (2026-11-03) — that now happens in join-session/index.ts, triggered
+    // by the first real participant actually joining (getting their own
+    // sub_account_number assigned), not merely by scanning the QR. See
+    // that function's own comment for the full reasoning.
   }
 
   return jsonResponse(

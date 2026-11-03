@@ -92,6 +92,19 @@ export interface AccountRow {
   // is the field the "סטטוס חשבון" badge renders, and what AccountDetailPanel
   // uses to gate the cancel-item action (not sessionStatus) — "paid" is the
   // real reason a credit has to go through the clearing system instead.
+  //
+  // Session-level temporary override (2026-11-03, explicit user request):
+  // ONLY at the session (this field), never pushed down into any individual
+  // participant — once sessionStatus is 'closed', paymentStatus shows
+  // 'paid' even with no real payment_participant_shares data, as a visible
+  // "this account is actually settled/closed" placeholder until Stage 6's
+  // real payment flow exists. This doesn't reopen the 2026-10-22 concern:
+  // close-session today can only ever close a session when there is either
+  // real proof every share is paid, or (today's reality) no share data
+  // exists for anyone at all — the "one diner paid, one still eating, but
+  // marked closed anyway" case the 2026-10-22 fix guarded against structurally
+  // cannot happen, so this fallback is only ever reached in the
+  // no-real-data case that's genuinely ambiguous today anyway.
   paymentStatus: 'open' | 'paid';
   openedAt: string;
   closedAt: string | null;
@@ -289,10 +302,15 @@ export function useAccounts(restaurantId: string | undefined) {
 
     // Bottom-up, after every row has been processed and every participant's
     // own paymentStatus is final — see AccountRow.paymentStatus's own
-    // comment for why this can't just mirror sessionStatus.
+    // comment for why this can't just mirror sessionStatus for an OPEN
+    // session, and for why a CLOSED one is the one deliberate exception.
     for (const sessionRow of bySession.values()) {
       sessionRow.paymentStatus =
-        sessionRow.participants.length > 0 && sessionRow.participants.every((p) => p.paymentStatus === 'paid') ? 'paid' : 'open';
+        sessionRow.sessionStatus === 'closed'
+          ? 'paid'
+          : sessionRow.participants.length > 0 && sessionRow.participants.every((p) => p.paymentStatus === 'paid')
+            ? 'paid'
+            : 'open';
       for (const participant of sessionRow.participants) {
         if (participant.paymentMethod === 'credit_card') sessionRow.totalCredit += participant.totalCost;
         else if (participant.paymentMethod === 'cash') sessionRow.totalCash += participant.totalCost;
