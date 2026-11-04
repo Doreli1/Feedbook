@@ -122,6 +122,23 @@ const translations = {
     // context than "can't scan in right now" below (shown inside the
     // friendly closed-modal, with today's hours appended after it).
     barClosedScanMessage: 'אפשר לחזור ולסרוק כשהבר פתוח.',
+    // A THIRD distinct context for the same underlying bar_is_active===false
+    // state (2026-11-04, user correction): barNotActive above is a reactive
+    // rejection after a failed order attempt ("can't order more right
+    // now, try later") — wrong tone for a diner who's already seated at the
+    // bar and sees this proactively, before trying anything, usually because
+    // the bar itself is winding down for the day/closing its register, not
+    // because they did something wrong. No "try again later" (they're not
+    // going anywhere), no hours lookup (irrelevant mid-visit) — just a warm
+    // "we're done taking orders, thanks for coming, go settle up" note.
+    // Trimmed down to just this one sentence (2026-11-04, user call: every
+    // self-checkout instruction tried so far — staff, then the account tab,
+    // even the softened "no need to rush" version — still read as the
+    // restaurant trying to move the diner along; simplest fix is not
+    // explaining anything, just the warm thank-you). Shown bold + slightly
+    // larger (AvailabilityNoticeBanner's `emphasize`), not a plain line
+    // the way kitchenClosedMessage/barNoFoodDishesMessage stay.
+    barClosingNoticeMessage: 'הבר סיים לקבל הזמנות להיום — תודה שהייתם איתנו!',
     // Title added 2026-11-03 (friendly 'info' tone, same treatment as
     // restaurantClosedTitle/barClosedTitle) — message body kept exactly as
     // it was before (user's explicit call), even though it now repeats
@@ -306,6 +323,17 @@ const translations = {
     insufficientStockMessage: 'אחד או יותר מהמרכיבים הנדרשים אזל מהמלאי כרגע.',
     dishNotAvailableMessage: 'המנה שבחרתם אינה זמינה יותר.',
     kitchenClosedMessage: 'המטבח סגור כעת — ניתן להזמין שתייה בלבד.',
+    // Bar's own curated menu (dishes.bar_orderable) ended up with zero food
+    // dishes in it (2026-11-04) — not a time-based closure like the two
+    // above, a menu-configuration state, but shown with the exact same
+    // bottom-banner treatment (per explicit request: "רלוונטי לכל סוגי
+    // ההודעות שאני מדבר עליהן כאן").
+    // Reworded (2026-11-04, user correction): "כרגע" ("right now") wrongly
+    // implied a temporary state that might change soon, like the kitchen/
+    // bar's own time-based closures above — this is a fixed menu decision
+    // (dishes.bar_orderable), not a "currently" anything, so the wording
+    // states it as a plain fact about what the bar's menu contains instead.
+    barNoFoodDishesMessage: 'תפריט הבר כולל שתייה בלבד — אין בו מנות להזמנה.',
     orderPlacedTitle: 'ההזמנה נשלחה למטבח!',
 
     // Orders tab — live status tracker (Stage 5, 2026-09-14)
@@ -544,6 +572,7 @@ const translations = {
     tableNotActive: "This table isn't active right now. Please ask the restaurant staff for help.",
     barNotActive: "The bar is closed right now. Check the opening hours and try again later.",
     barClosedScanMessage: "You can come back and scan once the bar is open.",
+    barClosingNoticeMessage: "The bar has stopped taking new orders for today — thanks for being with us!",
     tableArchivedTitle: "This table isn't in use",
     tableArchived: "This table is no longer in use. Please ask the restaurant staff for help.",
     restaurantClosedTitle: "The restaurant is closed right now",
@@ -692,6 +721,7 @@ const translations = {
     insufficientStockMessage: 'One or more required ingredients are currently out of stock.',
     dishNotAvailableMessage: 'The dish you selected is no longer available.',
     kitchenClosedMessage: 'The kitchen is closed right now — only drinks can be ordered.',
+    barNoFoodDishesMessage: 'The bar menu is drinks only — there are no dishes to order from it.',
     orderPlacedTitle: 'Your order was sent to the kitchen!',
 
     // Orders tab — live status tracker (Stage 5, 2026-09-14)

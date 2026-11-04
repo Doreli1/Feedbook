@@ -3,6 +3,7 @@ import { Animated, View, type ViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { AccountScreen } from './account/AccountScreen';
+import { AvailabilityNoticeBanner, type AvailabilityNotice } from './AvailabilityNoticeBanner';
 import { BurgerSideMenuPanel } from './BurgerSideMenu';
 import { CallWaiterInlineTrigger } from './CallWaiterButton';
 import { CartBarInlineTrigger, MenuBrowser } from './menu/MenuBrowser';
@@ -11,6 +12,7 @@ import { OrderingHeader } from './OrderingHeader';
 import { OrderingTabBar, type OrderingTabKey } from './OrderingTabBar';
 import { useCartStore } from '../lib/cartStore';
 import { useI18n, visualRowDirection } from '../lib/i18n';
+import { useOrderingAvailability } from '../lib/useOrderingAvailability';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
@@ -42,6 +44,10 @@ export function OrderingScreen() {
   // 2026-09-19 right after the notification feature itself.
   const [orderFocus, setOrderFocus] = useState<{ orderId: string | null; orderItemId: string | null } | null>(null);
   const [bodyOpacity] = useState(() => new Animated.Value(1));
+  // Reported up from MenuBrowser (2026-11-04, user request) — it's the one
+  // that knows whether the bar's own curated menu has any food dishes at
+  // all, which this screen has no way to compute on its own.
+  const [availabilityNotice, setAvailabilityNotice] = useState<AvailabilityNotice | null>(null);
   const subAccountNumber = useTableSessionStore((s) => s.subAccountNumber);
   const sessionId = useTableSessionStore((s) => s.sessionId);
   const participantId = useTableSessionStore((s) => s.participantId);
@@ -49,6 +55,7 @@ export function OrderingScreen() {
   const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
   const hasHydrated = useTableSessionStore((s) => s.hasHydrated);
   const cartItemCount = useCartStore((s) => s.items.length);
+  const { kitchenOpen, barActive } = useOrderingAvailability(restaurantId, isBarTable);
   // sessionId/participantId/restaurantId were added 2026-09-14 (Stage 5) —
   // a session persisted by an app install from before that still has
   // subAccountNumber but none of these three, since they were never part of
@@ -83,6 +90,7 @@ export function OrderingScreen() {
 
   const showCallWaiterRow = activeTab !== 'account' && !isBarTable;
   const showCartBar = activeTab === 'menu' && cartItemCount > 0;
+  const showAvailabilityNotice = activeTab === 'menu' && availabilityNotice !== null;
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
@@ -104,7 +112,14 @@ export function OrderingScreen() {
       </View>
 
       <Animated.View style={{ flex: 1, opacity: bodyOpacity }}>
-        {activeTab === 'menu' && <MenuBrowser onOrderPlaced={() => selectTab('orders')} />}
+        {activeTab === 'menu' && (
+          <MenuBrowser
+            onOrderPlaced={() => selectTab('orders')}
+            kitchenOpen={kitchenOpen}
+            barActive={barActive}
+            onAvailabilityNoticeChange={setAvailabilityNotice}
+          />
+        )}
         {activeTab === 'orders' && <OrderTracker focusRequest={orderFocus} onFocusHandled={() => setOrderFocus(null)} />}
         {activeTab === 'account' && <AccountScreen />}
       </Animated.View>
@@ -130,8 +145,14 @@ export function OrderingScreen() {
           the menu tab only (its original scope) and shown independently of
           isBarTable: a bar table still orders food/drinks through the app,
           only the waiter-call escalation is bar staff's job, not the cart's
-          own existence. */}
-      {(showCallWaiterRow || showCartBar) && (
+          own existence.
+
+          AvailabilityNoticeBanner (2026-11-04, user request) joins the same
+          strip, last — "at the bottom of the screen, above the device's own
+          nav bar" is exactly this strip's own placement (it already sits
+          directly above insets.bottom). Menu-tab only, same as the cart bar:
+          the dimmed food/drink tabs it explains are only ever visible there. */}
+      {(showCallWaiterRow || showCartBar || showAvailabilityNotice) && (
         <View className="px-4 pt-3" style={{ backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }}>
           {showCallWaiterRow && (
             <View className="justify-end" style={{ flexDirection: visualRowDirection(isRTL) }}>
@@ -141,6 +162,11 @@ export function OrderingScreen() {
           {showCartBar && (
             <View className={showCallWaiterRow ? 'mt-3' : undefined}>
               <CartBarInlineTrigger />
+            </View>
+          )}
+          {showAvailabilityNotice && availabilityNotice && (
+            <View className={showCallWaiterRow || showCartBar ? 'mt-3' : undefined}>
+              <AvailabilityNoticeBanner notice={availabilityNotice} />
             </View>
           )}
         </View>

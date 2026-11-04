@@ -4,6 +4,7 @@ import type { GestureResponderEvent } from 'react-native';
 import { useNavigation } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Dish, DishModifierGroup, DishModifierOption, DishSizeOption, MenuCategory, ModifierOptionServingVariant } from '@feedbook/types';
+import type { AvailabilityNotice } from '../AvailabilityNoticeBanner';
 import { ConfirmModal } from '../ConfirmModal';
 import { ErrorModal } from '../ErrorModal';
 import { useI18n, visualRowDirection, physicalReadingEnd, physicalReadingStart, visualColumnAlign } from '../../lib/i18n';
@@ -3366,7 +3367,24 @@ function CartModal({
   );
 }
 
-export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
+// kitchenOpen/barActive (2026-11-04, user request) — live status from
+// OrderingScreen's own useOrderingAvailability, lifted up a level rather
+// than queried a second time here, since OrderingScreen already needs the
+// same values for its bottom-strip banner. onAvailabilityNoticeChange
+// reports back up which banner (if any) currently applies, computed here
+// because the "bar menu has zero food dishes at all" condition needs this
+// component's own menu data, which OrderingScreen doesn't have.
+export function MenuBrowser({
+  onOrderPlaced,
+  kitchenOpen,
+  barActive,
+  onAvailabilityNoticeChange,
+}: {
+  onOrderPlaced: () => void;
+  kitchenOpen: boolean | null;
+  barActive: boolean | null;
+  onAvailabilityNoticeChange: (notice: AvailabilityNotice | null) => void;
+}) {
   const { t, isRTL } = useI18n();
   const navigation = useNavigation();
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
@@ -3433,6 +3451,71 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
   useEffect(() => {
     navigation.setOptions({ gestureEnabled: categoryId === null });
   }, [navigation, categoryId]);
+
+  // "No food dishes at all" (2026-11-04, user request) — a bar-menu
+  // configuration state (dishes.bar_orderable), not a time-based closure
+  // like kitchenOpen/barActive, but gated the same way: only relevant for a
+  // bar-seated diner, since a regular table always sees the full menu.
+  const barHasNoFoodDishes = useMemo(() => {
+    if (!data || !isBarTable) return false;
+    return !data.categories.some((c) => {
+      if (c.section !== 'food') return false;
+      const dishes = data.dishesByCategory.get(c.id) ?? [];
+      return dishes.some((d) => d.bar_orderable);
+    });
+  }, [data, isBarTable]);
+
+  // Priority order when more than one condition holds at once: a closed bar
+  // blocks the whole order (place_order_transaction's BAR_NOT_ACTIVE check
+  // applies to every item, not just drinks — see 20261102120000_bar_
+  // bounded_by_restaurant_hours.sql), so it supersedes the kitchen's own
+  // message rather than showing both; kitchen-closed only ever affects the
+  // food tab and never applies to a regular table's drinks.
+  const availabilityNotice = useMemo<AvailabilityNotice | null>(() => {
+    // barClosingNoticeMessage, not barNotActive (2026-11-04, user
+    // correction) — barNotActive is phrased as a reactive rejection ("try
+    // again later"), the wrong tone for an already-seated bar diner seeing
+    // this proactively, usually because the bar's simply winding down for
+    // the day — see that key's own comment in translations.ts. emphasize
+    // renders it bold + slightly larger (2026-11-04, user request).
+    if (isBarTable && barActive === false) return { messageKey: 'barClosingNoticeMessage', emphasize: true };
+    if (kitchenOpen === false) return { messageKey: 'kitchenClosedMessage' };
+    if (barHasNoFoodDishes) return { messageKey: 'barNoFoodDishesMessage' };
+    return null;
+  }, [isBarTable, barActive, kitchenOpen, barHasNoFoodDishes]);
+
+  useEffect(() => {
+    onAvailabilityNoticeChange(availabilityNotice);
+    // Cleared on unmount (switching away from the menu tab, which fully
+    // unmounts this component — see OrderingScreen.tsx's own
+    // `activeTab === 'menu' &&` gate) so OrderingScreen's bottom strip
+    // never keeps showing a stale notice once MenuBrowser itself is gone.
+    return () => onAvailabilityNoticeChange(null);
+  }, [availabilityNotice, onAvailabilityNoticeChange]);
+
+  // Section-tab dimming (2026-11-04, user request): "available" only means
+  // something can actually be ordered from it right now — a closed bar
+  // blocks both tabs (see availabilityNotice's own priority comment above),
+  // a closed kitchen or an empty bar food menu only ever blocks the food
+  // tab. A regular table's drink tab is never disabled.
+  const barBlocksEverything = isBarTable && barActive === false;
+  const foodTabDisabled = barBlocksEverything || kitchenOpen === false || barHasNoFoodDishes;
+  const drinkTabDisabled = barBlocksEverything;
+
+  // Whichever tab isn't dimmed is the default (2026-11-04, user rule,
+  // stated generally — not just "start on drink when there's no food
+  // today"). Only steps in when the CURRENTLY selected tab is the dimmed
+  // one, so it never yanks the diner off a tab they're actively looking
+  // at the moment it becomes unavailable mid-browse, and never forces them
+  // back once they've navigated to a tab that's since become available
+  // again — it only ever corrects a selection that's no longer orderable.
+  useEffect(() => {
+    if (section === 'food' && foodTabDisabled && !drinkTabDisabled) {
+      setSection('drink');
+    } else if (section === 'drink' && drinkTabDisabled && !foodTabDisabled) {
+      setSection('food');
+    }
+  }, [section, foodTabDisabled, drinkTabDisabled]);
 
   if (loading || !data) {
     return (
@@ -3516,26 +3599,36 @@ export function MenuBrowser({ onOrderPlaced }: { onOrderPlaced: () => void }) {
         // that doesn't reliably flip on a real device — driven explicitly
         // instead (see i18n.tsx's visualRowDirection).
         <View style={{ flexDirection: visualRowDirection(isRTL), borderBottomWidth: 1, borderColor: colors.border, backgroundColor: '#FFFFFF' }}>
-          {(['food', 'drink'] as MenuSection[]).map((s) => (
-            <Pressable
-              key={s}
-              onPress={() => {
-                setSection(s);
-                setCategoryId(null);
-              }}
-              className="flex-1 items-center justify-center py-3"
-              style={{ flexDirection: visualRowDirection(isRTL), gap: 6, borderBottomWidth: section === s ? 2 : 0, borderColor: colors.royalBlue }}
-            >
-              {s === 'food' ? (
-                <MaterialCommunityIcons name="room-service-outline" size={17} color={section === s ? colors.royalBlue : '#6E6A61'} />
-              ) : (
-                <Ionicons name="wine-outline" size={16} color={section === s ? colors.royalBlue : '#6E6A61'} />
-              )}
-              <Text className="text-sm font-semibold" style={{ color: section === s ? colors.royalBlue : '#6E6A61' }}>
-                {s === 'food' ? t('menuSectionFood') : t('menuSectionDrink')}
-              </Text>
-            </Pressable>
-          ))}
+          {(['food', 'drink'] as MenuSection[]).map((s) => {
+            const disabled = s === 'food' ? foodTabDisabled : drinkTabDisabled;
+            return (
+              <Pressable
+                key={s}
+                disabled={disabled}
+                onPress={() => {
+                  setSection(s);
+                  setCategoryId(null);
+                }}
+                className="flex-1 items-center justify-center py-3"
+                style={{
+                  flexDirection: visualRowDirection(isRTL),
+                  gap: 6,
+                  borderBottomWidth: section === s ? 2 : 0,
+                  borderColor: colors.royalBlue,
+                  opacity: disabled ? 0.4 : 1,
+                }}
+              >
+                {s === 'food' ? (
+                  <MaterialCommunityIcons name="room-service-outline" size={17} color={section === s ? colors.royalBlue : '#6E6A61'} />
+                ) : (
+                  <Ionicons name="wine-outline" size={16} color={section === s ? colors.royalBlue : '#6E6A61'} />
+                )}
+                <Text className="text-sm font-semibold" style={{ color: section === s ? colors.royalBlue : '#6E6A61' }}>
+                  {s === 'food' ? t('menuSectionFood') : t('menuSectionDrink')}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       )}
 

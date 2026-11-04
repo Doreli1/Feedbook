@@ -14,6 +14,17 @@ export interface StaffNotification {
   // read. Both null for notifications from before that migration.
   relatedOrderId: string | null;
   relatedOrderItemId: string | null;
+  // Which dashboard tab(s) a type='order_status' notification should count
+  // toward — set server-side (place_order_transaction/
+  // notify_order_item_cancelled) from the order's actual dish sections, not
+  // inferred client-side from table_type alone: a bar order of drinks only
+  // relates to the bar tab, a bar order containing a food dish (or any
+  // table order) also/only relates to the kitchen tab. null for every other
+  // notification type, which Dashboard.tsx still routes via its static
+  // NOTIFICATION_TYPE_TAB map (2026-11-04, real bug — see that map's own
+  // comment).
+  relatesToKitchen: boolean | null;
+  relatesToBar: boolean | null;
 }
 
 interface RawRow {
@@ -25,6 +36,8 @@ interface RawRow {
   read_at: string | null;
   related_order_id: string | null;
   related_order_item_id: string | null;
+  relates_to_kitchen: boolean | null;
+  relates_to_bar: boolean | null;
 }
 
 // Persisted, per-staff-member notifications (order placed / order item
@@ -70,7 +83,7 @@ export function useNotifications(restaurantId: string | undefined, userId: strin
 
     const { data } = await supabase
       .from('notifications')
-      .select('id, type, title, body, sent_at, read_at, related_order_id, related_order_item_id')
+      .select('id, type, title, body, sent_at, read_at, related_order_id, related_order_item_id, relates_to_kitchen, relates_to_bar')
       .eq('staff_id', staffRow.id)
       .order('sent_at', { ascending: false })
       .limit(50)
@@ -86,6 +99,8 @@ export function useNotifications(restaurantId: string | undefined, userId: strin
         readAt: row.read_at,
         relatedOrderId: row.related_order_id,
         relatedOrderItemId: row.related_order_item_id,
+        relatesToKitchen: row.relates_to_kitchen,
+        relatesToBar: row.relates_to_bar,
       })),
     );
     setLoading(false);

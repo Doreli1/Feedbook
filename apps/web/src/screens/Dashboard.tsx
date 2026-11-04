@@ -27,14 +27,16 @@ import { useNotifications } from '../lib/useNotifications';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 
-// Which tab a notification's unread count should surface on — every
-// notification inserted today is type='order_status' (see
-// 20260919120000_order_event_notifications.sql), all destined for the
-// "orders" tab, but this stays a mapping (not a hardcoded single tab) so a
-// future notification type (e.g. a review-ready alert) doesn't silently
-// need this rewritten — it just needs a new case here.
+// Which tab a notification's unread count should surface on. order_status
+// is handled separately below (relatesToKitchen/relatesToBar, set
+// server-side per the order's actual dish sections — see useNotifications.ts's
+// own comment and 20261104090000_notification_tab_routing_by_dish_section.sql:
+// a bar order of drinks only ever needs the bar tab, one containing a food
+// dish also needs the kitchen tab, real bug fixed 2026-11-04 — a bar drink
+// order was incrementing the kitchen tab's badge instead of the bar tab's).
+// Every other type still has exactly one destination tab, so this map stays
+// for those.
 const NOTIFICATION_TYPE_TAB: Record<string, DashboardTab> = {
-  order_status: 'orders',
   waiter_ack: 'service',
   inventory_alert: 'inventory',
 };
@@ -247,8 +249,17 @@ function ApprovedDashboard({
       onClick: () => {
         void markNotificationRead(n.id);
         if (n.relatedOrderId || n.relatedOrderItemId) {
-          setTab('orders');
-          setKitchenFocus({ orderId: n.relatedOrderId, orderItemId: n.relatedOrderItemId });
+          // A bar-drink-only order never shows in KitchenScreen (see
+          // belongsInKitchen there) — sending its notification to the
+          // "orders" tab would land on a screen that never shows the item.
+          // BarOrdersScreen has no focus-highlight affordance yet, so this
+          // only picks the right tab, same level of polish as before.
+          if (n.relatesToBar && !n.relatesToKitchen) {
+            setTab('bar');
+          } else {
+            setTab('orders');
+            setKitchenFocus({ orderId: n.relatedOrderId, orderItemId: n.relatedOrderItemId });
+          }
         }
       },
     })),
@@ -273,6 +284,11 @@ function ApprovedDashboard({
   // notification count, so the two never double up on the same tab.
   const tabNotificationCounts = staffNotifications.reduce<Partial<Record<DashboardTab, number>>>((acc, n) => {
     if (n.readAt !== null) return acc;
+    if (n.type === 'order_status') {
+      if (n.relatesToKitchen) acc.orders = (acc.orders ?? 0) + 1;
+      if (n.relatesToBar) acc.bar = (acc.bar ?? 0) + 1;
+      return acc;
+    }
     const tab = NOTIFICATION_TYPE_TAB[n.type];
     if (!tab) return acc;
     acc[tab] = (acc[tab] ?? 0) + 1;
