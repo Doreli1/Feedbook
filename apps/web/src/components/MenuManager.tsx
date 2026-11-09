@@ -18,6 +18,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { ingredientStockStatus } from '../lib/ingredientStatus';
+import { useAccordionScrollIntoView, ACCORDION_TRANSITION_MS } from '../lib/useAccordionScrollIntoView';
 
 // Categories + dishes CRUD, extracted out of the registration wizard's
 // MenuBuilderForm so the exact same working implementation can also render
@@ -238,6 +239,11 @@ function CategoryCard({
   // category row opens its dish list, same accordion convention as the rest
   // of this screen's sections.
   const [expanded, setExpanded] = useState(false);
+  // Scrolls the opening dish list into view concurrently with its own open
+  // animation (2026-11-05, explicit user request — see
+  // useAccordionScrollIntoView's own comment; applied here the same way as
+  // the Accounts module's own expand-detail row, where it was first built).
+  const { ref: dishListRef, everExpanded } = useAccordionScrollIntoView(expanded);
 
   async function commitRename() {
     const name = renameValue.trim();
@@ -396,64 +402,71 @@ function CategoryCard({
         />
       </div>
 
-      {expanded && (
-        <>
-          <div className="space-y-2">
-            {dishes.map((dish) =>
-              editingDishId === dish.id ? (
+      <div
+        ref={dishListRef}
+        style={{ display: 'grid', gridTemplateRows: expanded ? '1fr' : '0fr', transition: `grid-template-rows ${ACCORDION_TRANSITION_MS}ms ease` }}
+      >
+        <div style={{ overflow: 'hidden' }}>
+          {everExpanded && (
+            <>
+              <div className="space-y-2">
+                {dishes.map((dish) =>
+                  editingDishId === dish.id ? (
+                    <DishForm
+                      key={dish.id}
+                      dish={dish}
+                      categoryId={category.id}
+                      section={category.section}
+                      restaurantId={category.restaurant_id}
+                      ingredients={ingredients}
+                      existingSizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
+                      hasBar={hasBar}
+                      onDone={() => {
+                        setEditingDishId(null);
+                        onRefresh();
+                      }}
+                      onCancel={() => setEditingDishId(null)}
+                    />
+                  ) : (
+                    <DishRow
+                      key={dish.id}
+                      dish={dish}
+                      section={category.section}
+                      sizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
+                      onRefresh={onRefresh}
+                      onEdit={() => setEditingDishId(dish.id)}
+                    />
+                  ),
+                )}
+              </div>
+
+              {addingDish ? (
                 <DishForm
-                  key={dish.id}
-                  dish={dish}
                   categoryId={category.id}
                   section={category.section}
                   restaurantId={category.restaurant_id}
                   ingredients={ingredients}
-                  existingSizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
+                  existingSizeOptions={[]}
                   hasBar={hasBar}
                   onDone={() => {
-                    setEditingDishId(null);
+                    setAddingDish(false);
                     onRefresh();
                   }}
-                  onCancel={() => setEditingDishId(null)}
+                  onCancel={() => setAddingDish(false)}
                 />
               ) : (
-                <DishRow
-                  key={dish.id}
-                  dish={dish}
-                  section={category.section}
-                  sizeOptions={dishSizeOptions.filter((s) => s.dish_id === dish.id)}
-                  onRefresh={onRefresh}
-                  onEdit={() => setEditingDishId(dish.id)}
-                />
-              ),
-            )}
-          </div>
-
-          {addingDish ? (
-            <DishForm
-              categoryId={category.id}
-              section={category.section}
-              restaurantId={category.restaurant_id}
-              ingredients={ingredients}
-              existingSizeOptions={[]}
-              hasBar={hasBar}
-              onDone={() => {
-                setAddingDish(false);
-                onRefresh();
-              }}
-              onCancel={() => setAddingDish(false)}
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAddingDish(true)}
-              className="mt-2 w-full rounded border border-dashed border-border-strong py-1.5 text-xs text-accent hover:bg-accent-soft"
-            >
-              {t(category.section === 'drink' ? 'addDishDrink' : 'addDish')}
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setAddingDish(true)}
+                  className="mt-2 w-full rounded border border-dashed border-border-strong py-1.5 text-xs text-accent hover:bg-accent-soft"
+                >
+                  {t(category.section === 'drink' ? 'addDishDrink' : 'addDish')}
+                </button>
+              )}
+            </>
           )}
-        </>
-      )}
+        </div>
+      </div>
     </div>
     <ConfirmDialog
       open={confirmBarOff}

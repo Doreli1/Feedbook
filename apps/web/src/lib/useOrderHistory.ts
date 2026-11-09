@@ -15,6 +15,13 @@ export interface OrderHistoryItem {
   modifierSummary: string;
   tableNumber: string;
   barTicketNumber: number | null;
+  // Same dish-category field as useOrders.ts's KitchenOrderItem, needed for
+  // the same de-duplication against the bar screen (see KitchenScreen.tsx's
+  // belongsInKitchen) — without it, history had no way to tell a bar-poured
+  // drink apart from a kitchen-made dish and showed every bar order
+  // regardless of section (real bug found 2026-11-05: bar drink orders
+  // still appeared in the kitchen's history list).
+  section: 'food' | 'drink';
   // null until the kitchen records an inventory decision for a cancelled
   // item (see record_cancellation_inventory_decision) — the answer to
   // "did we lose this ingredient, or was it never touched?". Cancellation
@@ -45,7 +52,7 @@ interface RawRow {
   cancellation_restocked: boolean | null;
   cancellation_reason: string | null;
   edited_at: string | null;
-  dishes: { name: string } | null;
+  dishes: { name: string; menu_categories: { section: 'food' | 'drink' } | null } | null;
   dish_size_options: { name: string } | null;
   order_item_modifiers: { dish_modifier_options: { name: string } | null }[] | null;
   orders: {
@@ -77,7 +84,7 @@ export function useOrderHistory(restaurantId: string | undefined) {
     const { data } = await supabase
       .from('order_items')
       .select(
-        'id, order_id, status, status_updated_at, quantity, unit_price, cancellation_restocked, cancellation_reason, edited_at, dishes(name), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, special_request, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number)))',
+        'id, order_id, status, status_updated_at, quantity, unit_price, cancellation_restocked, cancellation_reason, edited_at, dishes(name, menu_categories(section)), dish_size_options(name), order_item_modifiers(dish_modifier_options(name)), orders!inner(placed_at, bar_ticket_number, special_request, session_participants(sub_account_number), table_sessions!inner(restaurant_id, session_account_number, tables(table_number)))',
       )
       .eq('orders.table_sessions.restaurant_id', restaurantId)
       .returns<RawRow[]>();
@@ -93,6 +100,7 @@ export function useOrderHistory(restaurantId: string | undefined) {
         quantity: row.quantity,
         unitPrice: row.unit_price,
         dishName: row.dishes?.name ?? '',
+        section: row.dishes?.menu_categories?.section ?? 'food',
         sizeName: row.dish_size_options?.name ?? null,
         modifierSummary: (row.order_item_modifiers ?? [])
           .map((m) => m.dish_modifier_options?.name)

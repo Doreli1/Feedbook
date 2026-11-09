@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Ingredient, IngredientUnit } from '@feedbook/types';
-import { TrashIcon, PencilIcon, InfoIcon } from '../components/Icons';
+import { TrashIcon, PencilIcon, InfoIcon, ChevronDownIcon } from '../components/Icons';
 import { FieldLabel } from '../components/FieldLabel';
 import { Tooltip } from '../components/Tooltip';
 import { IngredientImportModal } from '../components/IngredientImportModal';
 import { useI18n } from '../lib/i18n';
 import { ingredientStockStatus } from '../lib/ingredientStatus';
+import { useAccordionScrollIntoView, ACCORDION_TRANSITION_MS } from '../lib/useAccordionScrollIntoView';
 
 interface Props {
   restaurantId: string;
@@ -52,34 +53,28 @@ export function IngredientsScreen({ restaurantId, ingredients, onRefresh, alertI
                 <th className="px-2 py-2 text-start text-eyebrow">{t('ingredientColumnSupplier')}</th>
                 <th className="px-2 py-2 text-start text-eyebrow">{t('ingredientColumnStatus')}</th>
                 <th className="px-2 py-2 text-start text-eyebrow">{t('ingredientColumnActions')}</th>
+                {/* Chevron column, header-less (2026-11-05, explicit user
+                    request) — same convention as AccountsScreen.tsx's own
+                    expand chevron: its own column at the far end, no label. */}
+                <th className="px-2 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {ingredients.map((ingredient) =>
-                editingId === ingredient.id ? (
-                  <tr key={ingredient.id} className="border-b border-border last:border-0">
-                    <td colSpan={8} className="p-0">
-                      <IngredientForm
-                        ingredient={ingredient}
-                        restaurantId={restaurantId}
-                        onDone={() => {
-                          setEditingId(null);
-                          onRefresh();
-                        }}
-                        onCancel={() => setEditingId(null)}
-                      />
-                    </td>
-                  </tr>
-                ) : (
-                  <IngredientTableRow
-                    key={ingredient.id}
-                    ingredient={ingredient}
-                    hasAlert={alertIngredientIds?.has(ingredient.id) ?? false}
-                    onEdit={() => setEditingId(ingredient.id)}
-                    onDelete={() => void handleDelete(ingredient.id)}
-                  />
-                ),
-              )}
+              {ingredients.map((ingredient) => (
+                <IngredientRowGroup
+                  key={ingredient.id}
+                  ingredient={ingredient}
+                  restaurantId={restaurantId}
+                  hasAlert={alertIngredientIds?.has(ingredient.id) ?? false}
+                  expanded={editingId === ingredient.id}
+                  onToggle={() => setEditingId(editingId === ingredient.id ? null : ingredient.id)}
+                  onDone={() => {
+                    setEditingId(null);
+                    onRefresh();
+                  }}
+                  onDelete={() => void handleDelete(ingredient.id)}
+                />
+              ))}
             </tbody>
           </table>
         </div>
@@ -146,18 +141,70 @@ function AlertDot({ label, detail }: { label: string; detail: string }) {
   );
 }
 
+// Replaces what used to be a ternary that SWAPPED the summary row out for
+// the form row entirely (2026-11-05, explicit user request — apply the same
+// expand-in-place + concurrent-scroll accordion already built for Accounts
+// and MenuManager here too). The summary row now always stays visible and
+// clickable; the form reveals in its own row below it via
+// useAccordionScrollIntoView, same as those two. This is a real, deliberate
+// behavior change from the old swap: clicking a row (or its pencil) now
+// TOGGLES the form open/closed in place, instead of replacing the row and
+// relying only on the form's own cancel/save to bring the summary back.
+function IngredientRowGroup({
+  ingredient,
+  restaurantId,
+  hasAlert,
+  expanded,
+  onToggle,
+  onDone,
+  onDelete,
+}: {
+  ingredient: Ingredient;
+  restaurantId: string;
+  hasAlert: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onDone: () => void;
+  onDelete: () => void;
+}) {
+  const { ref: formRowRef, everExpanded } = useAccordionScrollIntoView(expanded);
+  return (
+    <>
+      <IngredientTableRow ingredient={ingredient} hasAlert={hasAlert} expanded={expanded} onEdit={onToggle} onDelete={onDelete} />
+      {/* Level 2 of the nested row-hierarchy background convention (Design
+          System, 2026-10-28) — var(--bg), not a diluted --surface-2 —
+          breaks this child-level form from the summary row above it, same
+          as AccountsScreen.tsx's own expand-detail row. */}
+      <tr className="border-b border-border bg-background last:border-0">
+        <td colSpan={9} className="p-0">
+          <div
+            ref={formRowRef}
+            style={{ display: 'grid', gridTemplateRows: expanded ? '1fr' : '0fr', transition: `grid-template-rows ${ACCORDION_TRANSITION_MS}ms ease` }}
+          >
+            <div style={{ overflow: 'hidden' }}>
+              {everExpanded && <IngredientForm ingredient={ingredient} restaurantId={restaurantId} onDone={onDone} onCancel={onToggle} />}
+            </div>
+          </div>
+        </td>
+      </tr>
+    </>
+  );
+}
+
 function IngredientTableRow({
   ingredient,
   hasAlert,
+  expanded,
   onEdit,
   onDelete,
 }: {
   ingredient: Ingredient;
   hasAlert: boolean;
+  expanded: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, dir } = useI18n();
   const { cls, labelKey } = ingredientStockStatus(ingredient);
   const status = { cls, label: t(labelKey) };
   const alertDetail = t('ingredientAlertBubbleMessage')
@@ -170,8 +217,19 @@ function IngredientTableRow({
     // pencil button — the pencil stays as an explicit, discoverable
     // affordance, but every hover point over the row now offers the same
     // action. The delete button stops propagation so removing a row never
-    // also opens it for editing first.
-    <tr onClick={onEdit} className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-surface-2">
+    // also opens it for editing first. No background change on expand
+    // (2026-11-05, explicit user request/correction — a brief bg-accent-soft
+    // highlight was tried and reverted) — matches the other modules'
+    // convention exactly: the summary row's own background never changes,
+    // only the chevron below rotates and the detail row below it appears.
+    // bg-surface-2 as the row's own permanent background, not just on
+    // hover (2026-11-05, explicit user follow-up correction — the first
+    // pass matched hover to white/bg-surface, but the intent was the
+    // darker shade, as the row's actual fixed color, not white). No hover
+    // variant at all now — hovering can't visibly change the color since
+    // the row is already sitting at the one color it's meant to stay at,
+    // through hover and through opening/closing alike.
+    <tr onClick={onEdit} className="cursor-pointer border-b border-border bg-surface-2">
       <td className="px-2 py-2.5">
         <div className="flex items-center gap-1.5">
           {hasAlert && <AlertDot label={t('ingredientAlertDotLabel')} detail={alertDetail} />}
@@ -219,6 +277,19 @@ function IngredientTableRow({
             </button>
           </Tooltip>
         </div>
+      </td>
+      {/* Expand chevron, its own column at the far end (2026-11-05,
+          explicit user request — same convention as AccountsScreen.tsx's
+          own expand chevron). Direction follows the live language toggle,
+          not a hardcoded assumption: in RTL (Hebrew) "forward" (the
+          direction content expands toward) is physically left, so
+          rotate-90 (clockwise) turns the down-chevron to point left; in
+          LTR that same "forward" is physically right, so it rotates the
+          other way instead. Expanded always points straight down. */}
+      <td className="px-2 py-2.5">
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? '' : dir === 'rtl' ? 'rotate-90' : '-rotate-90'}`}
+        />
       </td>
     </tr>
   );

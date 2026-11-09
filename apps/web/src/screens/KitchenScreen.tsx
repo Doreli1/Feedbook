@@ -136,20 +136,25 @@ export function elapsedTimeClasses(item: KitchenOrderItem): string {
   return 'text-danger';
 }
 
+// De-duplication against the bar's own screen (2026-11-01, per explicit
+// request): a bar-origin item only belongs in the kitchen if the kitchen
+// actually prepares it. A table's own order is unaffected — this only
+// narrows bar-ticket rows, which the bar screen shows in full regardless of
+// section, so nothing bar-origin is ever dropped entirely, only kept from
+// also cluttering the kitchen with e.g. a glass of wine the bar pours
+// itself. Module-level (not just the active queue) since the history tab
+// needs the exact same rule — originally only applied there, so a bar
+// drink order still showed up in the kitchen's history list (real bug
+// found 2026-11-05).
+export function belongsInKitchen(item: { barTicketNumber: number | null; section: 'food' | 'drink' }) {
+  return item.barTicketNumber === null || item.section === 'food';
+}
+
 export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusRequest, onFocusHandled }: Props) {
   const { t } = useI18n();
   const [printItem, setPrintItem] = useState<KitchenOrderItem | null>(null);
   const [section, setSection] = useState<'active' | 'history'>('active');
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
-
-  // De-duplication against the bar's own screen (2026-11-01, per explicit
-  // request): a bar-origin item only belongs in the kitchen's queue if the
-  // kitchen actually prepares it. A table's own order is unaffected — this
-  // only narrows bar-ticket rows, which the bar screen shows in full
-  // regardless of section, so nothing bar-origin is ever dropped entirely,
-  // only kept from also cluttering the kitchen's queue with e.g. a glass of
-  // wine the bar pours itself.
-  const belongsInKitchen = (item: KitchenOrderItem) => item.barTicketNumber === null || item.section === 'food';
 
   // Cancelled-but-undecided items are fetched by useOrders (they're a live,
   // actionable queue, not filed-away history) but rendered in their own
@@ -376,6 +381,7 @@ function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId
     const toTime = dateTo ? new Date(dateTo + 'T23:59:59.999').getTime() : null;
 
     const filtered = items.filter((item) => {
+      if (!belongsInKitchen(item)) return false;
       if (nameQuery && !item.dishName.toLowerCase().includes(nameQuery)) return false;
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
       const placedTime = new Date(item.placedAt).getTime();
