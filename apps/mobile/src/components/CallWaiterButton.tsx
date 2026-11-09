@@ -46,11 +46,19 @@ export function useCallWaiter() {
   const [called, setCalled] = useState(false);
   const [error, setError] = useState(false);
 
-  async function handlePress() {
+  // `reason`/`callType` (2026-11-08, per explicit request): threaded
+  // straight through to call-waiter's own `reason` (free text, shown as-is
+  // to staff on ServiceScreen.tsx) and `call_type` fields (structured —
+  // 'cash_payment' is a REAL feature now, see
+  // 20261108100000_cash_payment_confirmation.sql and
+  // confirm-cash-payment/index.ts). Both optional, defaulting to the
+  // original plain "call a waiter, no topic" behavior, so every existing
+  // no-arg call site keeps working unchanged.
+  async function handlePress(options?: { reason?: string; callType?: 'cash_payment' }) {
     if (!sessionId || calling) return;
     setCalling(true);
     const { data, error: invokeError } = await supabase.functions.invoke<{ error?: { code: string } }>('call-waiter', {
-      body: { session_id: sessionId },
+      body: { session_id: sessionId, reason: options?.reason ?? null, call_type: options?.callType ?? 'general' },
     });
     setCalling(false);
     if (invokeError || data?.error) {
@@ -71,8 +79,10 @@ export function useCallWaiter() {
 }
 
 // The confirmation + error modals, shared by every trigger instance so none
-// of them copy/paste the pair.
-function CallWaiterModals({
+// of them copy/paste the pair. Exported (2026-11-08) — bill-summary.tsx's
+// own "מזומן" option reuses these directly (via useCallWaiter, above)
+// instead of building its own copy of the same two modals.
+export function CallWaiterModals({
   called,
   error,
   onDismissCalled,

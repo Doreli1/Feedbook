@@ -8,6 +8,14 @@
 // scan-qr, place-order) — kept here too so table_id is resolved server-side
 // from the session rather than trusted from the client, which doesn't
 // necessarily have it cached at this point in the flow.
+//
+// Optional `call_type: 'cash_payment'` (2026-11-08, real feature — see
+// 20261108100000_cash_payment_confirmation.sql) marks this call as the
+// diner's own request to pay by cash, selected on the mobile app's bill-
+// summary screen; any other/missing value is the plain 'general' call this
+// function has always made. ServiceScreen.tsx (Web Admin) shows a
+// cash-payment call with a distinct badge and action
+// (confirm-cash-payment, not the generic resolve-waiter-call).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.4";
 
@@ -68,6 +76,14 @@ Deno.serve(async (req) => {
   if (reason !== undefined && reason !== null && typeof reason !== "string") {
     return errorResponse("MISSING_REQUIRED_FIELD", "Invalid field: reason", 400);
   }
+  // call_type (2026-11-08, real feature, not a cosmetic tag): any value
+  // other than the literal 'cash_payment' is treated as 'general' — never
+  // trusted blindly from the client either way. cash_payment_participant_id
+  // is never taken from the request body: it's always the CALLER's own
+  // participant row, resolved below the same way it already is for the
+  // RLS-equivalent check, so there is no way for one diner to file a cash-
+  // payment request that names someone else at the table.
+  const callType = body?.call_type === "cash_payment" ? "cash_payment" : "general";
 
   // Caller must actually be a participant of this session — same pattern as
   // place-order's participant check.
@@ -96,6 +112,8 @@ Deno.serve(async (req) => {
       session_id: sessionId,
       table_id: session.table_id,
       reason: (reason as string | null) ?? null,
+      call_type: callType,
+      cash_payment_participant_id: callType === "cash_payment" ? participant.id : null,
     })
     .select("id, status, created_at")
     .single();

@@ -59,6 +59,17 @@ export function useNotifications(userId: string | undefined, sessionId: string |
       .select('id, type, title, body, sent_at, read_at, related_order_id, related_order_item_id')
       .eq('user_id', userId)
       .eq('session_id', sessionId)
+      // Real bug found live (2026-11-09): this had no `type` filter at all,
+      // which was harmless only because 'payment_completed' (added the
+      // same week — see usePaymentNotifications.ts) didn't exist yet when
+      // it was written. Once confirm-card-payment/confirm-cash-payment
+      // started inserting that type WITH a session_id set (so
+      // usePaymentNotifications.ts's own mail-icon list can still find it
+      // after the session closes), this bell — reserved for order events
+      // only, see this hook's own comment above — started showing it too.
+      // Excluded explicitly rather than allow-listing every real type, so
+      // a future order-event type still works here without another edit.
+      .neq('type', 'payment_completed')
       .order('sent_at', { ascending: false })
       .limit(50)
       .returns<RawRow[]>();

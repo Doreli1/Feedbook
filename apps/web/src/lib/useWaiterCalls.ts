@@ -10,6 +10,14 @@ export interface KitchenWaiterCall {
   resolvedAt: string | null;
   tableNumber: string;
   status: WaiterCallStatus;
+  // 'cash_payment' (2026-11-08, real feature — see
+  // 20261108100000_cash_payment_confirmation.sql): the diner selected
+  // "מזומן" on the mobile app's bill-summary screen, not a plain call-
+  // waiter press. ServiceScreen.tsx shows this distinctly and resolves it
+  // through confirmCashPayment (confirm-cash-payment Edge Function), never
+  // the generic resolve — that function also records the real payment and
+  // notifies the diner, which a plain resolve must never do.
+  callType: 'general' | 'cash_payment';
 }
 
 interface RawRow {
@@ -18,6 +26,7 @@ interface RawRow {
   created_at: string;
   resolved_at: string | null;
   status: WaiterCallStatus;
+  call_type: 'general' | 'cash_payment';
   table_sessions: { restaurant_id: string } | null;
   tables: { table_number: string } | null;
 }
@@ -44,7 +53,7 @@ export function useWaiterCalls(restaurantId: string | undefined) {
     }
     const { data } = await supabase
       .from('waiter_calls')
-      .select('id, reason, created_at, resolved_at, status, table_sessions!inner(restaurant_id), tables(table_number)')
+      .select('id, reason, created_at, resolved_at, status, call_type, table_sessions!inner(restaurant_id), tables(table_number)')
       .eq('table_sessions.restaurant_id', restaurantId)
       .order('created_at', { ascending: false })
       .returns<RawRow[]>();
@@ -57,6 +66,7 @@ export function useWaiterCalls(restaurantId: string | undefined) {
         resolvedAt: row.resolved_at,
         tableNumber: row.tables?.table_number ?? '—',
         status: row.status === 'resolved' ? 'resolved' : 'open',
+        callType: row.call_type === 'cash_payment' ? 'cash_payment' : 'general',
       })),
     );
   }, [restaurantId]);
@@ -79,5 +89,20 @@ export function useWaiterCalls(restaurantId: string | undefined) {
     void refresh();
   }
 
-  return { calls, refresh, resolve };
+  // 2026-11-08, real feature — a cash_payment call is never resolved
+  // through plain `resolve` above: this records the diner's actual payment
+  // (real order_items-derived amount, server-computed) and sends them the
+  // real "paid and closed" notification, same role gate (waiter only) as
+  // resolve-waiter-call.
+  async function confirmCashPayment(id: string) {
+    const { data, error } = await supabase.functions.invoke<{ error?: { code: string; message: string } }>('confirm-cash-payment', {
+      body: { waiter_call_id: id },
+    });
+    if (error || data?.error) {
+      throw new Error(data?.error?.message ?? 'Failed to confirm the cash payment');
+    }
+    void refresh();
+  }
+
+  return { calls, refresh, resolve, confirmCashPayment };
 }

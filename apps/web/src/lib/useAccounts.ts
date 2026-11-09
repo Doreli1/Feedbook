@@ -93,19 +93,49 @@ export interface AccountRow {
   // uses to gate the cancel-item action (not sessionStatus) — "paid" is the
   // real reason a credit has to go through the clearing system instead.
   //
-  // Session-level temporary override (2026-11-03, explicit user request):
-  // ONLY at the session (this field), never pushed down into any individual
-  // participant — once sessionStatus is 'closed', paymentStatus shows
-  // 'paid' even with no real payment_participant_shares data, as a visible
-  // "this account is actually settled/closed" placeholder until Stage 6's
-  // real payment flow exists. This doesn't reopen the 2026-10-22 concern:
-  // close-session today can only ever close a session when there is either
-  // real proof every share is paid, or (today's reality) no share data
-  // exists for anyone at all — the "one diner paid, one still eating, but
-  // marked closed anyway" case the 2026-10-22 fix guarded against structurally
-  // cannot happen, so this fallback is only ever reached in the
-  // no-real-data case that's genuinely ambiguous today anyway.
-  paymentStatus: 'open' | 'paid';
+  // For a table (non-bar), this is a real bottom-up aggregate even once
+  // sessionStatus is 'closed' — NOT a blind "closed ⇒ paid" stamp (that was
+  // the 2026-11-03 version of this field; found wrong and fixed 2026-11-08,
+  // the same shape of bug as the bar's own 2026-11-04 fix above). The
+  // assumption behind the old stamp — that close-session only ever closes a
+  // session with real proof every share is paid, or no share data at all —
+  // turns out false today: close-session's own unpaid-shares check only
+  // ever queries real payment_participant_shares rows, and nothing writes
+  // those yet (Stage 6), so it NEVER blocks a close in practice, no matter
+  // what a participant's own (locally-tracked) paymentStatus says. A closed
+  // table session with a real, still-unpaid participant is a genuine,
+  // observed case (not hypothetical) — it shows 'closed' here (renders
+  // "טרם שולם", same as the bar's pending state), not 'paid'.
+  //
+  // The bar is a DIFFERENT model entirely (2026-11-04, explicit user
+  // correction, four rounds): there is exactly ONE general shared account
+  // per trading day (the one `table_sessions` row scan-qr reuses for every
+  // bar diner — see that function's own comment), governed purely by the
+  // bar's (or, unconfigured, the restaurant's) operating HOURS, not by
+  // individual pickup tickets:
+  //   1. 'open' — within hours (sessionStatus 'open'). This is the single
+  //      "today's active account" AccountsScreen.tsx renders in its own
+  //      primary block at the top of the open tab, regardless of what
+  //      bar_close_if_inactive's schedule check will eventually do.
+  //   2. 'closed' — hours ended (sessionStatus flips to 'closed' purely on
+  //      the clock, via bar_close_if_inactive) with a REAL balance
+  //      (totalCost > 0) still outstanding and not every pickup ticket
+  //      individually paid. NOT history-eligible (see isAccountSettled
+  //      below) — AccountsScreen.tsx renders these in a second "pending,
+  //      for the restaurant to review" block, still under the open tab, not
+  //      the primary one (there's never more than one 'open' row, but there
+  //      can be any number of these).
+  //   3. 'paid' — either every real pickup ticket is individually paid
+  //      (bottom-up, same shape as the table model below — unreachable
+  //      today with a real balance, since bar pseudo-participants have no
+  //      real per-diner payment tracking yet, see
+  //      AccountParticipant.paymentStatus's own comment: always 'open'; this
+  //      starts resolving naturally once Stage 6 lands real per-ticket
+  //      payment), OR totalCost is exactly 0 (nothing was ever ordered —
+  //      vacuously nothing left to collect, so it's "paid" even though no
+  //      real payment ever happened). Either way, history-eligible —
+  //      "only status 'שולם' moves to history" is the whole rule.
+  paymentStatus: 'open' | 'paid' | 'closed';
   openedAt: string;
   closedAt: string | null;
   participants: AccountParticipant[];
@@ -126,6 +156,21 @@ export interface AccountRow {
   // Always 0/0 today for the same reason as totalTip.
   totalCredit: number;
   totalCash: number;
+}
+
+// Single source of truth for "is this account really done" (2026-11-04,
+// explicit user request, simplified the same day once the bar's third state
+// settled into its final shape) — AccountsScreen.tsx's open/history tab
+// split and AccountDetailPanel's cancel-item gate both defer to this instead
+// of each re-deriving it from paymentStatus separately. Exactly 'paid': for
+// a table that's the existing bottom-up/Stage-6-placeholder meaning; for the
+// bar it's "nothing left to collect" (either genuinely all paid, or nothing
+// was ever owed) — see AccountRow.paymentStatus's own comment. A bar
+// account that's merely 'closed' (hours ended, real balance still
+// outstanding) is explicitly NOT settled — it stays visible for the
+// restaurant to act on, not history.
+export function isAccountSettled(row: AccountRow): boolean {
+  return row.paymentStatus === 'paid';
 }
 
 interface RawRow {
@@ -169,7 +214,7 @@ export function useAccounts(restaurantId: string | undefined) {
       setLoading(false);
       return;
     }
-    const [{ data }, { data: pendingRequests }, { data: paymentRows }] = await Promise.all([
+    const [{ data }, { data: pendingRequests }, { data: paymentRows }, { data: zeroOrderBarSessions }, { data: allTableParticipants }] = await Promise.all([
       supabase
         .from('order_items')
         .select(
@@ -198,6 +243,62 @@ export function useAccounts(restaurantId: string | undefined) {
             payment_participant_shares: { participant_id: string; tip_amount: number; status: 'pending' | 'paid' }[];
           }[]
         >(),
+      // Real bug found 2026-11-05: the order_items-driven query above can
+      // never produce a row for a session with zero orders — exactly what
+      // today's freshly (proactively) opened bar account looks like before
+      // its first order. Fetched separately and merged in below so the
+      // bar's own general account shows up — at ₪0 — the moment it exists.
+      //
+      // NOT scoped to status='open' (2026-11-05, second real bug found the
+      // same day): a zero-order account that then CLOSES (bar hours ended
+      // with nobody ordering — a completely ordinary day) fell into a gap
+      // between the two queries — no orders to be found by the one above,
+      // no longer 'open' for an earlier version of this one — and simply
+      // vanished from both the open tab and history entirely. Every bar
+      // session with zero orders, open or closed, is fetched here; the
+      // existing client-side date filter in AccountsScreen.tsx (same one
+      // that already bounds the order_items-driven rows — this query is no
+      // less bounded than that one) keeps history from accumulating
+      // unboundedly, same as it's always worked for every other row. Still
+      // scoped to the bar specifically, not every zero-order table scan
+      // ever — that's out of scope here, same as it's always been.
+      //
+      // bar_close_if_inactive is also called here (2026-11-05, real gap
+      // found live) — there's no cron, and until now nothing on this
+      // screen ever triggered the proactive-open/schedule-close check
+      // (only BarOrdersScreen/TableStatusBoard's own polling, or a diner's
+      // scan, did), so simply opening the Accounts screen before any of
+      // those had happened could show nothing at all even well past the
+      // bar's own opening hour.
+      supabase.rpc('bar_close_if_inactive', { p_restaurant_id: restaurantId }).then(() =>
+        supabase
+          .from('table_sessions')
+          .select('id, session_account_number, status, opened_at, closed_at, tables!inner(table_number, table_type)')
+          .eq('restaurant_id', restaurantId)
+          .eq('tables.table_type', 'bar')
+          .returns<
+            { id: string; session_account_number: string; status: 'open' | 'closed'; opened_at: string; closed_at: string | null; tables: { table_number: string } | null }[]
+          >(),
+      ),
+      // Real gap found 2026-11-08, same user request that surfaced the
+      // closed-table-paid-status bug above: a diner who scans in and joins
+      // a table (a real session_participants row) but never places an
+      // order has no order_items at all — the main query above is driven
+      // entirely by order_items, so such a diner never produces a
+      // participant entry and simply never appears in the account's own
+      // breakdown, even though the restaurant may want it on record that
+      // they were there. Fetched separately (every table-type
+      // session_participant for this restaurant, not scoped to any one
+      // session) and merged in below, once per session that the main query
+      // already produced a row for. Table-only, like zeroOrderBarSessions
+      // above — the bar deliberately has no per-diner identity to merge in
+      // (AccountRow.isBar's own participants are keyed by pickup ticket,
+      // not session_participants; see scan-qr's own comment on why).
+      supabase
+        .from('session_participants')
+        .select('id, session_id, sub_account_number, table_sessions!inner(restaurant_id)')
+        .eq('table_sessions.restaurant_id', restaurantId)
+        .returns<{ id: string; session_id: string; sub_account_number: string }[]>(),
     ]);
 
     const pendingByItemId = new Map((pendingRequests ?? []).map((r) => [r.order_item_id, r.id]));
@@ -300,17 +401,109 @@ export function useAccounts(restaurantId: string | undefined) {
       }
     }
 
+    // Merge in any bar session (open OR closed) the loop above never
+    // touched because it has zero orders — see zeroOrderBarSessions's own
+    // fetch comment above for why this isn't scoped to open-only. Empty on
+    // purpose: no participants, ₪0 — exactly what "general account for a
+    // day nobody ordered from" honestly looks like, whether it's today's
+    // still-open account or a past, fully-uneventful day in history.
+    for (const session of zeroOrderBarSessions ?? []) {
+      if (bySession.has(session.id)) continue;
+      bySession.set(session.id, {
+        sessionId: session.id,
+        isBar: true,
+        tableNumber: session.tables?.table_number ?? '—',
+        sessionAccountNumber: session.session_account_number,
+        sessionStatus: session.status,
+        // Recomputed below from the final participants list, same as every
+        // other sessionRow — this starting value is never read.
+        paymentStatus: 'open',
+        openedAt: session.opened_at,
+        closedAt: session.closed_at,
+        participants: [],
+        totalCost: 0,
+        cancelledCount: 0,
+        totalTip: 0,
+        totalCredit: 0,
+        totalCash: 0,
+      });
+    }
+
+    // Merge in a diner who joined a table (a real session_participants row)
+    // but never placed an order — real gap found 2026-11-08, same report
+    // that surfaced the closed-table-paid-status bug above. Only added to a
+    // session the main query already produced a row for (never creates a
+    // session on its own, unlike zeroOrderBarSessions above — a table
+    // session with ZERO orders from anyone is still out of scope here, same
+    // as it's always been) and only when that participant doesn't already
+    // have a real entry from an actual order. ₪0 / 'open' here, normalized
+    // to 'paid' by the zero-totalCost pass right below, same as any other
+    // zero-balance participant — "joined, never ordered" is honestly
+    // nothing left to collect, not an unpaid debt.
+    for (const sp of allTableParticipants ?? []) {
+      const sessionRow = bySession.get(sp.session_id);
+      if (!sessionRow || sessionRow.isBar) continue;
+      if (sessionRow.participants.some((p) => p.participantId === sp.id)) continue;
+      sessionRow.participants.push({
+        participantId: sp.id,
+        displayNumber: sp.sub_account_number,
+        items: [],
+        totalCost: 0,
+        tipAmount: 0,
+        paymentMethod: null,
+        paymentStatus: 'open',
+      });
+    }
+
     // Bottom-up, after every row has been processed and every participant's
-    // own paymentStatus is final — see AccountRow.paymentStatus's own
-    // comment for why this can't just mirror sessionStatus for an OPEN
-    // session, and for why a CLOSED one is the one deliberate exception.
+    // own paymentStatus/totalCost is final — see AccountRow.paymentStatus's
+    // own comment for why tables and the bar use two genuinely different
+    // computations here, not one shared rule.
     for (const sessionRow of bySession.values()) {
-      sessionRow.paymentStatus =
-        sessionRow.sessionStatus === 'closed'
-          ? 'paid'
-          : sessionRow.participants.length > 0 && sessionRow.participants.every((p) => p.paymentStatus === 'paid')
-            ? 'paid'
-            : 'open';
+      // Real bug found 2026-11-05: a participant whose every item got
+      // cancelled has totalCost 0 but kept a hardcoded 'open'
+      // paymentStatus forever (bar pseudo-participants always start 'open'
+      // — see where they're built above; a table participant with no real
+      // payment_participant_shares row falls back to 'open' the same way)
+      // — showing "טרם שולם" on a ticket/sub-account with literally nothing
+      // left to collect. Fixed here, before either paymentStatus
+      // computation below reads it, so the table's own bottom-up aggregate
+      // benefits the same way a bar account's vacuous zero-balance case
+      // already did at the session level (see the isBar branch just below).
+      for (const participant of sessionRow.participants) {
+        if (participant.totalCost === 0) participant.paymentStatus = 'paid';
+      }
+
+      if (sessionRow.isBar) {
+        // Vacuously true with zero participants, and now also true whenever
+        // every participant's own totalCost is 0 (fixed above) — kept as its
+        // own explicit totalCost === 0 check on the session too, since a mix
+        // of one zero-balance participant and one real unpaid one must still
+        // resolve to "closed", not "paid".
+        const everyTicketPaid = sessionRow.participants.every((p) => p.paymentStatus === 'paid');
+        sessionRow.paymentStatus =
+          sessionRow.sessionStatus === 'open' ? 'open' : sessionRow.totalCost === 0 || everyTicketPaid ? 'paid' : 'closed';
+      } else {
+        const everyParticipantPaid = sessionRow.participants.length > 0 && sessionRow.participants.every((p) => p.paymentStatus === 'paid');
+        sessionRow.paymentStatus =
+          sessionRow.sessionStatus === 'open'
+            ? everyParticipantPaid
+              ? 'paid'
+              : 'open'
+            : // Closed: real bottom-up check, not a blind 'paid' stamp (real
+              // bug found 2026-11-08 — close-session has no real payment
+              // integration yet, so it never actually blocks on a genuinely
+              // pending share: a closed table session can and does still
+              // have participants whose own paymentStatus is 'open'. Mirrors
+              // the bar's own fix for the identical shape of bug).
+              // totalCost === 0 covers a closed table nobody ever ordered
+              // from (same vacuous case as the bar) — not needed on the
+              // 'open' branch above, where a freshly-opened empty table must
+              // stay 'open'/"פעיל", not read as already "done".
+              sessionRow.totalCost === 0 || everyParticipantPaid
+              ? 'paid'
+              : 'closed';
+      }
       for (const participant of sessionRow.participants) {
         if (participant.paymentMethod === 'credit_card') sessionRow.totalCredit += participant.totalCost;
         else if (participant.paymentMethod === 'cash') sessionRow.totalCash += participant.totalCost;
@@ -319,7 +512,12 @@ export function useAccounts(restaurantId: string | undefined) {
 
     setRows(
       [...bySession.values()].sort((a, b) => {
-        if (a.paymentStatus !== b.paymentStatus) return a.paymentStatus === 'open' ? -1 : 1;
+        // 'open' always first; 'paid' vs 'closed' are both just "not open"
+        // and have no defined relative order here — historyRows below
+        // re-sorts by closedAt anyway, so this only needs to be a consistent
+        // (non-contradictory) ordering, not a meaningful one.
+        const rank = (s: AccountRow['paymentStatus']) => (s === 'open' ? 0 : 1);
+        if (rank(a.paymentStatus) !== rank(b.paymentStatus)) return rank(a.paymentStatus) - rank(b.paymentStatus);
         return a.tableNumber.localeCompare(b.tableNumber, undefined, { numeric: true });
       }),
     );
@@ -349,6 +547,19 @@ export function useAccounts(restaurantId: string | undefined) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'table_sessions' }, () => void refresh())
       .subscribe();
     return () => void supabase.removeChannel(channel);
+  }, [restaurantId, refresh]);
+
+  // Periodic re-check (2026-11-05, real gap found live) — same reasoning as
+  // useBarStatus.ts's own interval: the wall clock alone crossing the bar's
+  // opening hour writes nothing to the DB by itself (nothing to subscribe
+  // to above), so a screen left open straight through that moment would
+  // otherwise never call refresh() again and never notice today's account
+  // was supposed to appear. 15s, same interval as useBarStatus.ts, for the
+  // same reason (far from "real time" at 60s, needless load below it).
+  useEffect(() => {
+    if (!restaurantId) return;
+    const interval = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(interval);
   }, [restaurantId, refresh]);
 
   // Role-gated server-side (request-order-item-cancellation: manager acts

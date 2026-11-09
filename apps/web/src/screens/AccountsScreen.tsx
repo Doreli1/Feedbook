@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { useAccounts, fetchPaymentEvents, type AccountRow, type AccountOrderItem, type PaymentEvent } from '../lib/useAccounts';
+import { useAccordionScrollIntoView, ACCORDION_TRANSITION_MS } from '../lib/useAccordionScrollIntoView';
+import { useAccounts, fetchPaymentEvents, isAccountSettled, type AccountRow, type AccountOrderItem, type PaymentEvent } from '../lib/useAccounts';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
-import { ChevronDownIcon, CheckIcon, CloseIcon, ClockIcon, SearchIcon } from '../components/Icons';
+import { ChevronDownIcon, CheckIcon, CloseIcon, AlertIcon, ClockIcon, SearchIcon } from '../components/Icons';
 import type { RestaurantTable } from '@feedbook/types';
 
 interface Props {
@@ -59,6 +60,10 @@ function formatDate(iso: string): string {
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateOnly(iso: string): string {
+  return new Date(iso).toLocaleDateString('he-IL');
 }
 
 // Period filter (2026-10-25, per explicit request — Feedbook's own
@@ -173,13 +178,44 @@ function ItemStatusBadge({ status }: { status: AccountOrderItem['status'] }) {
 // Takes the real settlement status ('open' | 'paid'), not the raw
 // table_sessions.status — see AccountRow.paymentStatus's own comment for
 // why those two are deliberately different values.
-function PaymentStatusBadge({ status }: { status: 'open' | 'paid' }) {
+// The 'closed' paymentStatus value renders as "טרם שולם" (2026-11-05 — went
+// "סגור" in green → "פתוח" in yellow → this, each an explicit user
+// correction; "פתוח" still read as confusing/ambiguous once it sat next to
+// the row-level 'open' meaning, so it was retired too, converging on the
+// same wording already used one level down — see accountsSessionNotYetPaid
+// just below) — for the bar: hours ended but a real balance is still
+// outstanding and not every pickup ticket is paid. For a table (added
+// 2026-11-08, same bug shape as the bar's own 2026-11-04 fix): the session
+// itself was closed (close-session has no real payment gate yet — see
+// AccountRow.paymentStatus's own comment) but a real participant is still
+// unpaid (see isAccountSettled/AccountRow.paymentStatus). bg-warning-soft/
+// text-warning + AlertIcon is this app's own established "needs staff
+// attention" treatment (same pairing as TableStatusBoard.tsx's own
+// 'awaiting_cleaning' badge). For the bar this renders in AccountsScreen's
+// dedicated "pending, for the restaurant to review" block; for a table
+// (locationTab !== 'bar' skips that two-block split entirely) it renders
+// inline in the plain open-tab list — isAccountSettled already keeps it out
+// of history either way, so no further branching was needed for tables to
+// behave correctly.
+// `level` (2026-11-05, explicit user request — real confusion found live):
+// 'row' (the default) is the GENERAL account's own status, where 'open'
+// genuinely means "today's account, live by the clock" — "accountsSessionOpen"
+// ("פעיל") fits. 'participant' is one diner's/ticket's own row inside it,
+// where 'open' only ever means "hasn't paid their own share yet" — reusing
+// the exact same word there as the clock-driven account-level meaning is
+// what caused the original confusion (a ticket inside an already-CLOSED
+// general account still read "פעיל", looking like it was somehow still
+// live by the clock) — "accountsSessionNotYetPaid" ("טרם שולם") says what's
+// actually true at that level instead. Same color/icon either way — this is
+// a label fix only, not a new semantic state.
+function PaymentStatusBadge({ status, level = 'row' }: { status: 'open' | 'paid' | 'closed'; level?: 'row' | 'participant' }) {
   const { t } = useI18n();
-  const classes = status === 'open' ? 'bg-accent-soft text-accent' : 'bg-success-soft text-success';
+  const classes = status === 'open' ? 'bg-accent-soft text-accent' : status === 'paid' ? 'bg-success-soft text-success' : 'bg-warning-soft text-warning';
+  const openLabelKey = level === 'participant' ? 'accountsSessionNotYetPaid' : 'accountsSessionOpen';
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${classes}`}>
-      {status === 'open' ? <ClockIcon className="h-3 w-3" /> : <CheckIcon className="h-3 w-3" />}
-      {t(status === 'open' ? 'accountsSessionOpen' : 'accountsSessionClosed')}
+      {status === 'open' ? <ClockIcon className="h-3 w-3" /> : status === 'paid' ? <CheckIcon className="h-3 w-3" /> : <AlertIcon className="h-3 w-3" />}
+      {t(status === 'open' ? openLabelKey : status === 'paid' ? 'accountsSessionClosed' : 'accountsSessionPending')}
     </span>
   );
 }
@@ -326,7 +362,7 @@ function ParticipantSummaryRow({
         <td className="px-3 py-2 text-sm text-ink">₪{formatAmount(participant.tipAmount)}</td>
         <td className="px-3 py-2 text-sm text-ink">{participant.paymentMethod ? t(PAYMENT_METHOD_LABEL_KEYS[participant.paymentMethod]) : '—'}</td>
         <td className="px-3 py-2">
-          <PaymentStatusBadge status={participant.paymentStatus} />
+          <PaymentStatusBadge status={participant.paymentStatus} level="participant" />
         </td>
         {/* Expand chevron moved to the far side (2026-10-22, per explicit
             request) — was the first column, now the last. */}
@@ -462,13 +498,28 @@ function AccountDetailPanel({
   // raw DB flag) — 2026-10-22, per explicit correction: the reason to hide
   // the cancel-item action is that the account was actually PAID, which
   // sessionStatus alone can't guarantee (see AccountRow.paymentStatus).
-  const sessionClosed = row.paymentStatus === 'paid';
+  // isAccountSettled, not a bare paymentStatus check (2026-11-04, fixed) —
+  // a bar account that's 'closed' with a real balance still outstanding
+  // isn't actually done yet (still visible in the open tab's "pending"
+  // block), so the cancel action must stay available for it too, same as a
+  // genuinely 'open' one — see isAccountSettled's own comment for why this
+  // can't be derived
+  // from paymentStatus alone.
+  const sessionClosed = isAccountSettled(row);
 
   return (
     <div className="p-4">
       <div className="mb-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
         <span>{t('accountsParticipantCountLabel')}: {row.participants.length}</span>
-        <span>{t('accountsDurationLabel')}: {formatDuration(row.openedAt, row.closedAt, t)}</span>
+        {/* Omitted for the bar (2026-11-05, same reasoning as the master
+            row's own opening-time omission, 2026-11-01): "visit duration"
+            means one diner's time at a table — the bar's general account
+            isn't one diner's visit, it's the whole day's account, governed
+            by the bar's/restaurant's defined operating-hours window, not by
+            elapsed time since it happened to open. Showing "5 minutes" right
+            after a fresh proactive open is accurate but means nothing
+            operationally the way it does for a table. */}
+        {!row.isBar && <span>{t('accountsDurationLabel')}: {formatDuration(row.openedAt, row.closedAt, t)}</span>}
         {row.cancelledCount > 0 && (
           <span className="rounded-full bg-danger-soft px-2 py-0.5 text-[11px] font-bold text-danger">
             {t('accountsCancelledCountLabel')} {row.cancelledCount}
@@ -495,20 +546,37 @@ function AccountDetailPanel({
             </tr>
           </thead>
           <tbody>
-            {row.participants.map((p) => (
-              <ParticipantSummaryRow
-                key={p.participantId}
-                participant={p}
-                sessionId={row.sessionId}
-                isBar={row.isBar}
-                expanded={expandedParticipantId === p.participantId}
-                onToggle={() => setExpandedParticipantId(expandedParticipantId === p.participantId ? null : p.participantId)}
-                sessionClosed={sessionClosed}
-                myRole={myRole}
-                onRequestCancel={(itemId) => setCancelTargetItemId(itemId)}
-                onDecide={onDecideCancellation}
-              />
-            ))}
+            {/* Empty state (2026-11-05, real bug found live) — a zero-order
+                bar general account (now a real, common case since the
+                account opens proactively, before anyone's ordered — see
+                useAccounts.ts) left this <tbody> completely empty: just the
+                blue header bar with nothing under it, directly butting up
+                against the NEXT top-level account's row right below in the
+                outer table. Visually unreadable — looked like the next
+                account's row belonged to THIS inner table. A real row
+                (spanning all 6 columns) makes the boundary unambiguous. */}
+            {row.participants.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-4 text-center text-sm text-muted-foreground">
+                  {t('accountsNoParticipantsYet')}
+                </td>
+              </tr>
+            ) : (
+              row.participants.map((p) => (
+                <ParticipantSummaryRow
+                  key={p.participantId}
+                  participant={p}
+                  sessionId={row.sessionId}
+                  isBar={row.isBar}
+                  expanded={expandedParticipantId === p.participantId}
+                  onToggle={() => setExpandedParticipantId(expandedParticipantId === p.participantId ? null : p.participantId)}
+                  sessionClosed={sessionClosed}
+                  myRole={myRole}
+                  onRequestCancel={(itemId) => setCancelTargetItemId(itemId)}
+                  onDecide={onDecideCancellation}
+                />
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -610,7 +678,7 @@ function mergeAccountItemsByDish(participants: AccountRow['participants']): Merg
 // (toggle, account id, table, status, payment method, tip, summary) use
 // rowSpan to span every item row in the group, so the group still reads as
 // one block per table/session.
-function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expanded: boolean; onToggle: () => void }) {
+function AccountSummaryRows({ row, expanded, onToggle, isHistory }: { row: AccountRow; expanded: boolean; onToggle: () => void; isHistory: boolean }) {
   const { t, dir } = useI18n();
   const lines = mergeAccountItemsByDish(row.participants);
   const rowCount = Math.max(lines.length, 1);
@@ -645,6 +713,18 @@ function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expa
                 <td className="px-3 py-3 text-sm font-bold text-ink" rowSpan={rowCount}>
                   #{row.sessionAccountNumber}
                 </td>
+                {/* History-tab only, bar only (2026-11-05, explicit user
+                    request) — right after the account id. Date only (no
+                    hours range) — dated by openedAt, same "trading day =
+                    opening day" rule the history date filter/sort already
+                    use. Tables show "—": they already have their own
+                    opening time in the table-number cell below and their
+                    own real duration in the expanded detail panel. */}
+                {isHistory && (
+                  <td className="whitespace-nowrap px-3 py-3 text-sm text-ink" rowSpan={rowCount}>
+                    {row.isBar ? formatDateOnly(row.openedAt) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                )}
                 <td className="whitespace-nowrap px-3 py-3" rowSpan={rowCount}>
                   <div className="flex flex-col gap-0.5 text-xs">
                     <span className="text-sm text-ink">
@@ -667,7 +747,14 @@ function AccountSummaryRows({ row, expanded, onToggle }: { row: AccountRow; expa
             <td className="px-3 py-2 text-ink">{line ? `₪${formatAmount(line.lineTotal)}` : ''}</td>
             {i === 0 && (
               <>
-                <td className="px-3 py-3" rowSpan={rowCount}>
+                {/* whitespace-nowrap (2026-11-08, explicit user request):
+                    without it, "טרם שולם" (the only label with a space in
+                    it — "פעיל"/"שולם" are single words that never wrap) can
+                    break onto two lines under width pressure from other
+                    columns in this auto-layout table (no table-layout:
+                    fixed here) — matches the row's other rowSpan cells
+                    above, which already carry this same class. */}
+                <td className="whitespace-nowrap px-3 py-3" rowSpan={rowCount}>
                   <PaymentStatusBadge status={row.paymentStatus} />
                 </td>
                 <td className="px-3 py-3 text-sm text-ink" rowSpan={rowCount}>
@@ -709,6 +796,7 @@ function AccountRowGroup({
   myRole,
   onRequestCancellation,
   onDecideCancellation,
+  isHistory,
 }: {
   row: AccountRow;
   expanded: boolean;
@@ -716,26 +804,51 @@ function AccountRowGroup({
   myRole: StaffRole | null;
   onRequestCancellation: (orderItemId: string, reason: string) => void;
   onDecideCancellation: (requestId: string, decision: 'approve' | 'reject') => void;
+  isHistory: boolean;
 }) {
+  // Accordion open/close + auto-scroll-into-view, concurrent with the open
+  // animation (2026-11-05, explicit user request — see
+  // useAccordionScrollIntoView's own comment for the full mechanics; this
+  // was the first place it was built, since reused everywhere else a click
+  // expands content, e.g. MenuManager's category cards).
+  //
+  // The <tr>/<td> is now ALWAYS rendered (never conditionally mounted) so
+  // there's something present to animate between — a CSS grid row sized
+  // '0fr' collapsed / '1fr' expanded, transitioning smoothly either way,
+  // is the standard technique for animating to/from an unknown content
+  // height (a table detail panel's real height varies a lot row to row;
+  // measuring it in JS would mean re-measuring on every data change).
+  const { ref: detailWrapperRef, everExpanded } = useAccordionScrollIntoView(expanded);
+
   return (
     <Fragment key={row.sessionId}>
-      <AccountSummaryRows row={row} expanded={expanded} onToggle={onToggle} />
-      {expanded && (
-        // Level 2 of the nested row-hierarchy background convention
-        // (Design System, 2026-10-28) — var(--bg), the platform's own
-        // page background, not a diluted --surface-2 — breaks this
-        // child-level panel from the white master row above it.
-        <tr className="border-b border-border bg-background">
-          <td colSpan={MASTER_COL_COUNT}>
-            <AccountDetailPanel
-              row={row}
-              myRole={myRole}
-              onRequestCancellation={onRequestCancellation}
-              onDecideCancellation={onDecideCancellation}
-            />
-          </td>
-        </tr>
-      )}
+      <AccountSummaryRows row={row} expanded={expanded} onToggle={onToggle} isHistory={isHistory} />
+      {/* Level 2 of the nested row-hierarchy background convention (Design
+          System, 2026-10-28) — var(--bg), the platform's own page
+          background, not a diluted --surface-2 — breaks this child-level
+          panel from the white master row above it. */}
+      <tr className="border-b border-border bg-background">
+        {/* +1 on history (2026-11-05): matches the extra date/hours column
+            AccountSummaryRows renders only there, so this spanned detail
+            panel's own width still lines up with the header. */}
+        <td colSpan={isHistory ? MASTER_COL_COUNT + 1 : MASTER_COL_COUNT} className="p-0">
+          <div
+            ref={detailWrapperRef}
+            style={{ display: 'grid', gridTemplateRows: expanded ? '1fr' : '0fr', transition: `grid-template-rows ${ACCORDION_TRANSITION_MS}ms ease` }}
+          >
+            <div style={{ overflow: 'hidden' }}>
+              {everExpanded && (
+                <AccountDetailPanel
+                  row={row}
+                  myRole={myRole}
+                  onRequestCancellation={onRequestCancellation}
+                  onDecideCancellation={onDecideCancellation}
+                />
+              )}
+            </div>
+          </div>
+        </td>
+      </tr>
     </Fragment>
   );
 }
@@ -766,9 +879,12 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
   // Period filter — only shown/applied on the "היסטוריה" tab, by closed_at
   // (closing/payment date, not opened_at — per explicit correction: a
   // long-open session is a monitoring gap to fix elsewhere, not something
-  // this filter should special-case). Defaults to today.
+  // this filter should special-case). Defaults to "month" (this calendar
+  // month so far — 2026-11-05, explicit user request, replacing the earlier
+  // "today" default; the "today" preset button itself was dropped too, so
+  // this is the only way in now).
   const today = toYMD(new Date());
-  const [periodFrom, setPeriodFrom] = useState(today);
+  const [periodFrom, setPeriodFrom] = useState(toYMD(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
   const [periodTo, setPeriodTo] = useState(today);
   const [searchText, setSearchText] = useState('');
   // Shared by both tabs (2026-10-25, per explicit request — separates "find
@@ -802,12 +918,9 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
     };
   }, [session.user.id, restaurantId]);
 
-  function setPreset(preset: 'today' | 'week' | 'month' | 'lastMonth') {
+  function setPreset(preset: 'week' | 'month' | 'lastMonth') {
     const now = new Date();
-    if (preset === 'today') {
-      setPeriodFrom(today);
-      setPeriodTo(today);
-    } else if (preset === 'week') {
+    if (preset === 'week') {
       const weekAgo = new Date(now);
       weekAgo.setDate(weekAgo.getDate() - 6);
       setPeriodFrom(toYMD(weekAgo));
@@ -827,7 +940,32 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
     }
   }
 
-  const { openRows, historyRows } = useMemo(() => {
+  // Which preset button (if any) the current periodFrom/periodTo actually
+  // match (2026-11-05, explicit user request: the default "month" range
+  // needs to visibly read as selected, not just be some dates sitting in
+  // the two inputs with no indication of what they mean). Derived from the
+  // live period values, using the exact same date math as setPreset itself,
+  // rather than a separate "which button did I last click" flag — a second
+  // piece of state would drift out of sync the moment someone edits the
+  // date inputs directly instead of clicking a preset, and silently keep
+  // highlighting a button that no longer matches what's actually filtered.
+  const activePreset = useMemo(() => {
+    const now = new Date();
+    const weekFrom = (() => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 6);
+      return toYMD(d);
+    })();
+    const monthFrom = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+    const lastMonthFrom = toYMD(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+    const lastMonthTo = toYMD(new Date(now.getFullYear(), now.getMonth(), 0));
+    if (periodFrom === weekFrom && periodTo === today) return 'week';
+    if (periodFrom === monthFrom && periodTo === today) return 'month';
+    if (periodFrom === lastMonthFrom && periodTo === lastMonthTo) return 'lastMonth';
+    return null;
+  }, [periodFrom, periodTo, today]);
+
+  const { openRows, openPrimaryRows, openPendingRows, historyRows } = useMemo(() => {
     const query = searchText.trim().toLowerCase();
 
     // Table number is deliberately left out of the free-text search
@@ -837,7 +975,16 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
     // overlap/conflict.
     const matchesCommonFilters = (row: AccountRow) => {
       if (row.isBar !== (locationTab === 'bar')) return false;
-      if (tableFilter !== '' && row.tableNumber !== tableFilter) return false;
+      // Guarded on locationTab === 'tables' (2026-11-05, explicit user
+      // request — the table filter isn't relevant on the bar tab at all,
+      // there's only ever the one shared bar "table"): without this guard,
+      // a stale tableFilter value left over from the "שולחנות" tab (e.g.
+      // "T1") would silently hide every bar row the moment locationTab
+      // switches to 'bar', since no bar row's tableNumber ever matches a
+      // real table's number. Guarding here (not just hiding the control,
+      // and not resetting tableFilter on tab switch) means this can't
+      // happen regardless of how locationTab changes.
+      if (locationTab === 'tables' && tableFilter !== '' && row.tableNumber !== tableFilter) return false;
       if (query) {
         const matchesAccountId = row.sessionAccountNumber.toLowerCase().includes(query);
         // Personal account numbers live per diner (session_participants.sub_account_number
@@ -848,26 +995,59 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
       return true;
     };
 
-    const open = rows.filter((r) => r.paymentStatus === 'open' && matchesCommonFilters(r));
+    // isAccountSettled, not a bare paymentStatus check (2026-11-04, fixed) —
+    // a bar account that's 'closed' purely because hours ended, but still
+    // has a real balance outstanding, isn't done yet and belongs here, not
+    // in history (see isAccountSettled's own comment).
+    const open = rows.filter((r) => !isAccountSettled(r) && matchesCommonFilters(r));
 
+    // Split for the bar only (2026-11-05, explicit user request): the one
+    // 'open' row (today's single active general account, if hours are
+    // currently active) renders in its own primary block; everything else
+    // still open (every 'closed'-but-unsettled past day — see
+    // AccountRow.paymentStatus) renders in a second "pending, for the
+    // restaurant to review" block below it. For tables this split is a
+    // no-op (a table row is never isBar, so openPrimaryRows is always empty
+    // and openPendingRows is just `open` itself) — AccountsScreen only
+    // reads these two for locationTab === 'bar'.
+    const openPrimaryRows = open.filter((r) => r.isBar && r.paymentStatus === 'open');
+    const openPendingRows = open.filter((r) => !(r.isBar && r.paymentStatus === 'open'));
+
+    // History is dated by OPENING time for the bar, closing time for a
+    // table (2026-11-04, explicit user request) — a bar's general account
+    // can close well past midnight (e.g. hours 19:00–01:00), and its
+    // "trading day" is the day it opened, not the calendar day its closing
+    // timestamp happens to fall on. A table falls back to openedAt too
+    // (2026-11-09, real bug found live) — not just a defensive `?? `: a
+    // table can now be genuinely isAccountSettled (every real participant
+    // paid, via confirm-card-payment/confirm-cash-payment) while
+    // table_sessions.status is still 'open' and closedAt is still null —
+    // those two functions deliberately never force-close the session (see
+    // their own comments), so "paid" no longer implies "closed" the way it
+    // always did before. The old `r.closedAt!` non-null assertion plus a
+    // hard `!r.closedAt` filter gate below meant a row in exactly this
+    // state matched neither tab: isAccountSettled() dropped it from "open",
+    // and the missing closedAt dropped it from "history" too — it simply
+    // vanished.
+    const historyDate = (r: AccountRow) => (r.isBar ? r.openedAt : (r.closedAt ?? r.openedAt));
     const rangeStart = startOfDay(periodFrom).getTime();
     const rangeEnd = endOfDay(periodTo).getTime();
     const history = rows
       .filter((r) => {
-        if (r.paymentStatus !== 'paid' || !r.closedAt || !matchesCommonFilters(r)) return false;
+        if (!isAccountSettled(r) || !matchesCommonFilters(r)) return false;
         if (paymentMethodFilter === 'credit' && r.totalCredit <= 0) return false;
         if (paymentMethodFilter === 'cash' && r.totalCash <= 0) return false;
-        const closedTime = new Date(r.closedAt).getTime();
-        return closedTime >= rangeStart && closedTime <= rangeEnd;
+        const dateTime = new Date(historyDate(r)).getTime();
+        return dateTime >= rangeStart && dateTime <= rangeEnd;
       })
-      .sort((a, b) => new Date(b.closedAt!).getTime() - new Date(a.closedAt!).getTime());
+      .sort((a, b) => new Date(historyDate(b)).getTime() - new Date(historyDate(a)).getTime());
 
-    return { openRows: open, historyRows: history };
+    return { openRows: open, openPrimaryRows, openPendingRows, historyRows: history };
   }, [rows, periodFrom, periodTo, searchText, tableFilter, paymentMethodFilter, locationTab]);
 
   const periodLabel = periodFrom === periodTo ? formatYMDDisplay(periodFrom) : `${formatYMDDisplay(periodFrom)}–${formatYMDDisplay(periodTo)}`;
 
-  function renderRowGroup(row: AccountRow) {
+  function renderRowGroup(row: AccountRow, isHistory = false) {
     const expanded = expandedSessionId === row.sessionId;
     return (
       <AccountRowGroup
@@ -878,6 +1058,7 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
         myRole={myRole}
         onRequestCancellation={(itemId, reason) => void requestCancellation(itemId, reason)}
         onDecideCancellation={(requestId, decision) => void decideCancellation(requestId, decision)}
+        isHistory={isHistory}
       />
     );
   }
@@ -932,6 +1113,12 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
                 mainTab === 'open' ? 'border-accent bg-accent-soft font-semibold text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-ink'
               }`}
             >
+              {/* Reverted to the shared "פתוחים כעת" label for both
+                  locations (2026-11-05, explicit user request — a same-day
+                  bar-only rename tried and then undone). The bar's own
+                  "today's active account" distinction is now made inside
+                  this tab instead, via the primary/pending block split
+                  below. */}
               {t('accountsSectionOpenNow')} ({openRows.length})
             </button>
             <button
@@ -955,16 +1142,41 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
             {mainTab === 'history' && (
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex gap-1">
-                  <button type="button" onClick={() => setPreset('today')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
-                    {t('accountsPeriodToday')}
-                  </button>
-                  <button type="button" onClick={() => setPreset('week')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
+                  {/* "היום" dropped (2026-11-05, explicit user request) —
+                      "month" (below) is now the default on opening the
+                      history tab, so these three presets are the only ones
+                      offered. The matching preset is visibly marked as
+                      selected (2026-11-05, explicit user request) — same
+                      selected/unselected pill treatment as the location
+                      tabs above (border-accent bg-accent text-white vs.
+                      border-border bg-white text-ink), so "month" reads as
+                      clearly chosen the moment the tab opens, not just two
+                      quietly-filled date inputs. */}
+                  <button
+                    type="button"
+                    onClick={() => setPreset('week')}
+                    className={`rounded border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      activePreset === 'week' ? 'border-accent bg-accent text-white' : 'border-border text-ink hover:bg-surface-2'
+                    }`}
+                  >
                     {t('accountsPeriodWeek')}
                   </button>
-                  <button type="button" onClick={() => setPreset('month')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreset('month')}
+                    className={`rounded border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      activePreset === 'month' ? 'border-accent bg-accent text-white' : 'border-border text-ink hover:bg-surface-2'
+                    }`}
+                  >
                     {t('accountsPeriodMonth')}
                   </button>
-                  <button type="button" onClick={() => setPreset('lastMonth')} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-surface-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreset('lastMonth')}
+                    className={`rounded border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      activePreset === 'lastMonth' ? 'border-accent bg-accent text-white' : 'border-border text-ink hover:bg-surface-2'
+                    }`}
+                  >
                     {t('accountsPeriodLastMonth')}
                   </button>
                 </div>
@@ -1009,43 +1221,71 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
                 the label (which has no row-1 content) centers inside that
                 same row-2 height, landing on the selects' own vertical
                 center exactly like "חיפוש לפי:" does for its input. */}
+            {/* Table filter dropped entirely on the bar tab (2026-11-05,
+                explicit user request) — there's no per-table concept to
+                filter by there, just the one shared bar "table". History
+                keeps its payment-method filter (still relevant to the
+                bar), now alone in a 2-column grid instead of 3; "פתוחים
+                כעת" had nothing else in this block to begin with, so for
+                bar it renders nothing here at all rather than an empty
+                "סינון לפי:" with no actual filter under it. */}
             {mainTab === 'history' ? (
-              <div className="grid grid-cols-[auto_auto_auto] items-center gap-x-3 gap-y-0.5">
-                <div aria-hidden="true" />
-                <span className="text-xs text-muted-foreground">{t('accountsFilterTableLabel')}</span>
-                <span className="text-xs text-muted-foreground">{t('accountsFilterPaymentMethodLabel')}</span>
+              locationTab === 'bar' ? (
+                <div className="grid grid-cols-[auto_auto] items-center gap-x-3 gap-y-0.5">
+                  <div aria-hidden="true" />
+                  <span className="text-xs text-muted-foreground">{t('accountsFilterPaymentMethodLabel')}</span>
 
-                <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterGenericLabel')}</span>
-                <select value={tableFilter} onChange={(e) => setTableFilter(e.target.value)} className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink">
-                  <option value="">{t('accountsFilterTableAll')}</option>
-                  {tables.map((table) => (
-                    <option key={table.id} value={table.table_number}>
-                      {table.table_number}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={paymentMethodFilter}
-                  onChange={(e) => setPaymentMethodFilter(e.target.value as 'all' | 'credit' | 'cash')}
-                  className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink"
-                >
-                  <option value="all">{t('accountsFilterPaymentMethodAll')}</option>
-                  <option value="credit">{t('accountsPaymentMethodCreditCard')}</option>
-                  <option value="cash">{t('accountsPaymentMethodCash')}</option>
-                </select>
-              </div>
+                  <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterGenericLabel')}</span>
+                  <select
+                    value={paymentMethodFilter}
+                    onChange={(e) => setPaymentMethodFilter(e.target.value as 'all' | 'credit' | 'cash')}
+                    className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink"
+                  >
+                    <option value="all">{t('accountsFilterPaymentMethodAll')}</option>
+                    <option value="credit">{t('accountsPaymentMethodCreditCard')}</option>
+                    <option value="cash">{t('accountsPaymentMethodCash')}</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="grid grid-cols-[auto_auto_auto] items-center gap-x-3 gap-y-0.5">
+                  <div aria-hidden="true" />
+                  <span className="text-xs text-muted-foreground">{t('accountsFilterTableLabel')}</span>
+                  <span className="text-xs text-muted-foreground">{t('accountsFilterPaymentMethodLabel')}</span>
+
+                  <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterGenericLabel')}</span>
+                  <select value={tableFilter} onChange={(e) => setTableFilter(e.target.value)} className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink">
+                    <option value="">{t('accountsFilterTableAll')}</option>
+                    {tables.map((table) => (
+                      <option key={table.id} value={table.table_number}>
+                        {table.table_number}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={paymentMethodFilter}
+                    onChange={(e) => setPaymentMethodFilter(e.target.value as 'all' | 'credit' | 'cash')}
+                    className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink"
+                  >
+                    <option value="all">{t('accountsFilterPaymentMethodAll')}</option>
+                    <option value="credit">{t('accountsPaymentMethodCreditCard')}</option>
+                    <option value="cash">{t('accountsPaymentMethodCash')}</option>
+                  </select>
+                </div>
+              )
             ) : (
-              <div className="flex items-center gap-2">
-                <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterGenericLabel')}</span>
-                <select value={tableFilter} onChange={(e) => setTableFilter(e.target.value)} className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink">
-                  <option value="">{t('accountsFilterTableAll')}</option>
-                  {tables.map((table) => (
-                    <option key={table.id} value={table.table_number}>
-                      {table.table_number}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              locationTab === 'tables' && (
+                <div className="flex items-center gap-2">
+                  <span className="whitespace-nowrap text-sm font-bold text-ink">{t('accountsFilterGenericLabel')}</span>
+                  <select value={tableFilter} onChange={(e) => setTableFilter(e.target.value)} className="w-40 rounded border border-border py-1.5 ps-2 pe-6 text-sm text-ink">
+                    <option value="">{t('accountsFilterTableAll')}</option>
+                    {tables.map((table) => (
+                      <option key={table.id} value={table.table_number}>
+                        {table.table_number}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )
             )}
             </div>
           </div>
@@ -1055,6 +1295,11 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
               <thead>
                 <tr className="border-b border-border bg-[#002D86]">
                   <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnAccountId')}</th>
+                  {/* History-tab only — matches AccountSummaryRows's own
+                      conditional cell (see its comment there). Positioned
+                      right after the account id (2026-11-05, explicit user
+                      request — was after the table column). */}
+                  {mainTab === 'history' && <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnAccountDate')}</th>}
                   <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnTable')}</th>
                   <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnItems')}</th>
                   <th className="px-3 py-2 text-start text-sm font-bold text-white">{t('accountsColumnQuantity')}</th>
@@ -1076,24 +1321,58 @@ export function AccountsScreen({ session, restaurantId, tables }: Props) {
                         {t('accountsNoOpenAccounts')}
                       </td>
                     </tr>
+                  ) : locationTab === 'bar' ? (
+                    // Two blocks (2026-11-05, explicit user request): the
+                    // single current general account for today, in its own
+                    // primary block up top, then every other still-open
+                    // (closed-but-unsettled) account below it for the
+                    // restaurant to review — see openPrimaryRows/
+                    // openPendingRows's own comment. Either block is
+                    // omitted entirely when empty, not shown with a
+                    // "nothing here" placeholder — openRows.length === 0
+                    // above already covers the true empty state.
+                    <>
+                      {openPrimaryRows.length > 0 && (
+                        <>
+                          <tr>
+                            <td colSpan={MASTER_COL_COUNT} className="bg-accent-soft px-3 py-1.5 text-xs font-bold text-accent">
+                              {t('accountsSectionActiveToday')}
+                            </td>
+                          </tr>
+                          {openPrimaryRows.map((row) => renderRowGroup(row))}
+                        </>
+                      )}
+                      {openPendingRows.length > 0 && (
+                        <>
+                          <tr>
+                            <td colSpan={MASTER_COL_COUNT} className="bg-surface-2 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                              {t('accountsBarPendingSectionLabel')}
+                            </td>
+                          </tr>
+                          {openPendingRows.map((row) => renderRowGroup(row))}
+                        </>
+                      )}
+                    </>
                   ) : (
-                    openRows.map(renderRowGroup)
+                    openRows.map((row) => renderRowGroup(row))
                   )
                 ) : (
                   <>
                     <tr>
-                      <td colSpan={MASTER_COL_COUNT} className="bg-surface-2 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                      {/* +1 (2026-11-05): the history-only date/hours column
+                          AccountSummaryRows adds — see its own comment. */}
+                      <td colSpan={MASTER_COL_COUNT + 1} className="bg-surface-2 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
                         {periodLabel}
                       </td>
                     </tr>
                     {historyRows.length === 0 ? (
                       <tr>
-                        <td colSpan={MASTER_COL_COUNT} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                        <td colSpan={MASTER_COL_COUNT + 1} className="px-3 py-6 text-center text-sm text-muted-foreground">
                           {t('accountsNoHistoryInPeriod')}
                         </td>
                       </tr>
                     ) : (
-                      historyRows.map(renderRowGroup)
+                      historyRows.map((row) => renderRowGroup(row, true))
                     )}
                   </>
                 )}

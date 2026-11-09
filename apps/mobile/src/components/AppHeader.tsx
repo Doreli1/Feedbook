@@ -7,6 +7,7 @@ import type { Lang } from '../lib/translations';
 import { useSession } from '../lib/useSession';
 import { useNotifications } from '../lib/useNotifications';
 import { useOpenSessionReminder } from '../lib/useOpenSessionReminder';
+import { usePaymentNotifications } from '../lib/usePaymentNotifications';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
@@ -290,12 +291,18 @@ export function HeaderMenu({ icon = 'ellipsis-vertical' }: { icon?: 'ellipsis-ve
 // comment on that split). Self-contained like HeaderBellIcon, now with a
 // real first message: the open-visit reminder (2026-10-16, user request) —
 // see useOpenSessionReminder.ts for why this needs its own security
-// definer RPC rather than a plain client query.
+// definer RPC rather than a plain client query. Extended 2026-11-08 (real
+// feature) with real "payment completed" messages — see
+// usePaymentNotifications.ts and confirm-cash-payment/index.ts — the first
+// messages this icon shows that AREN'T the single open-session reminder,
+// so the panel below is now a real merged list, not one fixed slot.
 export function HeaderMailIcon() {
   const router = useRouter();
   const { t, isRTL } = useI18n();
   const { session } = useSession();
-  const { reminder, loading } = useOpenSessionReminder(session?.user.id);
+  const { reminder, loading: reminderLoading } = useOpenSessionReminder(session?.user.id);
+  const { notifications: paymentNotifications, unreadCount: paymentUnreadCount, markRead: markPaymentRead, loading: paymentLoading } = usePaymentNotifications(session?.user.id);
+  const loading = reminderLoading || paymentLoading;
   const currentSessionId = useTableSessionStore((s) => s.sessionId);
   const setTableSession = useTableSessionStore((s) => s.setTableSession);
   const [open, setOpen] = useState(false);
@@ -352,7 +359,7 @@ export function HeaderMailIcon() {
               I18nManager.isRTL flag as RN's own `end` does (see i18n.tsx's
               physicalReadingEnd comment), not the actual language.
               Computed explicitly instead. */}
-          {hasPendingReminder && (
+          {(hasPendingReminder || paymentUnreadCount > 0) && (
             <View
               className="absolute -top-0.5 h-2 w-2 rounded-full"
               style={{ [physicalReadingEnd(isRTL)]: -2, backgroundColor: colors.danger }}
@@ -363,7 +370,7 @@ export function HeaderMailIcon() {
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)}>
-          <BubblePanel anchor={anchor}>
+          <BubblePanel anchor={anchor} maxHeight={384}>
             <Pressable onPress={(e) => e.stopPropagation()}>
               {/* Real bug (2026-10-28): plain full-width/flex-1 Texts below,
                   same textAlign:'auto' issue found across the rest of the
@@ -377,28 +384,63 @@ export function HeaderMailIcon() {
                 <View className="items-center py-8">
                   <ActivityIndicator color={colors.royalBlue} />
                 </View>
-              ) : hasPendingReminder && reminder ? (
-                // Same row shape as HeaderBellIcon's notification list (dot +
-                // body text), per explicit request — this "inbox" only ever
-                // holds at most this one item today, but it should still
-                // read as one row in a list, not a one-off card+button.
-                <Pressable onPress={handleReturn} className="items-start px-4 py-3" style={{ flexDirection: visualRowDirection(isRTL), gap: 8 }}>
-                  <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />
-                  <Text className="flex-1 text-sm leading-5 text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
-                    {t('openSessionReminderPrefix')}
-                    <Text style={{ fontWeight: '700' }}>{reminder.restaurantName}</Text>
-                    {t('openSessionReminderMiddle')}
-                    <Text style={{ fontWeight: '700' }}>{reminder.tableNumber}</Text>
-                    {t('openSessionReminderSuffix')}
-                    <Text style={{ color: colors.skyLink, textDecorationLine: 'underline' }} onPress={handleReturn}>
-                      {t('returnToSessionLink')}
-                    </Text>
-                  </Text>
-                </Pressable>
-              ) : (
+              ) : !hasPendingReminder && paymentNotifications.length === 0 ? (
                 <Text className="px-4 py-6 text-sm text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
                   {t('mailEmpty')}
                 </Text>
+              ) : (
+                // Real merged list (2026-11-08) — used to be one fixed slot
+                // for the reminder alone. Same row shape as HeaderBellIcon's
+                // own notification list (dot + title/body text) for every
+                // row, reminder included, so this reads as one consistent
+                // inbox, not a special row plus an unrelated list below it.
+                <ScrollView style={{ maxHeight: 340 }} nestedScrollEnabled>
+                  {hasPendingReminder && reminder && (
+                    <Pressable
+                      onPress={handleReturn}
+                      className="items-start border-b px-4 py-3"
+                      style={{ flexDirection: visualRowDirection(isRTL), gap: 8, borderColor: colors.border }}
+                    >
+                      <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />
+                      <Text className="flex-1 text-sm leading-5 text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                        {t('openSessionReminderPrefix')}
+                        <Text style={{ fontWeight: '700' }}>{reminder.restaurantName}</Text>
+                        {t('openSessionReminderMiddle')}
+                        <Text style={{ fontWeight: '700' }}>{reminder.tableNumber}</Text>
+                        {t('openSessionReminderSuffix')}
+                        <Text style={{ color: colors.skyLink, textDecorationLine: 'underline' }} onPress={handleReturn}>
+                          {t('returnToSessionLink')}
+                        </Text>
+                      </Text>
+                    </Pressable>
+                  )}
+                  {paymentNotifications.map((n) => (
+                    <Pressable
+                      key={n.id}
+                      onPress={() => {
+                        if (n.readAt === null) void markPaymentRead(n.id);
+                      }}
+                      className="items-start border-b px-4 py-3"
+                      style={{ flexDirection: visualRowDirection(isRTL), gap: 8, borderColor: colors.border }}
+                    >
+                      {n.readAt === null && <View className="mt-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colors.royalBlue }} />}
+                      <View className="flex-1">
+                        <Text
+                          className="text-sm"
+                          style={{ fontWeight: n.readAt === null ? '700' : '400', color: '#1B2430', textAlign: physicalReadingStart(isRTL) }}
+                        >
+                          {n.title}
+                        </Text>
+                        <Text className="mt-0.5 text-xs leading-5 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                          {n.body}
+                        </Text>
+                        <Text className="mt-1 text-[10px] text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                          {new Date(n.sentAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               )}
             </Pressable>
           </BubblePanel>

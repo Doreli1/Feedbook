@@ -121,11 +121,24 @@ function ApprovedDashboard({
 }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<DashboardTab>('overview');
+  // Scroll back to the top of the page on every tab switch (2026-11-05,
+  // explicit user request, app-wide — not just one module). Every tab below
+  // is a plain conditional render inside the same <main>, not a real page
+  // navigation, so the browser has no reason of its own to reset scroll
+  // position when switching between them — whatever scrollTop the PREVIOUS
+  // tab was left at (e.g. scrolled deep into an expanded accordion row)
+  // simply carries over into the next tab's content, landing the user
+  // mid-page instead of at its top. window.scrollTo, not a scroll
+  // container's own ref — see DashboardShell.tsx's <main>, which has no
+  // overflow of its own; the whole page itself is what scrolls here.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [tab]);
   const { categories, dishes, dishIngredients, dishSizeOptions, refresh: refreshMenu } = useMenu(restaurant.id);
   const { ingredients, purchaseOrders, refresh: refreshInventory } = useInventory(restaurant.id);
   const { totalMonthlyOverhead, dishesSoldInWindow } = useOverheadExpenses(restaurant.id);
   const { items: orderItems, refresh: refreshOrders } = useOrders(restaurant.id);
-  const { calls: waiterCalls, refresh: refreshWaiterCalls, resolve: resolveWaiterCall } = useWaiterCalls(restaurant.id);
+  const { calls: waiterCalls, refresh: refreshWaiterCalls, resolve: resolveWaiterCall, confirmCashPayment } = useWaiterCalls(restaurant.id);
   const { staff, refresh: refreshStaff } = useStaff(restaurant.id);
   const { tables, refresh: refreshTables } = useTables(restaurant.id);
   const { notifications: staffNotifications, markRead: markNotificationRead } = useNotifications(restaurant.id, session.user.id);
@@ -392,7 +405,7 @@ function ApprovedDashboard({
           could drift out of sync with it. */}
       {tab === 'bar' && <BarOrdersScreen restaurantId={restaurant.id} items={orderItems} onRefreshOrders={refreshOrders} />}
 
-      {tab === 'service' && <ServiceScreen calls={waiterCalls} onResolve={resolveWaiterCall} />}
+      {tab === 'service' && <ServiceScreen calls={waiterCalls} onResolve={resolveWaiterCall} onConfirmCashPayment={confirmCashPayment} />}
 
       {tab === 'reviews' && <ReviewsScreen />}
 

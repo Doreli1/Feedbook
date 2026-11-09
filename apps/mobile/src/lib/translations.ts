@@ -419,8 +419,62 @@ const translations = {
     // Plain, unconditional line, no tooltip/bubble (2026-10-19, user
     // request, final form after several earlier iterations).
     endVisitFreeTooltip: 'אתם יכולים לסיים את הביקור מתי שנוח לכם.',
-    requestBillComingSoonTitle: 'בקרוב',
-    requestBillComingSoonMessage: 'בקשת חשבון וסגירת תשלום יהיו זמינות כאן בקרוב.',
+    // Bill summary screen (2026-11-08, temporary stand-in for Stage 6's
+    // real payment flow — see bill-summary.tsx's own top comment): shown
+    // when "סגרו חשבון" is tapped with a real balance outstanding, replacing
+    // the earlier plain "coming soon" modal with a real pre-payment review
+    // screen, per the real mockup supplied for it.
+    billSummaryAccountLabel: 'החשבון שלכם:',
+    billSummaryTableNumberLabel: 'שולחן מספר:',
+    billSummaryGuestNameLabel: 'שם האורח:',
+    billSummaryAddFriendCaption: 'הוסיפו חבר לחשבון',
+    billSummaryDinerLineLabel: 'סועד {n}',
+    billSummaryTotalLabel: 'מחיר',
+    billSummarySplitEquallyButton: 'חלקו את התשלום שווה',
+    billSummarySplitComingSoonTitle: 'בקרוב',
+    billSummarySplitComingSoonMessage: 'חלוקת התשלום בין משתתפי החשבון תהיה זמינה כאן בקרוב.',
+    // Tip card (2026-11-08, replaces the earlier flat "service fee" line —
+    // real user correction: this app pools tips rather than charging a
+    // mandatory service fee, see project_payments_and_cancellation_rules).
+    // Renamed from the bare "טיפ" the same day, per explicit request for
+    // wording that fits the app's own tone — "tip" pooled for the whole
+    // team, not a per-server gratuity, so "team appreciation" rather than
+    // "tip". billSummaryTipQuestion is the encouraging microcopy shown next
+    // to the on/off toggle itself, not just a card title.
+    billSummaryTipTitle: 'הערכה לצוות',
+    billSummaryTipQuestion: 'רוצים להביע הערכה לצוות הערב?',
+    billSummaryTipCustomAmountChip: 'סכום אחר',
+    billSummaryTipCustomAmountPlaceholder: 'הזינו סכום',
+    // 2026-11-09 — explains why the chips above vary per restaurant (see
+    // minimumTipPercent in bill-summary.tsx).
+    billSummaryTipPolicyNote: 'טווח אחוזי הטיפ המוצע נקבע בהתאם למדיניות המסעדה, ומשתנה בין מסעדה למסעדה.',
+    // Shown directly under the price breakdown's total line (2026-11-08).
+    billSummaryVatNote: 'המחיר כולל מע"מ',
+    billSummaryPaymentPreferenceTitle: 'העדפה לתשלום',
+    // Dummy, fixed card (2026-11-08) — there is no real stored-payment-method
+    // feature yet (Stage 6); this whole screen is an explicit, temporary
+    // stand-in for a real payment flow, not a real card on file.
+    billSummaryCardLabel: 'מאסטרקארד •••• 5555',
+    billSummaryCashOption: 'מזומן',
+    // Permanently visible, green (2026-11-08, explicit correction — this
+    // used to show only once "מזומן" was already selected; now it's a
+    // standing, always-visible notice right under the option itself, not a
+    // conditional confirmation).
+    billSummaryCashNote: 'באפשרות זו, מלצר יגש אליכם',
+    // The actual waiter-call subject line (2026-11-08) sent as
+    // call-waiter's own `reason` field the moment "מזומן" is selected — see
+    // bill-summary.tsx's own comment on why this fires on selection, not on
+    // the final "בצעו תשלום" tap.
+    billSummaryCashReasonSubject: 'בקשה לתשלום במזומן',
+    billSummarySmsReceiptLabel: 'קבלת חשבונית תישלח בהודעת SMS',
+    billSummaryPayButton: 'בצעו תשלום',
+    // 2026-11-09, real bug found live — dedicated message for the payment-
+    // confirmation modal, which used to reuse endVisitDoneMessage ("הביקור
+    // שלכם הסתיים") — the wrong copy, borrowed from the unrelated "end
+    // visit without ordering" flow.
+    billSummaryPaymentDoneMessage: 'התשלום בוצע בהצלחה וחשבונכם נסגר. נשמח לראותכם בפעם הבאה.',
+    billSummaryCloseFailedTitle: 'לא הצלחנו לסגור את החשבון',
+    billSummaryCloseFailedMessage: 'משהו השתבש בסגירת החשבון. נסו שוב בעוד רגע.',
     // "End visit without an order" flow (2026-10-19, user request):
     // confirm → pick a reason (+ "אחר" free text) → personalized success.
     endVisitConfirmTitle: 'סיום ביקור',
@@ -803,8 +857,31 @@ const translations = {
     requestBillButton: 'Close the bill',
     endVisitButton: 'End visit',
     endVisitFreeTooltip: 'You can end your visit whenever it suits you.',
-    requestBillComingSoonTitle: 'Coming soon',
-    requestBillComingSoonMessage: 'Requesting the bill and closing payment will be available here soon.',
+    billSummaryAccountLabel: 'Your account:',
+    billSummaryTableNumberLabel: 'Table number:',
+    billSummaryGuestNameLabel: 'Guest name:',
+    billSummaryAddFriendCaption: 'Add a friend to the account',
+    billSummaryDinerLineLabel: 'Diner {n}',
+    billSummaryTotalLabel: 'Total',
+    billSummarySplitEquallyButton: 'Split the payment equally',
+    billSummarySplitComingSoonTitle: 'Coming soon',
+    billSummarySplitComingSoonMessage: 'Splitting the payment between account members will be available here soon.',
+    billSummaryTipTitle: 'Team appreciation',
+    billSummaryTipQuestion: 'Want to show the team some appreciation tonight?',
+    billSummaryTipCustomAmountChip: 'Other amount',
+    billSummaryTipCustomAmountPlaceholder: 'Enter an amount',
+    billSummaryTipPolicyNote: "The suggested tip range is set by the restaurant's own policy, and varies between restaurants.",
+    billSummaryVatNote: 'Price includes VAT',
+    billSummaryPaymentPreferenceTitle: 'Payment preference',
+    billSummaryCardLabel: 'Mastercard •••• 5555',
+    billSummaryCashOption: 'Cash',
+    billSummaryCashNote: 'With this option, a waiter will come to you',
+    billSummaryCashReasonSubject: 'Request to pay by cash',
+    billSummarySmsReceiptLabel: 'Receive the receipt by SMS',
+    billSummaryPayButton: 'Make payment',
+    billSummaryPaymentDoneMessage: 'Your payment went through and the account is closed. We hope to see you again soon.',
+    billSummaryCloseFailedTitle: "We couldn't close the account",
+    billSummaryCloseFailedMessage: 'Something went wrong closing the account. Please try again in a moment.',
     endVisitConfirmTitle: 'End visit',
     endVisitConfirmMessage: 'This will end your visit to the restaurant. You can keep ordering any time until you do.',
     endVisitConfirmContinueButton: 'Continue',

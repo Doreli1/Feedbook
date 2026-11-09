@@ -7,6 +7,9 @@ import type { TranslationKey } from '../lib/translations';
 interface Props {
   calls: KitchenWaiterCall[];
   onResolve: (id: string) => Promise<void>;
+  // 2026-11-08, real feature — see useWaiterCalls.ts's own comment on
+  // KitchenWaiterCall.callType/confirmCashPayment.
+  onConfirmCashPayment: (id: string) => Promise<void>;
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
@@ -54,8 +57,17 @@ function StatusIcon({ status }: { status: WaiterCallStatus }) {
   );
 }
 
-function CallCard({ call, onResolve }: { call: KitchenWaiterCall; onResolve: (id: string) => void }) {
+function CallCard({
+  call,
+  onResolve,
+  onConfirmCashPayment,
+}: {
+  call: KitchenWaiterCall;
+  onResolve: (id: string) => void;
+  onConfirmCashPayment: (id: string) => void;
+}) {
   const { t } = useI18n();
+  const isCashPayment = call.callType === 'cash_payment';
   return (
     <div
       className={`flex items-center gap-4 rounded border-l-4 bg-surface-2 px-4 py-3 ${borderClasses(call.status)} ${call.status === 'resolved' ? 'opacity-60' : ''}`}
@@ -67,21 +79,36 @@ function CallCard({ call, onResolve }: { call: KitchenWaiterCall; onResolve: (id
             {t('kitchenTableLabel')} {call.tableNumber}
           </span>
           <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${statusPillClasses(call.status)}`}>{t(statusLabelKey(call.status))}</span>
+          {/* 2026-11-08, real feature — distinguishes a diner's "מזומן"
+              selection (bill-summary.tsx) from an ordinary service call, so
+              a waiter knows to confirm the payment, not just resolve it. */}
+          {isCashPayment && (
+            <span className="rounded-full bg-warning-soft px-2.5 py-0.5 text-xs font-bold text-warning">{t('serviceCallTypeCashPayment')}</span>
+          )}
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground">
           {formatElapsed(call.createdAt, t)}
           {call.reason ? ` · ${call.reason}` : ''}
         </div>
       </div>
-      {call.status === 'open' && (
-        <button
-          type="button"
-          onClick={() => onResolve(call.id)}
-          className="shrink-0 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
-        >
-          {t('serviceCallResolveAction')}
-        </button>
-      )}
+      {call.status === 'open' &&
+        (isCashPayment ? (
+          <button
+            type="button"
+            onClick={() => onConfirmCashPayment(call.id)}
+            className="shrink-0 rounded bg-warning px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+          >
+            {t('serviceConfirmCashPaymentAction')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onResolve(call.id)}
+            className="shrink-0 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+          >
+            {t('serviceCallResolveAction')}
+          </button>
+        ))}
     </div>
   );
 }
@@ -113,7 +140,7 @@ function todayDateKey(): string {
 // non_conformances table exists in the schema but nothing anywhere creates a
 // row in it yet — building real management for it is a separate, unscoped
 // feature, not part of this request.
-export function ServiceScreen({ calls, onResolve }: Props) {
+export function ServiceScreen({ calls, onResolve, onConfirmCashPayment }: Props) {
   const { t } = useI18n();
   const [subTab, setSubTab] = useState<'calls' | 'nc'>('calls');
   // resolve-waiter-call can 403 for a non-waiter staff member (role='waiter'
@@ -157,6 +184,15 @@ export function ServiceScreen({ calls, onResolve }: Props) {
       await onResolve(id);
     } catch (err) {
       setResolveError(t('serviceCallResolveForbidden'));
+    }
+  }
+
+  async function handleConfirmCashPayment(id: string) {
+    setResolveError(null);
+    try {
+      await onConfirmCashPayment(id);
+    } catch (err) {
+      setResolveError(t('serviceConfirmCashPaymentFailed'));
     }
   }
 
@@ -212,7 +248,7 @@ export function ServiceScreen({ calls, onResolve }: Props) {
             ) : (
               <div className="space-y-2">
                 {openCalls.map((call) => (
-                  <CallCard key={call.id} call={call} onResolve={handleResolve} />
+                  <CallCard key={call.id} call={call} onResolve={handleResolve} onConfirmCashPayment={handleConfirmCashPayment} />
                 ))}
               </div>
             )}
@@ -256,7 +292,7 @@ export function ServiceScreen({ calls, onResolve }: Props) {
               <>
                 <div className="space-y-2">
                   {pagedHistory.map((call) => (
-                    <CallCard key={call.id} call={call} onResolve={handleResolve} />
+                    <CallCard key={call.id} call={call} onResolve={handleResolve} onConfirmCashPayment={handleConfirmCashPayment} />
                   ))}
                 </div>
                 {pageCount > 1 && (

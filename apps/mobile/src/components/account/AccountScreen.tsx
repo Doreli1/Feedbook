@@ -37,7 +37,10 @@ function formatAmount(amount: number): string {
 // reconsideration) — a star pill with a white ring, the same "badge
 // pinned to an avatar's corner" pattern used for online/unread indicators
 // elsewhere.
-function ParticipantAvatar({ participant }: { participant: SessionParticipant }) {
+// Exported (2026-11-08) — reused as-is by bill-summary.tsx's own "הוסיפו
+// חבר לחשבון" teaser, so the two screens' avatars (host badge included) can
+// never drift apart from each other.
+export function ParticipantAvatar({ participant }: { participant: SessionParticipant }) {
   const initial = participant.displayName.trim().charAt(0).toUpperCase() || '?';
   return (
     <View className="items-center" style={{ width: 56 }}>
@@ -76,7 +79,11 @@ function ParticipantAvatar({ participant }: { participant: SessionParticipant })
   );
 }
 
-function ParticipantsRow({ participants }: { participants: SessionParticipant[] }) {
+// Exported (2026-11-08) — reused as-is by bill-summary.tsx (same avatar
+// carousel, same right-to-left anchoring and ordering), per explicit user
+// correction: that screen's own version used to center the avatars as one
+// block instead of matching this row's actual alignment.
+export function ParticipantsRow({ participants }: { participants: SessionParticipant[] }) {
   const { isRTL } = useI18n();
   const rowDirection = visualRowDirection(isRTL);
   const router = useRouter();
@@ -213,7 +220,10 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
   );
 }
 
-function StripCell({ label, value, icon }: { label: string; value: string; icon?: keyof typeof Ionicons.glyphMap }) {
+// Exported (2026-11-08) — reused as-is by bill-summary.tsx's own account/
+// table/guest-name card, per explicit request to style it "like it's styled
+// in ניהול חשבון" rather than approximate it with a different layout.
+export function StripCell({ label, value, icon }: { label: string; value: string; icon?: keyof typeof Ionicons.glyphMap }) {
   const { isRTL } = useI18n();
   return (
     <View className="flex-1 items-center py-3">
@@ -246,7 +256,6 @@ export function AccountScreen() {
   // always start on — and stay locked to — the personal view.
   const [subTab, setSubTab] = useState<AccountSubTab>(isBarTable ? 'personal' : 'general');
   const [infoOpen, setInfoOpen] = useState(false);
-  const [billComingSoonOpen, setBillComingSoonOpen] = useState(false);
   const tableNumber = useTableSessionStore((s) => s.tableNumber);
   const sessionAccountNumber = useTableSessionStore((s) => s.sessionAccountNumber);
   const subAccountNumber = useTableSessionStore((s) => s.subAccountNumber);
@@ -431,7 +440,11 @@ export function AccountScreen() {
             an explicit shared height is what makes them line up) — matches
             CartBarInlineTrigger/placeOrderButton (MenuBrowser.tsx) exactly. */}
         <Pressable
-          onPress={() => (hasNothingToPay ? setEndVisitConfirmOpen(true) : setBillComingSoonOpen(true))}
+          // Temporary stand-in for Stage 6's real payment flow (2026-11-08,
+          // explicit user request): pushes the real bill-summary screen —
+          // see that screen's own top comment — instead of a plain "coming
+          // soon" modal, which used to render here unconditionally.
+          onPress={() => (hasNothingToPay ? setEndVisitConfirmOpen(true) : router.push('/bill-summary'))}
           className="items-center justify-center rounded-xl"
           style={{ backgroundColor: colors.royalBlue, minHeight: 48 }}
         >
@@ -504,18 +517,6 @@ export function AccountScreen() {
               </View>
             ))}
             <Pressable onPress={() => setInfoOpen(false)} className="mt-5 items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
-              <Text className="font-semibold text-white">{t('closeModal')}</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={billComingSoonOpen} transparent animationType="fade" onRequestClose={() => setBillComingSoonOpen(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <Text className="mb-2 text-lg font-bold text-[#1B2430]">{t('requestBillComingSoonTitle')}</Text>
-            <Text className="mb-5 text-sm leading-5 text-[#6E6A61]">{t('requestBillComingSoonMessage')}</Text>
-            <Pressable onPress={() => setBillComingSoonOpen(false)} className="items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
               <Text className="font-semibold text-white">{t('closeModal')}</Text>
             </Pressable>
           </View>
