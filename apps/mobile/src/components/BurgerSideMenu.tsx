@@ -146,22 +146,48 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
 
   return (
     <Modal visible={modalVisible} transparent animationType="none" onRequestClose={() => setOpen(false)}>
-      <Pressable style={{ flex: 1 }} onPress={() => setOpen(false)}>
-        {/* Backdrop and panel both start at topOffset, not 0 — the header
-            and תפריטים/הזמנות/ניהול חשבון strip above stay fully visible and
-            undimmed, matching the mockup. */}
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: topOffset,
-            bottom: 0,
-            left: 0,
-            right: 0,
-            backgroundColor: '#000000',
-            opacity: Animated.multiply(backdropOpacity, 0.4),
-          }}
-        />
+      {/* Real bug (2026-11-15, user report, second report on this file):
+          scrolling inside the panel got "stuck" at the top/bottom overscroll
+          bounce — a known React Native issue when a ScrollView sits nested
+          inside a Pressable ancestor (here, two of them: this whole-screen
+          close-on-tap Pressable was the PARENT of the panel, which needed
+          its own inner stopPropagation Pressable just to not close on tap).
+          Three touch-responder claimants (outer Pressable, inner Pressable,
+          ScrollView) negotiating the same gesture is exactly the kind of
+          nesting that goes wrong right at a scroll boundary. Restructured
+          so the tap-to-close Pressable and the panel are SIBLINGS, not
+          ancestor/descendant: the panel (rendered after, so it paints on
+          top) now captures its own touches directly via RN's normal
+          topmost-view hit-testing — a touch that lands on the panel never
+          reaches the Pressable at all, so no stopPropagation hack is
+          needed, and the ScrollView has only the Animated.View panel as an
+          ancestor, not a Touchable.
+          Second real bug, found right after (2026-11-15, user report: the
+          header's own close/back button stopped responding): the fix above
+          first shrank this Pressable to only `top: topOffset` down, to
+          match the dimmed backdrop's own visible bounds — but a Modal's
+          native window still captures every touch across the FULL screen
+          regardless of what the JS content underneath does with it, header
+          included (Android's Dialog window in particular swallows touches
+          in its own bounds at the native level even where nothing in JS
+          claims them). That turned the area above topOffset, where the
+          header's back button actually sits, into a dead zone — taps there
+          now hit this modal's native window and stop, never reaching the
+          real button underneath. This Pressable is full-screen again (style
+          below), same as it always was; only the dimmed *visual* stays
+          confined to topOffset down, as its own pointerEvents="none" child. */}
+      <View style={{ flex: 1 }}>
+        <Pressable onPress={() => setOpen(false)} style={{ flex: 1 }}>
+          {/* Backdrop dim stays confined to topOffset down — the header and
+              תפריטים/הזמנות/ניהול חשבון strip above stay visually undimmed,
+              matching the mockup, even though the Pressable above it is
+              full-screen (it's invisible/pointerEvents=none, so this is a
+              purely visual distinction from the tappable area). */}
+          <Animated.View
+            pointerEvents="none"
+            style={{ position: 'absolute', top: topOffset, bottom: 0, left: 0, right: 0, backgroundColor: '#000000', opacity: Animated.multiply(backdropOpacity, 0.4) }}
+          />
+        </Pressable>
         <Animated.View
           className="absolute bottom-0 w-[82%] max-w-sm"
           style={{
@@ -171,8 +197,12 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
             transform: [{ translateX }],
           }}
         >
-          <Pressable style={{ flex: 1 }} onPress={(e) => e.stopPropagation()}>
-            <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+          {/* Overscroll bounce/stretch disabled (2026-11-15, explicit
+              request) — bounces is iOS's own rubber-band effect,
+              overScrollMode is Android's equivalent (the "stretch" glow
+              introduced in Android 12+); off on both so dragging past
+              either end just stops at the edge instead of stretching. */}
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} bounces={false} overScrollMode="never">
               <View className="items-center gap-4 px-5 py-5" style={{ flexDirection: visualRowDirection(isRTL) }}>
                 <View className="h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: colors.royalBlue }}>
                   <Text className="text-xl font-bold text-white">{initial}</Text>
@@ -267,9 +297,8 @@ export function BurgerSideMenuPanel({ topOffset }: { topOffset: number }) {
                 </Pressable>
               )}
             </ScrollView>
-          </Pressable>
         </Animated.View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import type { KitchenItemStatus, KitchenOrderItem } from '../lib/useOrders';
 import { useOrderHistory } from '../lib/useOrderHistory';
+import type { StaffNotification } from '../lib/useNotifications';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { BarTicketLabelModal } from '../components/BarTicketLabelModal';
@@ -21,6 +22,38 @@ interface Props {
   // requested 2026-09-19 right after the notification feature itself.
   focusRequest: KitchenFocusRequest | null;
   onFocusHandled: () => void;
+  // Unread-badge source + resolver (2026-11-10, user report) — see
+  // markRelatedNotificationsRead below for why this screen needs both.
+  notifications: StaffNotification[];
+  markNotificationRead: (id: string) => Promise<void>;
+}
+
+// Real bug (2026-11-10, user report): the "הזמנות ומטבח" tab badge stayed
+// stuck on a stale count after the staff member had already handled every
+// item it was about — it only ever decremented when a notification was
+// clicked directly in the bell dropdown (Dashboard.tsx's own onClick),
+// never when the same order/item was instead handled right here in the
+// queue, which is the normal way staff work. Acting on an item here IS
+// "I've seen and dealt with this", so it now marks read any still-unread
+// notification about the same order (advanceStatus — a new-order
+// notification names the whole order, see place_order_transaction) or the
+// same order_item (recordCancellationDecision — a cancellation notification
+// always names the item directly, see notify_order_item_cancelled),
+// matching relatedOrderId/relatedOrderItemId exactly like Dashboard.tsx's
+// click handler already does. Shared here (not duplicated) since
+// BarOrdersScreen reuses the same advanceStatus/recordCancellationDecision
+// calls and needs the identical fix.
+export function markRelatedNotificationsRead(
+  notifications: StaffNotification[],
+  markNotificationRead: (id: string) => Promise<void>,
+  match: { orderId?: string; orderItemId?: string },
+) {
+  for (const n of notifications) {
+    if (n.readAt !== null) continue;
+    if ((match.orderItemId && n.relatedOrderItemId === match.orderItemId) || (match.orderId && n.relatedOrderId === match.orderId)) {
+      void markNotificationRead(n.id);
+    }
+  }
 }
 
 // Exported (2026-11-01) — reused verbatim by BarOrdersScreen.tsx so the two
@@ -150,7 +183,7 @@ export function belongsInKitchen(item: { barTicketNumber: number | null; section
   return item.barTicketNumber === null || item.section === 'food';
 }
 
-export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusRequest, onFocusHandled }: Props) {
+export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusRequest, onFocusHandled, notifications, markNotificationRead }: Props) {
   const { t } = useI18n();
   const [printItem, setPrintItem] = useState<KitchenOrderItem | null>(null);
   const [section, setSection] = useState<'active' | 'history'>('active');
@@ -212,14 +245,20 @@ export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusReque
                 </span>
                 <button
                   type="button"
-                  onClick={() => void recordCancellationDecision(item.id, true, onRefreshOrders)}
+                  onClick={() => {
+                    void recordCancellationDecision(item.id, true, onRefreshOrders);
+                    markRelatedNotificationsRead(notifications, markNotificationRead, { orderItemId: item.id });
+                  }}
                   className="shrink-0 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
                 >
                   {t('kitchenConfirmCancelRestock')}
                 </button>
                 <button
                   type="button"
-                  onClick={() => void recordCancellationDecision(item.id, false, onRefreshOrders)}
+                  onClick={() => {
+                    void recordCancellationDecision(item.id, false, onRefreshOrders);
+                    markRelatedNotificationsRead(notifications, markNotificationRead, { orderItemId: item.id });
+                  }}
                   className="shrink-0 rounded border border-danger px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger-soft"
                 >
                   {t('kitchenConfirmCancelNoRestock')}
@@ -324,7 +363,10 @@ export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusReque
                           {item.status === 'in_progress' ? (
                             <button
                               type="button"
-                              onClick={() => void advanceStatus(item.id, 'ready', onRefreshOrders)}
+                              onClick={() => {
+                                void advanceStatus(item.id, 'ready', onRefreshOrders);
+                                markRelatedNotificationsRead(notifications, markNotificationRead, { orderId: item.orderId });
+                              }}
                               className="shrink-0 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
                             >
                               {t('kitchenMarkReady')}
@@ -332,7 +374,10 @@ export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusReque
                           ) : (
                             <button
                               type="button"
-                              onClick={() => void advanceStatus(item.id, 'served', onRefreshOrders)}
+                              onClick={() => {
+                                void advanceStatus(item.id, 'served', onRefreshOrders);
+                                markRelatedNotificationsRead(notifications, markNotificationRead, { orderId: item.orderId });
+                              }}
                               className="shrink-0 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
                             >
                               {t('kitchenMarkServed')}
@@ -347,7 +392,12 @@ export function KitchenScreen({ restaurantId, items, onRefreshOrders, focusReque
             </div>
           )
         ) : (
-          <OrderHistorySection restaurantId={restaurantId} highlightedItemId={highlightedItemId} />
+          <OrderHistorySection
+            restaurantId={restaurantId}
+            highlightedItemId={highlightedItemId}
+            notifications={notifications}
+            markNotificationRead={markNotificationRead}
+          />
         )}
       </div>
 
@@ -366,7 +416,17 @@ type SortKey = 'dateDesc' | 'dateAsc' | 'dishName';
 // status, date range) and sorting — plus, for a cancelled row, whether the
 // kitchen chose to restock or not (cancellation_restocked), since that was
 // exactly the "where is this documented?" gap the question surfaced.
-function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId: string; highlightedItemId: string | null }) {
+function OrderHistorySection({
+  restaurantId,
+  highlightedItemId,
+  notifications,
+  markNotificationRead,
+}: {
+  restaurantId: string;
+  highlightedItemId: string | null;
+  notifications: StaffNotification[];
+  markNotificationRead: (id: string) => Promise<void>;
+}) {
   const { t } = useI18n();
   const { loading, items } = useOrderHistory(restaurantId);
   const [dishNameFilter, setDishNameFilter] = useState('');
@@ -475,18 +535,48 @@ function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId
               </tr>
             </thead>
             <tbody>
-              {filteredAndSorted.map((item) => (
+              {filteredAndSorted.map((item) => {
+                // Real gap (2026-11-10, user report): a history row (a
+                // cancellation decided by someone else, or any item that
+                // simply moved on before this staff member looked) had no
+                // visual cue at all that it carried a still-unread
+                // notification — only the tab's own corner badge hinted at
+                // it, with nothing pointing at which row. Same match rule as
+                // markRelatedNotificationsRead above, and the same red dot
+                // the bell dropdown already uses for its own unread rows
+                // (`!n.read && ... bg-danger`, TopBar.tsx) — clicking the
+                // row marks every one of them read, exactly like clicking a
+                // notification there does, since a history row has no
+                // ready/served/restock action of its own to piggyback on.
+                const relatedUnread = notifications.filter(
+                  (n) => n.readAt === null && (n.relatedOrderItemId === item.id || n.relatedOrderId === item.orderId),
+                );
+                return (
                 <tr
                   key={item.id}
                   ref={(el) => {
                     if (el && item.id === highlightedItemId) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                   }}
-                  className={`border-b border-border transition-colors last:border-0 ${item.id === highlightedItemId ? 'bg-accent-soft' : 'hover:bg-surface-2'}`}
+                  onClick={relatedUnread.length > 0 ? () => relatedUnread.forEach((n) => void markNotificationRead(n.id)) : undefined}
+                  className={`border-b border-border transition-colors last:border-0 ${item.id === highlightedItemId ? 'bg-accent-soft' : 'hover:bg-surface-2'} ${relatedUnread.length > 0 ? 'cursor-pointer' : ''}`}
                 >
-                  <td className="px-2 py-2.5">
-                    <span className="inline-block shrink-0 whitespace-nowrap rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent">
+                  <td className="relative py-2.5 ps-4 pe-2">
+                    {/* Anchored to the td itself, not the inline pill
+                        (2026-11-10, user report: pushing it off the pill's
+                        own edge got it clipped by the table's horizontal-
+                        scroll container) — sits inside the td's own padding
+                        box instead, right at its physical right edge, so it
+                        can never be clipped; bumped from h-1.5 to h-2 (also
+                        reported as too small). Once the pill's own background
+                        was removed the text had no reserved gap of its own
+                        and ran straight into the dot — this td now carries
+                        that reserved gap itself (pe-4, same for every row
+                        whether a dot shows or not, so the column stays
+                        aligned), with the dot sitting inside it. */}
+                    <span className="inline-block whitespace-nowrap text-xs font-semibold text-accent">
                       {item.barTicketNumber !== null ? t('kitchenBarLocationLabel') : `${t('kitchenTableLabel')} ${item.tableNumber}`}
                     </span>
+                    {relatedUnread.length > 0 && <span className="absolute right-0.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-danger" />}
                   </td>
                   <td className="px-2 py-2.5 tabular-nums text-muted-foreground">{item.sessionAccountNumber ?? '—'}</td>
                   <td className="px-2 py-2.5 tabular-nums text-muted-foreground">{item.subAccountNumber ?? '—'}</td>
@@ -511,7 +601,8 @@ function OrderHistorySection({ restaurantId, highlightedItemId }: { restaurantId
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

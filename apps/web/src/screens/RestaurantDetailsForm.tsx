@@ -153,15 +153,6 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     restaurant?.cancellation_window_minutes != null ? String(restaurant.cancellation_window_minutes) : '',
   );
   const [vatRate, setVatRate] = useState(restaurant ? String(restaurant.vat_rate_percent) : '18');
-  // Tip policy (2026-11-09, explicit user request, same-day follow-up —
-  // now its own "מדיניות טיפים" section with an enable toggle, not just a
-  // bare dropdown) — tip_policy_enabled gates whether the mobile app's
-  // bill-summary tip card is offered to the diner at all; when it is,
-  // minimumTipPercent (5-10, in steps of 1) is the floor its quick-select
-  // chips generate from (see bill-summary.tsx's own comment — those chips
-  // still step by 5 from this floor, that part is unchanged).
-  const [tipPolicyEnabled, setTipPolicyEnabled] = useState(restaurant?.tip_policy_enabled ?? true);
-  const [minimumTipPercent, setMinimumTipPercent] = useState(restaurant ? String(restaurant.minimum_tip_percent) : '10');
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const restaurantId = restaurant?.id ?? null;
@@ -242,7 +233,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, address, phone, hourRules, barHourRules, barOverride, kitchenCutoff, logoFile, description, cuisineTags, cancellationWindow, vatRate, tipPolicyEnabled, minimumTipPercent]);
+  }, [name, address, phone, hourRules, barHourRules, barOverride, kitchenCutoff, logoFile, description, cuisineTags, cancellationWindow, vatRate]);
 
   useEffect(() => {
     if (uncontainedBarRule && !barHoursErrorSeenRef.current) {
@@ -434,8 +425,6 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         cuisine_tags: cuisineTags,
         cancellation_window_minutes: cancellationWindow.trim() === '' ? null : Number(cancellationWindow),
         vat_rate_percent: vatRate.trim() === '' ? 18 : Number(vatRate),
-        tip_policy_enabled: tipPolicyEnabled,
-        minimum_tip_percent: Number(minimumTipPercent),
       })
       .eq('id', restaurantId);
 
@@ -884,38 +873,6 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           <span className="text-xs text-muted-foreground">%</span>
         </div>
         <p className="mb-4 text-[10px] text-muted-foreground">{t('vatRateHelp')}</p>
-
-        {/* "מדיניות טיפים" — its own titled section with an enable toggle
-            (2026-11-09, explicit user request, same-day follow-up — used to
-            be a bare label + dropdown with no on/off of its own), same
-            header-row + conditional-content pattern as the קשרות section
-            above (Toggle mirrors MenuManager's "off by default, reveals a
-            section once on"). Off hides the dropdown/help text entirely —
-            the mobile app reads tip_policy_enabled too and skips the whole
-            tip card for a diner when it's off, not just a disabled control. */}
-        <div className="mb-1 flex items-center justify-between gap-2">
-          <label className="block text-sm font-bold text-ink">{t('tipPolicySectionHeading')}</label>
-          <Toggle checked={tipPolicyEnabled} onChange={setTipPolicyEnabled} label={t('tipPolicySectionHeading')} />
-        </div>
-        {tipPolicyEnabled && (
-          <>
-            <label className="mb-1 mt-2 block text-sm text-ink">{t('minimumTipPercentLabel')}</label>
-            <div className="mb-1 flex items-center gap-2">
-              <select
-                value={minimumTipPercent}
-                onChange={(e) => setMinimumTipPercent(e.target.value)}
-                className="w-24 rounded border border-border px-3 py-2 text-sm"
-              >
-                {[5, 6, 7, 8, 9, 10].map((pct) => (
-                  <option key={pct} value={pct}>
-                    {pct}%
-                  </option>
-                ))}
-              </select>
-            </div>
-            <p className="mb-4 text-[10px] text-muted-foreground">{t('minimumTipPercentHelp')}</p>
-          </>
-        )}
         </div>
         </>
         )}

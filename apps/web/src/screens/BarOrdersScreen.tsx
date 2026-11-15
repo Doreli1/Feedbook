@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { KitchenItemStatus, KitchenOrderItem } from '../lib/useOrders';
 import { useOrderHistory } from '../lib/useOrderHistory';
 import { useBarStatus, followScheduleLabelKey, type BarManualOverride } from '../lib/useBarStatus';
+import type { StaffNotification } from '../lib/useNotifications';
 import { useI18n } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { BarTicketLabelModal } from '../components/BarTicketLabelModal';
@@ -11,6 +12,7 @@ import {
   EditedAttentionBadge,
   advanceStatus,
   recordCancellationDecision,
+  markRelatedNotificationsRead,
   elapsedMinutes,
   statusLabelKey,
   statusPillClasses,
@@ -21,6 +23,11 @@ interface Props {
   restaurantId: string;
   items: KitchenOrderItem[];
   onRefreshOrders: () => void;
+  // Same unread-badge fix as KitchenScreen (2026-11-10) — this screen calls
+  // the exact same advanceStatus/recordCancellationDecision, so it needs the
+  // exact same markRelatedNotificationsRead wiring to stay in sync with it.
+  notifications: StaffNotification[];
+  markNotificationRead: (id: string) => Promise<void>;
 }
 
 // The bar's own dedicated screen (2026-11-01, per explicit request) — the
@@ -41,7 +48,7 @@ interface Props {
 // screen incorrectly assumed. The Table/Ticket column itself just answers
 // "where from" (always "בר" here, since this whole screen is bar-only) —
 // the ticket number lives in the personal-account column instead.
-export function BarOrdersScreen({ restaurantId, items, onRefreshOrders }: Props) {
+export function BarOrdersScreen({ restaurantId, items, onRefreshOrders, notifications, markNotificationRead }: Props) {
   const { t } = useI18n();
   const [printItem, setPrintItem] = useState<KitchenOrderItem | null>(null);
   const [section, setSection] = useState<'active' | 'history'>('active');
@@ -68,14 +75,20 @@ export function BarOrdersScreen({ restaurantId, items, onRefreshOrders }: Props)
                 </span>
                 <button
                   type="button"
-                  onClick={() => void recordCancellationDecision(item.id, true, onRefreshOrders)}
+                  onClick={() => {
+                    void recordCancellationDecision(item.id, true, onRefreshOrders);
+                    markRelatedNotificationsRead(notifications, markNotificationRead, { orderItemId: item.id });
+                  }}
                   className="shrink-0 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
                 >
                   {t('kitchenConfirmCancelRestock')}
                 </button>
                 <button
                   type="button"
-                  onClick={() => void recordCancellationDecision(item.id, false, onRefreshOrders)}
+                  onClick={() => {
+                    void recordCancellationDecision(item.id, false, onRefreshOrders);
+                    markRelatedNotificationsRead(notifications, markNotificationRead, { orderItemId: item.id });
+                  }}
                   className="shrink-0 rounded border border-danger px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger-soft"
                 >
                   {t('kitchenConfirmCancelNoRestock')}
@@ -160,7 +173,10 @@ export function BarOrdersScreen({ restaurantId, items, onRefreshOrders }: Props)
                           {item.status === 'in_progress' ? (
                             <button
                               type="button"
-                              onClick={() => void advanceStatus(item.id, 'ready', onRefreshOrders)}
+                              onClick={() => {
+                                void advanceStatus(item.id, 'ready', onRefreshOrders);
+                                markRelatedNotificationsRead(notifications, markNotificationRead, { orderId: item.orderId });
+                              }}
                               className="shrink-0 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
                             >
                               {t('kitchenMarkReady')}
@@ -168,7 +184,10 @@ export function BarOrdersScreen({ restaurantId, items, onRefreshOrders }: Props)
                           ) : (
                             <button
                               type="button"
-                              onClick={() => void advanceStatus(item.id, 'served', onRefreshOrders)}
+                              onClick={() => {
+                                void advanceStatus(item.id, 'served', onRefreshOrders);
+                                markRelatedNotificationsRead(notifications, markNotificationRead, { orderId: item.orderId });
+                              }}
                               className="shrink-0 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
                             >
                               {t('kitchenMarkServed')}
@@ -183,7 +202,7 @@ export function BarOrdersScreen({ restaurantId, items, onRefreshOrders }: Props)
             </div>
           )
         ) : (
-          <BarOrderHistorySection restaurantId={restaurantId} />
+          <BarOrderHistorySection restaurantId={restaurantId} notifications={notifications} markNotificationRead={markNotificationRead} />
         )}
       </div>
 
@@ -252,7 +271,15 @@ type SortKey = 'dateDesc' | 'dateAsc' | 'dishName';
 // component, not a shared one taking a filter prop, since the Table/Ticket
 // column's own content differs (always "בר" here — see BarOrdersScreen's
 // own top comment for why the general/personal-account columns stay).
-function BarOrderHistorySection({ restaurantId }: { restaurantId: string }) {
+function BarOrderHistorySection({
+  restaurantId,
+  notifications,
+  markNotificationRead,
+}: {
+  restaurantId: string;
+  notifications: StaffNotification[];
+  markNotificationRead: (id: string) => Promise<void>;
+}) {
   const { t } = useI18n();
   const { loading, items } = useOrderHistory(restaurantId);
   const [dishNameFilter, setDishNameFilter] = useState('');
@@ -361,10 +388,24 @@ function BarOrderHistorySection({ restaurantId }: { restaurantId: string }) {
               </tr>
             </thead>
             <tbody>
-              {filteredAndSorted.map((item) => (
-                <tr key={item.id} className="border-b border-border transition-colors last:border-0 hover:bg-surface-2">
-                  <td className="px-2 py-2.5">
-                    <span className="inline-block shrink-0 whitespace-nowrap rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent">{t('kitchenBarLocationLabel')}</span>
+              {filteredAndSorted.map((item) => {
+                // Same fix as KitchenScreen.tsx's own OrderHistorySection
+                // (2026-11-10, user report) — see its comment for why.
+                const relatedUnread = notifications.filter(
+                  (n) => n.readAt === null && (n.relatedOrderItemId === item.id || n.relatedOrderId === item.orderId),
+                );
+                return (
+                <tr
+                  key={item.id}
+                  onClick={relatedUnread.length > 0 ? () => relatedUnread.forEach((n) => void markNotificationRead(n.id)) : undefined}
+                  className={`border-b border-border transition-colors last:border-0 hover:bg-surface-2 ${relatedUnread.length > 0 ? 'cursor-pointer' : ''}`}
+                >
+                  <td className="relative py-2.5 ps-4 pe-2">
+                    {/* Same td-anchored placement as KitchenScreen.tsx's own
+                        OrderHistorySection (2026-11-10, user report) — see
+                        its comment for why. */}
+                    <span className="inline-block whitespace-nowrap text-xs font-semibold text-accent">{t('kitchenBarLocationLabel')}</span>
+                    {relatedUnread.length > 0 && <span className="absolute right-0.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-danger" />}
                   </td>
                   <td className="px-2 py-2.5 tabular-nums text-muted-foreground">{item.sessionAccountNumber ?? '—'}</td>
                   <td className="px-2 py-2.5 tabular-nums text-muted-foreground">{item.subAccountNumber ?? '—'}</td>
@@ -389,7 +430,8 @@ function BarOrderHistorySection({ restaurantId }: { restaurantId: string }) {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

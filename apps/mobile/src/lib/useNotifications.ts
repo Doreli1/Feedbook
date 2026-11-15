@@ -103,9 +103,13 @@ export function useNotifications(userId: string | undefined, sessionId: string |
     // Filtered to this session too — a channel scoped only to user_id would
     // still fire (and trigger a refetch) for a different, unrelated
     // session's events, the same cross-session bleed this hook's own query
-    // filter now avoids.
+    // filter now avoids. Unique per-mount suffix too (real crash found live
+    // 2026-11-09 in useOrderingAvailability.ts's own channel — see that
+    // file's comment for the full "cannot add postgres_changes callbacks
+    // ... after subscribe()" story): this bell renders on every post-auth
+    // screen, so it remounts constantly.
     const channel = supabase
-      .channel(`notifications-${userId}-${sessionId}`)
+      .channel(`notifications-${userId}-${sessionId}-${Math.random().toString(36).slice(2)}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId},session_id=eq.${sessionId}` },

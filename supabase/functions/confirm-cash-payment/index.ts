@@ -127,6 +127,23 @@ Deno.serve(async (req) => {
     return errorResponse("INTERNAL_ERROR", "Could not find the diner this call is about", 500);
   }
 
+  // Same duplicate-payment guard as confirm-card-payment's own (real bug
+  // found live 2026-11-09) — the waiter_calls.status==='resolved' check
+  // above already blocks re-confirming THIS SAME call, but nothing stopped
+  // a diner from filing a brand-new cash-payment call after already being
+  // settled (e.g. by card) and a waiter confirming that one too. See
+  // confirm-card-payment/index.ts's own comment for the full story.
+  const { data: existingPaidShare } = await admin
+    .from("payment_participant_shares")
+    .select("id")
+    .eq("participant_id", participant.id)
+    .eq("status", "paid")
+    .limit(1)
+    .maybeSingle();
+  if (existingPaidShare) {
+    return errorResponse("ALREADY_PAID", "This account has already been paid", 409);
+  }
+
   // Real subtotal, computed server-side from this participant's own
   // non-cancelled order_items — same shape as useAccountItems.ts's own
   // (unitPrice + modifierTotal) * quantity, never trusted from the client.
@@ -179,6 +196,14 @@ Deno.serve(async (req) => {
   if (shareError) {
     console.error("confirm-cash-payment: payment_participant_shares insert failed", shareError);
     return errorResponse("INTERNAL_ERROR", "Failed to record the diner's share", 500);
+  }
+
+  // Marks this diner as done with their own visit — same left_at signal as
+  // confirm-card-payment's own (real infinite-loop bug found live
+  // 2026-11-09, see that function's own comment for the full story).
+  const { error: leftError } = await admin.from("session_participants").update({ left_at: nowIso }).eq("id", participant.id);
+  if (leftError) {
+    console.error("confirm-cash-payment: failed to mark participant left_at", leftError);
   }
 
   const { error: resolveError } = await admin

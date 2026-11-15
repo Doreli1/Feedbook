@@ -73,11 +73,6 @@ const translations = {
     cancellationWindowHelp: 'סועד יוכל לבטל מנה שהזמין כל עוד לא חלף פרק הזמן הזה מרגע ביצוע ההזמנה.',
     vatRateLabel: 'שיעור מע"מ',
     vatRateHelp: 'משמש לחישוב מחיר הבסיס (לפני מע"מ) של כל מנה במסך הרווחיות. מחיר המנה בתפריט תמיד כולל מע"מ, כנדרש בחוק.',
-    // Tip policy section (2026-11-09) — drives the mobile app's
-    // bill-summary tip card (see bill-summary.tsx's own comment).
-    tipPolicySectionHeading: 'מדיניות טיפים',
-    minimumTipPercentLabel: 'אחוז טיפ מינימלי',
-    minimumTipPercentHelp: 'אפשרויות הטיפ המוצעות לסועד באפליקציה מתחילות מהאחוז הזה, בקפיצות של 5.',
     address: 'כתובת',
     phone: 'טלפון נייד',
     phonePrefixPlaceholder: 'קידומת',
@@ -910,9 +905,6 @@ const translations = {
     cancellationWindowHelp: 'A diner can cancel an ordered dish as long as this much time hasn’t passed since placing the order.',
     vatRateLabel: 'VAT rate',
     vatRateHelp: "Used to compute each dish's pre-VAT base price on the profitability screen. The menu price always includes VAT, as required by law.",
-    tipPolicySectionHeading: 'Tip policy',
-    minimumTipPercentLabel: 'Minimum tip percentage',
-    minimumTipPercentHelp: "The tip options offered to a diner in the app start from this percentage, in steps of 5.",
     address: 'Address',
     phone: 'Mobile phone',
     phonePrefixPlaceholder: 'Prefix',

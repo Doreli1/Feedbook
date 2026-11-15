@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CallWaiterInlineTrigger } from '../CallWaiterButton';
 import { ConfirmModal } from '../ConfirmModal';
 import { ErrorModal } from '../ErrorModal';
-import { useI18n, visualRowDirection, physicalReadingStart } from '../../lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingStart, physicalReadingEnd } from '../../lib/i18n';
 import { formatPrice } from '../../lib/formatPrice';
 import { supabase } from '../../lib/supabase';
 import { extractFunctionErrorCode } from '../../lib/functionError';
@@ -40,7 +40,21 @@ function formatAmount(amount: number): string {
 // Exported (2026-11-08) — reused as-is by bill-summary.tsx's own "הוסיפו
 // חבר לחשבון" teaser, so the two screens' avatars (host badge included) can
 // never drift apart from each other.
-export function ParticipantAvatar({ participant }: { participant: SessionParticipant }) {
+export function ParticipantAvatar({
+  participant,
+  onRemove,
+}: {
+  participant: SessionParticipant;
+  // Removal shortcut (2026-11-15, explicit request) — an X badge on the
+  // avatar's lower corner, same exact styling/position as
+  // add-participants.tsx's own deselect badge on its own selected-contacts
+  // carousel (the real mockup reference named by the user). Only
+  // bill-summary.tsx passes this (for a friend billed to the viewer's own
+  // account, via ParticipantsRow's own removableParticipantIds) —
+  // AccountScreen.tsx's own usage omits it, so its avatars are unaffected.
+  onRemove?: () => void;
+}) {
+  const { isRTL } = useI18n();
   const initial = participant.displayName.trim().charAt(0).toUpperCase() || '?';
   return (
     <View className="items-center" style={{ width: 56 }}>
@@ -51,6 +65,27 @@ export function ParticipantAvatar({ participant }: { participant: SessionPartici
           <View className="items-center justify-center" style={{ height: 44, width: 44, borderRadius: 22, backgroundColor: colors.royalBlue }}>
             <Text className="text-sm font-bold text-white">{initial}</Text>
           </View>
+        )}
+        {onRemove && (
+          <Pressable
+            onPress={onRemove}
+            hitSlop={8}
+            style={{
+              position: 'absolute',
+              bottom: -4,
+              [physicalReadingEnd(isRTL)]: -4,
+              height: 22,
+              width: 22,
+              borderRadius: 11,
+              borderWidth: 2,
+              borderColor: '#FFFFFF',
+              backgroundColor: '#D1D5DB',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="close" size={13} color="#4B5563" />
+          </Pressable>
         )}
         {participant.isHost && (
           <View
@@ -83,7 +118,28 @@ export function ParticipantAvatar({ participant }: { participant: SessionPartici
 // carousel, same right-to-left anchoring and ordering), per explicit user
 // correction: that screen's own version used to center the avatars as one
 // block instead of matching this row's actual alignment.
-export function ParticipantsRow({ participants }: { participants: SessionParticipant[] }) {
+export function ParticipantsRow({
+  participants,
+  onAddPress,
+  removableParticipantIds,
+  onRemoveParticipant,
+}: {
+  participants: SessionParticipant[];
+  // Overrides the "+" button's default behavior (2026-11-15, explicit
+  // request) — bill-summary.tsx uses this to open its own "add a friend to
+  // my personal account" picker instead of the normal invite-a-new-diner
+  // flow below. Omitted everywhere else (AccountScreen.tsx), which keeps
+  // the original behavior unchanged.
+  onAddPress?: () => void;
+  // X-badge removal shortcut straight from the carousel (2026-11-15,
+  // explicit request, styled exactly like add-participants.tsx's own
+  // deselect badge) — only bill-summary.tsx passes these, for whichever
+  // avatars are currently billed to the viewer's own account; both omitted
+  // everywhere else, so ParticipantAvatar's own onRemove stays undefined
+  // and no badge renders.
+  removableParticipantIds?: Set<string>;
+  onRemoveParticipant?: (participantId: string) => void;
+}) {
   const { isRTL } = useI18n();
   const rowDirection = visualRowDirection(isRTL);
   const router = useRouter();
@@ -96,8 +152,24 @@ export function ParticipantsRow({ participants }: { participants: SessionPartici
   const sessionAccountNumber = useTableSessionStore((s) => s.sessionAccountNumber);
   const qrToken = useTableSessionStore((s) => s.qrToken);
 
+  // Fit/scroll-hint pass (2026-11-15, real issue found on a second physical
+  // device — a narrower screen clipped the last avatar at the edge with
+  // nothing suggesting it was scrollable, not shown). Two independent
+  // pieces: the gap below was gently tightened (12→8) so the common case —
+  // up to 4 participants + "+" — now fits inside ~324px of content, comfortably
+  // within even a ~360px-wide phone; and the chevron hint below only
+  // appears once content genuinely overflows the row's own width, via a
+  // real measured comparison (not a guess at device size), so it never
+  // misleads a solo diner with nothing to scroll to.
+  const [rowWidth, setRowWidth] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
+  const isScrollable = contentWidth > rowWidth;
+
   return (
-    <View style={{ height: 76, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: '#FFFFFF' }}>
+    <View
+      style={{ height: 76, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: '#FFFFFF' }}
+      onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}
+    >
       {/* Real bug (2026-10-28, per explicit request): this ScrollView never
           set its own flexDirection at all, relying entirely on RN's
           horizontal-ScrollView default (a plain, never-mirrored 'row') to
@@ -111,7 +183,8 @@ export function ParticipantsRow({ participants }: { participants: SessionPartici
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: rowDirection, flexGrow: 1, alignItems: 'center', gap: 12, paddingHorizontal: 16 }}
+        onContentSizeChange={(w) => setContentWidth(w)}
+        contentContainerStyle={{ flexDirection: rowDirection, flexGrow: 1, alignItems: 'center', gap: 8, paddingHorizontal: 16 }}
       >
         {/* "+" renders last (leftmost, via rowDirection) — user request
             2026-10-10: "+" on the left of the list, oldest participant
@@ -119,21 +192,48 @@ export function ParticipantsRow({ participants }: { participants: SessionPartici
             the existing list (i.e. closest to "+"). Relies on
             useSessionParticipants returning oldest-first. */}
         {participants.map((p) => (
-          <ParticipantAvatar key={p.participantId} participant={p} />
+          <ParticipantAvatar
+            key={p.participantId}
+            participant={p}
+            onRemove={removableParticipantIds?.has(p.participantId) ? () => onRemoveParticipant?.(p.participantId) : undefined}
+          />
         ))}
         <Pressable
-          onPress={() =>
-            router.push({
-              pathname: '/add-participants',
-              params: { restaurantId, restaurantName, tableId, tableNumber, tableType: tableType ?? '', sessionId, sessionAccountNumber, qrToken },
-            })
+          onPress={
+            onAddPress ??
+            (() =>
+              router.push({
+                pathname: '/add-participants',
+                params: { restaurantId, restaurantName, tableId, tableNumber, tableType: tableType ?? '', sessionId, sessionAccountNumber, qrToken },
+              }))
           }
           className="items-center justify-center rounded-full"
           style={{ height: 44, width: 44, backgroundColor: colors.success }}
         >
-          <Ionicons name="add" size={26} color="#FFFFFF" />
+          {/* A distinct "add a person" glyph (2026-11-15, explicit request,
+              reference: a WhatsApp group's own "צירוף חברים" icon) only when
+              onAddPress is overridden — that's bill-summary.tsx's "add to my
+              personal account" flow specifically, a different action from
+              the plain "+" AccountScreen.tsx still uses for its own
+              invite-a-new-diner flow below. */}
+          <Ionicons name={onAddPress ? 'person-add' : 'add'} size={onAddPress ? 22 : 26} color="#FFFFFF" />
         </Pressable>
       </ScrollView>
+      {/* Carousel hint (2026-11-15, explicit request) — a small chevron at
+          the edge where the list actually overflows (physicalReadingStart:
+          the oldest participant's own side, opposite "+" — see this row's
+          own ordering comment above), only while isScrollable is true, so a
+          solo diner with nothing to scroll never sees a misleading hint.
+          pointerEvents="none" so it never steals the swipe gesture from the
+          ScrollView underneath it. */}
+      {isScrollable && (
+        <View
+          pointerEvents="none"
+          style={{ position: 'absolute', top: 0, bottom: 0, [physicalReadingStart(isRTL)]: 2, width: 22, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Ionicons name={physicalReadingStart(isRTL) === 'right' ? 'chevron-forward' : 'chevron-back'} size={14} color="#C7CCD1" />
+        </View>
+      )}
     </View>
   );
 }
@@ -160,7 +260,24 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
         <>
           <View className="border-b px-4 py-2" style={{ flexDirection: rowDirection, borderColor: colors.border, backgroundColor: '#E6E6E6' }}>
             {scope === 'personal' && (
-              <Text className="w-20 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnMember')}</Text>
+              // Fixed numeric width + flexShrink:0 via style, not the w-20
+              // className — guarantees this column is really 80px and never
+              // shrinks, matching the avatar wrapper below exactly. The
+              // content inside this box really was centered all along (the
+              // 2026-11-10 red-border diagnostic confirmed it) — the "leans
+              // left" read was the column itself sitting flush against
+              // "תיאור" with zero gap (no column gap is set on this row at
+              // all) while the OUTER side keeps the row's own 16px px-4
+              // padding, an asymmetry only this narrow a column made
+              // noticeable. marginLeft (physical, matching this column's
+              // own physical-left side — the one touching "תיאור") adds
+              // that same breathing room on the inner side instead.
+              <Text
+                className="text-[11px] font-bold"
+                style={{ width: 80, flexShrink: 0, marginLeft: 10, textAlign: 'center', color: colors.ink }}
+              >
+                {t('accountColumnMember')}
+              </Text>
             )}
             {/* Real bug (2026-10-28): the old comment here claimed 'left'
                 was intentional because Android auto-mirrors textAlign
@@ -177,28 +294,72 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
               {t('accountColumnDescription')}
             </Text>
             <Text className="w-12 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnQuantity')}</Text>
+            {/* Shortened to "מחיר ליח'" (2026-11-10, user report): the extra
+                w-20 member column (personal tab only) narrows this flex-1
+                share enough that the full "מחיר ליחידה" wrapped to two
+                lines — adjustsFontSizeToFit was tried and rejected (same
+                report: made every header an inconsistent, too-small size).
+                A shorter label at the same fixed size the other headers
+                keep is the fix that doesn't touch layout or font size. */}
             <Text className="flex-1 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnUnitPrice')}</Text>
             <Text className="flex-1 text-center text-[11px] font-bold" style={{ color: colors.ink }}>{t('accountColumnTotalPrice')}</Text>
           </View>
-          {items.map((item, index) => {
-            const member = participantById.get(item.participantId);
-            return (
+          {scope === 'personal' ? (
+            // Merged member-avatar "cell" (2026-11-15, explicit request —
+            // Excel-style vertical cell merge). Every row in the personal
+            // tab is this one diner's own item (visibleItems filters to
+            // participantId === the viewer, AccountScreen.tsx), so the old
+            // per-row avatar was the identical image repeated on every
+            // single line — pure noise, per the user's own screenshot. One
+            // avatar now spans the full height of the rows beside it
+            // instead: alignItems:'stretch' is this row's own default
+            // cross-axis behavior, so the avatar box naturally stretches to
+            // match the content column's total height with no explicit
+            // height math, and justifyContent:'center' centers the avatar
+            // within that stretched height. Horizontal padding moves from
+            // each row (px-4) to this outer wrapper, since the avatar is no
+            // longer part of each row's own flex layout.
+            <View style={{ flexDirection: rowDirection, paddingHorizontal: 16 }}>
+              <View style={{ width: 80, flexShrink: 0, marginLeft: 10, alignItems: 'center', justifyContent: 'center' }}>
+                {(() => {
+                  const member = participantById.get(items[0].participantId);
+                  return member?.photoUrl ? (
+                    <Image source={{ uri: member.photoUrl }} style={{ height: 32, width: 32, borderRadius: 16 }} />
+                  ) : (
+                    <View className="items-center justify-center" style={{ height: 32, width: 32, borderRadius: 16, backgroundColor: colors.royalBlue }}>
+                      <Text className="text-xs font-bold text-white">{(member?.displayName ?? '?').charAt(0)}</Text>
+                    </View>
+                  );
+                })()}
+              </View>
+              <View style={{ flex: 1 }}>
+                {items.map((item, index) => (
+                  <View
+                    key={item.id}
+                    className="items-center py-2.5"
+                    style={{ flexDirection: rowDirection, borderColor: colors.border, borderBottomWidth: index < items.length - 1 ? 1 : 0 }}
+                  >
+                    <Text className="flex-[2] text-sm text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+                      {item.dishName}
+                    </Text>
+                    <Text className="w-12 text-center text-sm text-[#1B2430]">{item.quantity}</Text>
+                    <Text className="flex-1 text-center text-sm text-[#1B2430]" numberOfLines={1} adjustsFontSizeToFit>
+                      ₪{formatPrice(item.unitPrice)}
+                    </Text>
+                    <Text className="flex-1 text-center text-sm text-[#1B2430]" numberOfLines={1} adjustsFontSizeToFit>
+                      ₪{formatPrice(item.unitPrice * item.quantity)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : (
+            items.map((item, index) => (
               <View
                 key={item.id}
                 className="items-center px-4 py-2.5"
                 style={{ flexDirection: rowDirection, borderColor: colors.border, borderBottomWidth: index < items.length - 1 ? 1 : 0 }}
               >
-                {scope === 'personal' && (
-                  <View className="w-20 items-center">
-                    {member?.photoUrl ? (
-                      <Image source={{ uri: member.photoUrl }} style={{ height: 32, width: 32, borderRadius: 16 }} />
-                    ) : (
-                      <View className="items-center justify-center" style={{ height: 32, width: 32, borderRadius: 16, backgroundColor: colors.royalBlue }}>
-                        <Text className="text-xs font-bold text-white">{(member?.displayName ?? '?').charAt(0)}</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
                 {/* Real bug (2026-10-28): same textAlign:'auto' issue as
                     this table's own header above. */}
                 <Text className="flex-[2] text-sm text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
@@ -212,8 +373,8 @@ function AccountItemsTable({ scope, items, participants }: { scope: AccountSubTa
                   ₪{formatPrice(item.unitPrice * item.quantity)}
                 </Text>
               </View>
-            );
-          })}
+            ))
+          )}
         </>
       )}
     </View>
@@ -227,7 +388,11 @@ export function StripCell({ label, value, icon }: { label: string; value: string
   const { isRTL } = useI18n();
   return (
     <View className="flex-1 items-center py-3">
-      <Text className="text-[11px] text-[#9CA3AF]" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center' }}>
+      {/* Bumped from text-[11px] to text-sm (2026-11-10, explicit request)
+          — shared by every screen that uses this cell (AccountScreen.tsx's
+          own strip, bill-summary.tsx's account/table/guest-name strip), so
+          the increase applies everywhere, not just one of them. */}
+      <Text className="text-sm text-[#9CA3AF]" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center' }}>
         {label}
       </Text>
       <View className="mt-1 items-center gap-1" style={{ flexDirection: visualRowDirection(isRTL) }}>
@@ -410,25 +575,20 @@ export function AccountScreen() {
           from the screen (kept from the previous round: colors.background,
           no border-top). */}
       <View className="px-4 pt-3" style={{ backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }}>
-        <View className="items-center justify-between" style={{ flexDirection: rowDirection }}>
-          <Text className="text-lg font-bold" style={{ color: colors.success }}>
-            ₪{formatAmount(total)}
-          </Text>
-          {!isBarTable && <CallWaiterInlineTrigger />}
-        </View>
-        {/* Real bug (2026-10-28): plain full-width Text, same textAlign:
-            'auto' issue found across the rest of the app — see i18n.tsx's
-            physicalReadingStart comment. */}
-        <Text className="mb-1 text-xs leading-4" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
-          {t('serviceFeeDisclaimerPrefix')}
-          <Text style={{ fontWeight: '700' }}>{t('serviceFeeDisclaimerEmphasis')}</Text>
-        </Text>
-
+        {/* The total used to live in this row too (2026-11-10, user
+            request: moved into the button below instead, as a white
+            counter-style badge) — this row is now only the call-waiter
+            trigger, so it's skipped entirely at the bar, where that trigger
+            never renders either. */}
+        {!isBarTable && (
+          <View className="items-center justify-end" style={{ flexDirection: rowDirection }}>
+            <CallWaiterInlineTrigger />
+          </View>
+        )}
         {/* Plain static label, always shown, no conditional logic at all
             (2026-10-19, user request — explicitly not gated on balance or
-            order history, unlike every earlier version of this line). Same
-            shape as the service-fee disclaimer right above it — but
-            centered, not right-aligned, per explicit request (2026-10-28). */}
+            order history, unlike every earlier version of this line).
+            Centered, not right-aligned, per explicit request (2026-10-28). */}
         <Text className="mb-1 text-xs leading-4 text-center" style={{ color: colors.ink }}>
           {t('endVisitFreeTooltip')}
         </Text>
@@ -438,7 +598,16 @@ export function AccountScreen() {
             summary bar's thickness — padding alone can't, since this
             button's text-lg label sits taller than that bar's text-sm one;
             an explicit shared height is what makes them line up) — matches
-            CartBarInlineTrigger/placeOrderButton (MenuBrowser.tsx) exactly. */}
+            CartBarInlineTrigger/placeOrderButton (MenuBrowser.tsx) exactly.
+            The total (2026-11-10, user request) sits in here as a white
+            counter-style badge, same shape as CartBarInlineTrigger's own
+            item-count badge — absolutely positioned on the physical left
+            (hardcoded `left`, not a logical start/end prop — see i18n.tsx's
+            own comment on why those are unreliable here) so the label stays
+            truly centered in the button instead of sharing a flex row with
+            it (2026-11-10, user correction: justify-between pushed the
+            label off-center). Badge text color matches the button's own
+            background (colors.royalBlue), not green, per explicit request. */}
         <Pressable
           // Temporary stand-in for Stage 6's real payment flow (2026-11-08,
           // explicit user request): pushes the real bill-summary screen —
@@ -449,6 +618,30 @@ export function AccountScreen() {
           style={{ backgroundColor: colors.royalBlue, minHeight: 48 }}
         >
           <Text className="text-lg font-semibold text-white">{t(hasNothingToPay ? 'endVisitButton' : 'requestBillButton')}</Text>
+          {/* top:0/bottom:0 (2026-11-10, user report) stretched this to the
+              button's full 48px height instead of a compact chip — a fixed
+              height + top:'50%'/marginTop:-half is the deterministic RN way
+              to center an absolutely-positioned element without stretching
+              it to fill its positioned ancestor. */}
+          <View
+            className="items-center justify-center rounded-full bg-white px-3"
+            style={{ position: 'absolute', left: 12, top: '50%', height: 24, marginTop: -12 }}
+          >
+            {/* Split into two Text runs with a gap, not a literal "₪
+                {price}" space (2026-11-10, user request for spacing) — same
+                real bidi bug CartBarInlineTrigger's own price already hit
+                and fixed this exact way (see its comment): a space
+                character between ₪ and the number lets the bidi algorithm
+                reorder them wrong. Number first in source, ₪ second. */}
+            <View className="items-center" style={{ flexDirection: rowDirection, gap: 4 }}>
+              <Text className="text-base font-bold" style={{ color: colors.royalBlue }}>
+                {formatAmount(total)}
+              </Text>
+              <Text className="text-base font-bold" style={{ color: colors.royalBlue }}>
+                ₪
+              </Text>
+            </View>
+          </View>
         </Pressable>
       </View>
 

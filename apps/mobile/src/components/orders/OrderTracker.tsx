@@ -473,6 +473,7 @@ const HIGHLIGHT_DURATION_MS = 4000;
 export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: OrderFocusRequest | null; onFocusHandled?: () => void }) {
   const { t, isRTL } = useI18n();
   const sessionId = useTableSessionStore((s) => s.sessionId);
+  const participantId = useTableSessionStore((s) => s.participantId);
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
   // Powers the live "בצעו שינויים במנה" edit flow (2026-10-11, user
   // request) — same menu dataset MenuBrowser's own Menu tab fetches
@@ -508,7 +509,14 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
       const { data: current } = await supabase.auth.getUser();
       if (!current.user) return;
       const { data: profile } = await supabase.from('user_profiles').select('display_name').eq('user_id', current.user.id).maybeSingle();
-      const name = profile?.display_name ?? current.user.email?.split('@')[0] ?? null;
+      // Prefers a real Google-provided name (same fix as profile.tsx's own
+      // seeding logic, 2026-11-15) over the bare email prefix — this effect
+      // can easily be the very first thing that ever needs this diner's
+      // name (a brand-new diner is more likely to land on ordering/tracking
+      // than on their own profile tab first), so it carries the same
+      // fallback order rather than only fixing it in profile.tsx.
+      const metaName = (current.user.user_metadata?.full_name ?? current.user.user_metadata?.name) as string | undefined;
+      const name = profile?.display_name ?? metaName?.trim() ?? current.user.email?.split('@')[0] ?? null;
       if (!cancelled) setFirstName(name ? name.trim().split(/\s+/)[0] : null);
     }
     void load();
@@ -517,17 +525,28 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
     };
   }, []);
   const fetchItems = useCallback(async () => {
-    if (!sessionId) {
+    if (!sessionId || !participantId) {
       setItems([]);
       setLoading(false);
       return;
     }
+    // Real bug found live (2026-11-15, on a second physical device): this
+    // used to filter by orders.session_id alone, so every diner's order-
+    // tracking tab showed the WHOLE table's combined orders, not just their
+    // own — a second diner at a shared table saw the first diner's own
+    // orders here. That was a deliberate, documented choice at the time
+    // (API Specification §3's own example, followed verbatim: "every
+        // participant sees the whole table's status changes live"), but the
+    // user has now explicitly corrected that: this tab is for a diner's OWN
+    // order status, not a shared table feed — AccountScreen.tsx's "חשבון
+    // כללי" tab already covers the "what has everyone ordered" view.
     const { data } = await supabase
       .from('order_items')
       .select(
         'id, order_id, status, status_updated_at, quantity, unit_price, dish_id, dish_size_option_id, orders!inner(placed_at, bar_ticket_number), dishes!inner(name, photo_urls, prep_time_minutes, rating_avg, rating_count, feedstars_eligible), dish_size_options(name), order_item_modifiers(modifier_option_id, serving_variant_id, price_delta_at_order, dish_modifier_options(name), modifier_option_serving_variants(name, container_type))',
       )
       .eq('orders.session_id', sessionId)
+      .eq('orders.participant_id', participantId)
       .returns<RawOrderItemRow[]>();
 
     const mapped: TrackedItem[] = (data ?? [])
@@ -574,7 +593,7 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
 
     setItems(mapped);
     setLoading(false);
-  }, [sessionId, t]);
+  }, [sessionId, participantId, t]);
 
   useEffect(() => {
     // Initial fetch on mount/sessionId change — fetchItems() sets state
@@ -607,20 +626,27 @@ export function OrderTracker({ focusRequest, onFocusHandled }: { focusRequest?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest]);
 
-  // API Specification §3's own documented example, followed verbatim: a
-  // participant subscribes to every order_items UPDATE for this session's
-  // orders, so every participant at the table sees the whole table's status
-  // changes live (Phase 1's session-wide read policy is what makes this
-  // legal to even query in the first place). Known accepted gap: an order
-  // placed by someone else *after* this mount isn't picked up by this
-  // specific filter (built from the order IDs seen at mount time) until the
-  // tab is revisited — remounting on every tab switch (this component isn't
-  // kept alive across tabs) keeps that window small in practice.
+  // Subscribes to UPDATE events for just this diner's own orders (narrowed
+  // automatically — `items` itself is now scoped to participantId, see
+  // fetchItems's own comment above; this used to be table-wide, following
+  // API Specification §3's own example verbatim, until the user explicitly
+  // corrected that this tab is a diner's own order status, not a shared
+  // table feed). Known accepted gap: a new order of THIS diner's own,
+  // placed *after* this mount, isn't picked up by this specific filter
+  // (built from the order IDs seen at mount time) until the tab is
+  // revisited — remounting on every tab switch (this component isn't kept
+  // alive across tabs) keeps that window small in practice.
   useEffect(() => {
     if (!sessionId || items.length === 0) return;
     const orderIds = [...new Set(items.map((i) => i.orderId))];
+    // Unique per-mount suffix — this component "isn't kept alive across
+    // tabs" (own comment above), so it remounts on every tab switch, making
+    // it exactly the shape of race useOrderingAvailability.ts's own comment
+    // describes for the real "cannot add postgres_changes callbacks ...
+    // after subscribe()" crash found live 2026-11-09 — see that file's
+    // comment for the full story.
     const channel = supabase
-      .channel('order-status-' + sessionId)
+      .channel('order-status-' + sessionId + '-' + Math.random().toString(36).slice(2))
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'order_items', filter: `order_id=in.(${orderIds.join(',')})` },

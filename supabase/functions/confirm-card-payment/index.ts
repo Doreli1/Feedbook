@@ -24,6 +24,28 @@
 // see that check's own comment below. Never applies to the bar, whose
 // shared account is governed purely by its own operating hours
 // (bar_close_if_inactive), not by individual diners paying.
+//
+// Combined personal-account billing (2026-11-15, real feature — see
+// 20261115090000_personal_account_members.sql): a diner can add other real
+// table-mates to their own personal account (link-personal-account-members),
+// at which point THIS function settles the whole group in one call instead
+// of just the caller — every participant whose billed_to_participant_id
+// points at the caller is pulled in. The caller picks how the group's
+// combined order is divided via the client-supplied split_mode:
+//   - 'even' (the default, including when split_mode is omitted): the
+//     combined subtotal is divided evenly across every group member
+//     (caller included); each member's own share reflects that equal
+//     slice, with the diner-chosen tip folded only into the caller's own
+//     share — this is one real card transaction either way, bookkept per
+//     member for reporting, not a promise that each friend's own card was
+//     separately charged.
+//   - 'full': the caller's own share covers the ENTIRE combined subtotal
+//     (+ tip); every other member's share records their own real order
+//     value for transparency but amount_paid stays 0 — they were treated,
+//     not separately charged.
+// A caller with no group (the common/default case — nobody added) hits
+// neither branch meaningfully: allMembers is just [caller], so every sum
+// below collapses back to exactly the original single-participant amounts.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.4";
 
@@ -46,6 +68,41 @@ function errorResponse(code: string, message: string, status: number) {
 
 function generatePlaceholderReceiptNumber(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+interface GroupMember {
+  id: string;
+  user_id: string;
+  sub_account_number: string | null;
+  bar_ticket_number: number | null;
+  review_verification_code: string | null;
+}
+
+// Real subtotal for one participant, computed server-side from their own
+// non-cancelled order_items — never trusted from the client. Shared by the
+// caller's own amount, every group member's own amount, and the
+// "everyone else settled" check further down, which all used to duplicate
+// this exact query before the group-billing feature existed.
+async function computeParticipantSubtotal(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  participantId: string,
+): Promise<number | null> {
+  const { data: rows, error } = await admin
+    .from("order_items")
+    .select("quantity, unit_price, status, orders!inner(participant_id), order_item_modifiers(price_delta_at_order)")
+    .eq("orders.participant_id", participantId)
+    .neq("status", "cancelled");
+  if (error) {
+    console.error("confirm-card-payment: order_items lookup failed", error);
+    return null;
+  }
+  let subtotal = 0;
+  for (const row of rows ?? []) {
+    const modifierTotal = (row.order_item_modifiers ?? []).reduce((sum: number, m: { price_delta_at_order: number }) => sum + Number(m.price_delta_at_order), 0);
+    subtotal += (Number(row.unit_price) + modifierTotal) * row.quantity;
+  }
+  return subtotal;
 }
 
 Deno.serve(async (req) => {
@@ -90,12 +147,17 @@ Deno.serve(async (req) => {
   // step would be, but validated as a real, non-negative number.
   const rawTip = body?.tip_amount;
   const tipAmount = typeof rawTip === "number" && Number.isFinite(rawTip) && rawTip >= 0 ? rawTip : 0;
+  // Group split choice (2026-11-15) — only meaningful once a real group
+  // exists below; defaults to 'even' when omitted or unrecognized, matching
+  // the mobile client's own default-selected value.
+  const splitMode: "even" | "full" = body?.split_mode === "full" ? "full" : "even";
 
   // Caller must be a real participant of this session — same pattern as
   // call-waiter's own check. This IS the "cash_payment_participant_id would
   // need validating" concern confirm-cash-payment's own comment raises,
   // except here there's nothing to validate against another party's claim:
-  // the caller can only ever settle their own row.
+  // the caller can only ever settle their own row (and, now, whoever is
+  // genuinely billed to it — never an arbitrary id the client could pass).
   const { data: participant, error: participantError } = await admin
     .from("session_participants")
     .select("id, session_id, user_id, sub_account_number, bar_ticket_number, review_verification_code")
@@ -116,24 +178,62 @@ Deno.serve(async (req) => {
   }
   const isBarSession = (session.tables as unknown as { table_type: string | null } | null)?.table_type === "bar";
 
-  // Real subtotal, computed server-side from this participant's own
-  // non-cancelled order_items — same shape as confirm-cash-payment's own
-  // query, never trusted from the client.
-  const { data: orderItemRows, error: itemsError } = await admin
-    .from("order_items")
-    .select("quantity, unit_price, status, orders!inner(participant_id), order_item_modifiers(price_delta_at_order)")
-    .eq("orders.participant_id", participant.id)
-    .neq("status", "cancelled");
-  if (itemsError) {
-    console.error("confirm-card-payment: order_items lookup failed", itemsError);
-    return errorResponse("INTERNAL_ERROR", "Failed to compute the amount due", 500);
+  // Combined personal-account members (2026-11-15) — anyone the caller has
+  // added to their own account via link-personal-account-members. Empty for
+  // the common/default case of a solo payer, in which case allMembers below
+  // is just [participant] and every branch that follows behaves exactly as
+  // it always did before this feature existed.
+  const { data: groupMembers, error: groupMembersError } = await admin
+    .from("session_participants")
+    .select("id, user_id, sub_account_number, bar_ticket_number, review_verification_code")
+    .eq("session_id", sessionId)
+    .eq("billed_to_participant_id", participant.id);
+  if (groupMembersError) {
+    console.error("confirm-card-payment: group members lookup failed", groupMembersError);
+    return errorResponse("INTERNAL_ERROR", "Failed to look up the combined account's members", 500);
   }
-  let subtotal = 0;
-  for (const row of orderItemRows ?? []) {
-    const modifierTotal = (row.order_item_modifiers ?? []).reduce((sum: number, m: { price_delta_at_order: number }) => sum + Number(m.price_delta_at_order), 0);
-    subtotal += (Number(row.unit_price) + modifierTotal) * row.quantity;
+  const allMembers: GroupMember[] = [participant, ...(groupMembers ?? [])];
+  const allMemberIds = allMembers.map((m) => m.id);
+
+  // Real duplicate-payment bug found live (2026-11-09): nothing here ever
+  // checked whether this participant had already paid before writing a
+  // brand-new payments/payment_participant_shares row — a second
+  // "בצעו תשלום" tap (the bill-summary success modal's own "clear session
+  // and leave" step depends on the diner actually dismissing it; if they
+  // don't, or the screen reloads first, they stay on a now-already-paid
+  // account with nothing stopping them from paying again) silently wrote a
+  // full SECOND payment, double-counting totalTip/totalCredit on the Web
+  // Admin side (confirmed live: a real diner showed a 32 ₪ tip for one real
+  // 16 ₪ tip). The client treats this exact error code as a soft success
+  // (see bill-summary.tsx's own comment) so a diner who re-taps pay after
+  // already paying still gets the normal "you're done" flow, not a dead
+  // end. Widened (2026-11-15) to the whole combined group — any member
+  // already paid blocks the entire call rather than risking a second,
+  // overlapping payment for part of the same group.
+  const { data: existingPaidShares, error: existingPaidError } = await admin
+    .from("payment_participant_shares")
+    .select("id")
+    .in("participant_id", allMemberIds)
+    .eq("status", "paid")
+    .limit(1);
+  if (existingPaidError) {
+    console.error("confirm-card-payment: existing-paid lookup failed", existingPaidError);
+    return errorResponse("INTERNAL_ERROR", "Failed to check for an existing payment", 500);
   }
-  const amountDue = subtotal + tipAmount;
+  if (existingPaidShares && existingPaidShares.length > 0) {
+    return errorResponse("ALREADY_PAID", "This account has already been paid", 409);
+  }
+
+  const subtotalsByParticipantId = new Map<string, number>();
+  for (const member of allMembers) {
+    const memberSubtotal = await computeParticipantSubtotal(admin, member.id);
+    if (memberSubtotal === null) {
+      return errorResponse("INTERNAL_ERROR", "Failed to compute the amount due", 500);
+    }
+    subtotalsByParticipantId.set(member.id, memberSubtotal);
+  }
+  const combinedSubtotal = Array.from(subtotalsByParticipantId.values()).reduce((sum, s) => sum + s, 0);
+  const amountDue = combinedSubtotal + tipAmount;
 
   const receiptNumber = generatePlaceholderReceiptNumber();
   const nowIso = new Date().toISOString();
@@ -157,18 +257,62 @@ Deno.serve(async (req) => {
     return errorResponse("INTERNAL_ERROR", "Failed to record the payment", 500);
   }
 
-  const { error: shareError } = await admin.from("payment_participant_shares").insert({
-    payment_id: payment.id,
-    participant_id: participant.id,
-    amount_due: amountDue,
-    amount_paid: amountDue,
-    status: "paid",
-    paid_at: nowIso,
-    tip_amount: tipAmount,
+  // One share per group member (just the caller in the common solo case).
+  // 'even': the combined subtotal is divided equally across every member,
+  // tip folded only into the caller's own share. 'full': the caller's share
+  // covers everyone's combined subtotal + tip; every other member's share
+  // keeps their own real subtotal as amount_due (transparency — what they
+  // actually consumed) but amount_paid 0 (no money moved on their behalf).
+  const perShare = combinedSubtotal / allMembers.length;
+  const shareRows = allMembers.map((member) => {
+    const isCaller = member.id === participant.id;
+    if (splitMode === "full" && !isCaller) {
+      return {
+        payment_id: payment.id,
+        participant_id: member.id,
+        amount_due: subtotalsByParticipantId.get(member.id) ?? 0,
+        amount_paid: 0,
+        status: "paid",
+        paid_at: nowIso,
+        tip_amount: 0,
+      };
+    }
+    const amount = splitMode === "full" ? amountDue : perShare + (isCaller ? tipAmount : 0);
+    return {
+      payment_id: payment.id,
+      participant_id: member.id,
+      amount_due: amount,
+      amount_paid: amount,
+      status: "paid",
+      paid_at: nowIso,
+      tip_amount: isCaller ? tipAmount : 0,
+    };
   });
+
+  const { error: shareError } = await admin.from("payment_participant_shares").insert(shareRows);
   if (shareError) {
     console.error("confirm-card-payment: payment_participant_shares insert failed", shareError);
     return errorResponse("INTERNAL_ERROR", "Failed to record the diner's share", 500);
+  }
+
+  // Marks every settled diner as done with their own visit (2026-11-09,
+  // real infinite-loop bug found live, widened 2026-11-15 to the whole
+  // combined group) — same left_at signal leave-session's own explicit
+  // walkout already uses (left_reason stays null; none of its existing
+  // values mean "paid", and this isn't the place to invent one). Without
+  // this, get_my_open_session() kept finding this still-technically-'open'
+  // session (the bar never auto-closes on an individual payment) even
+  // after paying, so the mail icon's "open visit" reminder immediately
+  // re-offered to resume the very session this diner just settled and left
+  // — tapping it restored the same already-paid session, which on the next
+  // disconnect re-triggered the same reminder: a real connect/kick-out loop.
+  // A friend paid FOR under 'full' mode is just as done with their visit as
+  // the caller, even though no money moved on their own share.
+  const { error: leftError } = await admin.from("session_participants").update({ left_at: nowIso }).in("id", allMemberIds);
+  if (leftError) {
+    // The payment itself already succeeded — logged, not surfaced as a
+    // failure to diners who already paid correctly.
+    console.error("confirm-card-payment: failed to mark participants left_at", leftError);
   }
 
   // Closes the GENERAL account too, once every real sub-account on it is
@@ -181,20 +325,20 @@ Deno.serve(async (req) => {
   // exclusively by bar_close_if_inactive, never by an individual payment.
   // "Settled" mirrors useAccounts.ts's own bottom-up rule exactly: a real
   // paid share, OR genuinely nothing ordered (totalCost 0) — not just
-  // "every participant has SOME share row".
+  // "every participant has SOME share row". Excludes the WHOLE combined
+  // group just settled above (2026-11-15), not just the caller alone.
   if (!isBarSession) {
-    const { data: otherParticipants } = await admin.from("session_participants").select("id").eq("session_id", sessionId).neq("id", participant.id);
+    const { data: otherParticipants } = await admin
+      .from("session_participants")
+      .select("id")
+      .eq("session_id", sessionId)
+      .not("id", "in", `(${allMemberIds.join(",")})`);
     let everyoneElseSettled = true;
     for (const other of otherParticipants ?? []) {
-      const { data: theirItems } = await admin
-        .from("order_items")
-        .select("quantity, unit_price, status, orders!inner(participant_id), order_item_modifiers(price_delta_at_order)")
-        .eq("orders.participant_id", other.id)
-        .neq("status", "cancelled");
-      let theirSubtotal = 0;
-      for (const row of theirItems ?? []) {
-        const modifierTotal = (row.order_item_modifiers ?? []).reduce((sum: number, m: { price_delta_at_order: number }) => sum + Number(m.price_delta_at_order), 0);
-        theirSubtotal += (Number(row.unit_price) + modifierTotal) * row.quantity;
+      const theirSubtotal = await computeParticipantSubtotal(admin, other.id);
+      if (theirSubtotal === null) {
+        everyoneElseSettled = false;
+        break;
       }
       if (theirSubtotal === 0) continue;
       const { data: theirPaidShare } = await admin
@@ -224,28 +368,30 @@ Deno.serve(async (req) => {
   // payment, added 2026-11-09 for parity (explicit user request — card
   // payment is instant and self-service, but the diner should see the
   // same confirmation in their own profile's mail icon either way, not
-  // just after a waiter confirms cash).
-  const [{ data: profile }, { data: restaurant }] = await Promise.all([
-    admin.from("user_profiles").select("display_name").eq("user_id", participant.user_id as string).maybeSingle(),
-    admin.from("restaurants").select("name").eq("id", session.restaurant_id).maybeSingle(),
-  ]);
-  const firstName = (profile?.display_name ?? "").trim().split(/\s+/)[0] || "אורח";
-  const personalAccountDisplay =
-    participant.bar_ticket_number != null ? String(participant.bar_ticket_number).padStart(4, "0") : participant.sub_account_number;
-  const title = `${restaurant?.name ?? ""} - חשבונית תשלום מס' ${receiptNumber}`;
-  const notificationBody = `תודה ${firstName}!,\nחשבונך מספר ${personalAccountDisplay} שולם ונסגר, הקוד האישי שלך ${participant.review_verification_code}\nאנו נשמח לשמוע איך הייתה החוויה שלכם`;
+  // just after a waiter confirms cash). Sent to every settled group member
+  // (2026-11-15), not just the caller — a friend paid FOR needs the same
+  // signal or they'd hit the exact same "open visit" reminder loop the
+  // left_at fix above already exists to prevent.
+  const { data: restaurant } = await admin.from("restaurants").select("name").eq("id", session.restaurant_id).maybeSingle();
+  for (const member of allMembers) {
+    const { data: profile } = await admin.from("user_profiles").select("display_name").eq("user_id", member.user_id).maybeSingle();
+    const firstName = (profile?.display_name ?? "").trim().split(/\s+/)[0] || "אורח";
+    const personalAccountDisplay = member.bar_ticket_number != null ? String(member.bar_ticket_number).padStart(4, "0") : member.sub_account_number;
+    const title = `${restaurant?.name ?? ""} - חשבונית תשלום מס' ${receiptNumber}`;
+    const notificationBody = `תודה ${firstName}!,\nחשבונך מספר ${personalAccountDisplay} שולם ונסגר, הקוד האישי שלך ${member.review_verification_code}\nאנו נשמח לשמוע איך הייתה החוויה שלכם`;
 
-  const { error: notificationError } = await admin.from("notifications").insert({
-    user_id: participant.user_id,
-    type: "payment_completed",
-    title,
-    body: notificationBody,
-    session_id: sessionId,
-  });
-  if (notificationError) {
-    // The payment itself already succeeded — logged, not surfaced as a
-    // failure to a diner who already paid correctly.
-    console.error("confirm-card-payment: notification insert failed", notificationError);
+    const { error: notificationError } = await admin.from("notifications").insert({
+      user_id: member.user_id,
+      type: "payment_completed",
+      title,
+      body: notificationBody,
+      session_id: sessionId,
+    });
+    if (notificationError) {
+      // The payment itself already succeeded — logged, not surfaced as a
+      // failure to a diner who already paid correctly.
+      console.error("confirm-card-payment: notification insert failed", notificationError);
+    }
   }
 
   return jsonResponse({ receipt_number: receiptNumber, amount: amountDue }, 200);

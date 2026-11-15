@@ -396,6 +396,8 @@ function ApprovedDashboard({
           onRefreshOrders={refreshOrders}
           focusRequest={kitchenFocus}
           onFocusHandled={() => setKitchenFocus(null)}
+          notifications={staffNotifications}
+          markNotificationRead={markNotificationRead}
         />
       )}
 
@@ -403,7 +405,15 @@ function ApprovedDashboard({
           (2026-11-01, per explicit request) — one shared fetch, filtered
           differently per screen, not a second independent data source that
           could drift out of sync with it. */}
-      {tab === 'bar' && <BarOrdersScreen restaurantId={restaurant.id} items={orderItems} onRefreshOrders={refreshOrders} />}
+      {tab === 'bar' && (
+        <BarOrdersScreen
+          restaurantId={restaurant.id}
+          items={orderItems}
+          onRefreshOrders={refreshOrders}
+          notifications={staffNotifications}
+          markNotificationRead={markNotificationRead}
+        />
+      )}
 
       {tab === 'service' && <ServiceScreen calls={waiterCalls} onResolve={resolveWaiterCall} onConfirmCashPayment={confirmCashPayment} />}
 

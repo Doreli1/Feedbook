@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { AppHeader, HeaderMailIcon, HeaderMenu } from '../src/components/AppHeader';
 import { ConfirmModal } from '../src/components/ConfirmModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
@@ -61,9 +62,20 @@ export default function ProfileScreen() {
       }
 
       // No row yet (no trigger creates one on sign-up) — seed a sensible
-      // default from the email's local part so the screen never shows a
-      // blank name, then keep it for next time.
-      const fallbackName = current.user.email?.split('@')[0] ?? t('defaultDinerName');
+      // default so the screen never shows a blank name, then keep it for
+      // next time. A real Google sign-in (sign-in.tsx's own
+      // signInWithOAuth) populates user_metadata.full_name/name straight
+      // from the Google account, so that's tried first — the bare email
+      // local-part is only a fallback for email/password sign-up, which has
+      // no name field of its own at all and genuinely has nothing better to
+      // go on (2026-11-15, real bug found live: a plain email sign-up like
+      // "shi@gmail.com" was showing "shi" — confirmed via its own
+      // raw_user_meta_data, which had no name/full_name/picture field at
+      // all, meaning no real Google OAuth ever ran for that account; this
+      // fix only changes behavior for an account that DID go through
+      // Google and would otherwise show the same email-prefix regardless).
+      const metaName = (current.user.user_metadata?.full_name ?? current.user.user_metadata?.name) as string | undefined;
+      const fallbackName = metaName?.trim() || current.user.email?.split('@')[0] || t('defaultDinerName');
       await supabase.from('user_profiles').upsert({ user_id: current.user.id, display_name: fallbackName });
       if (!cancelled) setDisplayName(fallbackName);
     }
@@ -92,6 +104,25 @@ export default function ProfileScreen() {
     setSavingName(false);
     setDisplayName(trimmed);
     setEditingName(false);
+  }
+
+  // Biometric/device-PIN gate before changing the password (2026-11-15,
+  // explicit request) — fingerprint/Face ID/device code via the device's
+  // own OS prompt (expo-local-authentication), not anything this app
+  // implements itself. Explicit user decision on the one real fork here:
+  // a device with no hardware or nothing enrolled (emulator, or a real
+  // phone the diner never set a lock screen on) skips the gate entirely
+  // and goes straight through, rather than blocking a diner over a device
+  // limitation outside their control. A failed/cancelled prompt on a
+  // device that DOES have one enrolled blocks navigation — the diner stays
+  // on this screen.
+  async function handleChangePasswordPress() {
+    const [hasHardware, isEnrolled] = await Promise.all([LocalAuthentication.hasHardwareAsync(), LocalAuthentication.isEnrolledAsync()]);
+    if (hasHardware && isEnrolled) {
+      const result = await LocalAuthentication.authenticateAsync({ promptMessage: t('changePasswordAuthPrompt'), cancelLabel: t('cancel') });
+      if (!result.success) return;
+    }
+    router.push('/set-new-password');
   }
 
   return (
@@ -155,9 +186,11 @@ export default function ProfileScreen() {
           {/* Voluntary password change (2026-10-16, user request) — forgot-
               password's code verification now logs the diner straight back
               in instead of forcing a new password on them, so this is where
-              that choice lives instead: optional, whenever they want it. */}
+              that choice lives instead: optional, whenever they want it.
+              Gated behind a biometric/device-PIN check since 2026-11-15 —
+              see handleChangePasswordPress's own comment. */}
           <Pressable
-            onPress={() => router.push('/set-new-password')}
+            onPress={() => void handleChangePasswordPress()}
             className="items-center gap-3 border-t px-4 py-4"
             style={{ flexDirection: rowDirection, borderColor: colors.border }}
           >

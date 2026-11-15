@@ -1415,14 +1415,12 @@ export type Database = {
           kosher_certificate_url: string | null;
           kosher_status: string;
           logo_url: string | null;
-          minimum_tip_percent: number;
           name: string;
           onboarding_status: string;
           phone: string | null;
           rejection_reason: string | null;
           reviewed_at: string | null;
           submitted_at: string | null;
-          tip_policy_enabled: boolean;
           updated_at: string;
           vat_rate_percent: number;
         };
@@ -1444,14 +1442,12 @@ export type Database = {
           kosher_certificate_url?: string | null;
           kosher_status?: string;
           logo_url?: string | null;
-          minimum_tip_percent?: number;
           name: string;
           onboarding_status?: string;
           phone?: string | null;
           rejection_reason?: string | null;
           reviewed_at?: string | null;
           submitted_at?: string | null;
-          tip_policy_enabled?: boolean;
           updated_at?: string;
           vat_rate_percent?: number;
         };
@@ -1472,14 +1468,12 @@ export type Database = {
           kosher_certificate_url?: string | null;
           kosher_status?: string;
           logo_url?: string | null;
-          minimum_tip_percent?: number;
           name?: string;
           onboarding_status?: string;
           phone?: string | null;
           rejection_reason?: string | null;
           reviewed_at?: string | null;
           submitted_at?: string | null;
-          tip_policy_enabled?: boolean;
           updated_at?: string;
           vat_rate_percent?: number;
         };
@@ -1619,6 +1613,7 @@ export type Database = {
       session_participants: {
         Row: {
           bar_ticket_number: number | null;
+          billed_to_participant_id: string | null;
           id: string;
           is_host: boolean;
           joined_at: string;
@@ -1633,6 +1628,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           bar_ticket_number?: number | null;
+          billed_to_participant_id?: string | null;
           id?: string;
           is_host?: boolean;
           joined_at?: string;
@@ -1646,6 +1642,7 @@ export type Database = {
         };
         Update: {
           bar_ticket_number?: number | null;
+          billed_to_participant_id?: string | null;
           id?: string;
           is_host?: boolean;
           joined_at?: string;
@@ -1658,6 +1655,13 @@ export type Database = {
           user_id?: string | null;
         };
         Relationships: [
+          {
+            foreignKeyName: "session_participants_billed_to_participant_id_fkey";
+            columns: ["billed_to_participant_id"];
+            isOneToOne: false;
+            referencedRelation: "session_participants";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "session_participants_session_id_fkey";
             columns: ["session_id"];
@@ -2005,6 +2009,7 @@ export type Database = {
           option_id: string;
         }[];
       };
+      get_tippers_today_count: { Args: { p_restaurant_id: string }; Returns: number };
       list_restaurant_staff: {
         Args: { p_restaurant_id: string };
         Returns: {
@@ -2058,6 +2063,7 @@ export type Database = {
       session_participant_profiles: {
         Args: { p_session_id: string };
         Returns: {
+          billed_to_participant_id: string | null;
           display_name: string;
           is_host: boolean;
           participant_id: string;

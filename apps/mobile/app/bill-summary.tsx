@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +11,7 @@ import { CallWaiterModals, useCallWaiter } from '../src/components/CallWaiterBut
 import { ParticipantsRow, StripCell } from '../src/components/account/AccountScreen';
 import { useAccountItems } from '../src/components/account/useAccountItems';
 import { useSessionParticipants } from '../src/components/account/useSessionParticipants';
+import { extractFunctionErrorCode } from '../src/lib/functionError';
 import { goBackOrHome } from '../src/lib/goBackOrHome';
 import { useI18n, visualRowDirection, physicalReadingStart } from '../src/lib/i18n';
 import { formatPrice } from '../src/lib/formatPrice';
@@ -29,11 +31,9 @@ import { colors } from '../src/theme';
 // button (in place of the earlier plain "coming soon" modal) whenever this
 // diner has a real personal balance to pay.
 //
-// Three pieces are honest placeholders, not hidden gaps (same "show the
+// Two pieces are honest placeholders, not hidden gaps (same "show the
 // real state, don't fake what isn't built" approach as add-participants.tsx):
-// the SMS-receipt checkbox is local UI state only — no real SMS sending;
-// "חלקו את התשלום שווה" is visual-only for now (opens a "coming soon" modal
-// on tap), per explicit instruction when this screen was first scoped; and
+// the SMS-receipt checkbox is local UI state only — no real SMS sending; and
 // the card-on-file label below (billSummaryCardLabel) is a fixed placeholder
 // string, not read from any real stored-payment-method record — nothing
 // like that exists anywhere in this schema yet (checked repo-wide), so
@@ -54,8 +54,13 @@ import { colors } from '../src/theme';
 // charging a mandatory service fee (project_payments_and_cancellation_rules
 // memory), and a flat fee line also directly contradicted AccountScreen's
 // own standing disclaimer one screen back ("דמי השירות אינם כלולים בחשבון").
-// A real tip, diner-controlled and able to be switched off entirely,
-// doesn't have that problem.
+// A real tip, diner-controlled, doesn't have that problem. Redesigned
+// 2026-11-10 (explicit user decision) from a restaurant-configured on/off
+// policy (minimum_tip_percent/tip_policy_enabled, both removed from
+// restaurants) to a fixed, app-wide 0/5/10/15/20/25% choice every diner
+// makes for themselves, with no pre-selected default — see tipMode's own
+// comment below for why 0% has to be an explicit tap, not an implicit
+// starting state.
 export default function BillSummaryScreen() {
   const router = useRouter();
   const { t, isRTL } = useI18n();
@@ -77,7 +82,95 @@ export default function BillSummaryScreen() {
   const personalAccountDisplay = isBarTable ? (barTicketNumber != null ? String(barTicketNumber).padStart(4, '0') : '—') : (subAccountNumber ?? '—');
 
   const { items } = useAccountItems(sessionId);
-  const { participants } = useSessionParticipants(sessionId);
+  const { participants, refresh: refreshParticipants } = useSessionParticipants(sessionId);
+
+  // Real feature (2026-11-15, explicit request): who's currently billed to
+  // THIS diner's own account (see session_participants.billed_to_participant_id,
+  // 20261115090000_personal_account_members.sql) vs. who's still eligible to
+  // be added (not self, and not already part of someone ELSE's account —
+  // the link-personal-account-members Edge Function enforces the same rule
+  // server-side, this is just what the picker below offers). Gates
+  // billSummarySplitEquallyButton's own visibility below — a real
+  // precondition now instead of the (incorrect, per user correction)
+  // "anyone else at the whole table" check this used to have.
+  const myAccountMembers = participants.filter((p) => p.billedToParticipantId === participantId);
+  // The combined group this diner is actually paying for once at least one
+  // friend has been added — just themself when myAccountMembers is empty
+  // (the common/default case), so combinedSubtotal below collapses back to
+  // plain subtotal and nothing downstream changes for a solo diner.
+  const combinedGroupParticipantIds = [participantId, ...myAccountMembers.map((m) => m.participantId)];
+  const eligibleFriends = participants.filter(
+    (p) => p.participantId !== participantId && (p.billedToParticipantId === null || p.billedToParticipantId === participantId),
+  );
+  const [friendPickerOpen, setFriendPickerOpen] = useState(false);
+  const [selectedFriendIds, setSelectedFriendIds] = useState<Set<string>>(new Set());
+  const [linkingFriends, setLinkingFriends] = useState(false);
+  const [linkFriendsErrorMessage, setLinkFriendsErrorMessage] = useState<string | null>(null);
+  // "!" info button next to the heading above the carousel (2026-11-15,
+  // explicit request) — same pattern as AccountScreen.tsx's own infoOpen.
+  const [addFriendInfoOpen, setAddFriendInfoOpen] = useState(false);
+
+  function openFriendPicker() {
+    setSelectedFriendIds(new Set(myAccountMembers.map((p) => p.participantId)));
+    setFriendPickerOpen(true);
+  }
+
+  function toggleFriendSelected(id: string) {
+    setSelectedFriendIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Sends the FULL desired membership, not just additions (2026-11-15, real
+  // gap found live — reopening this picker after adding someone had no way
+  // to undo it, since every checkbox for an already-added member was
+  // disabled). The Edge Function now reconciles both directions itself:
+  // anyone newly checked gets linked, anyone unchecked that was previously a
+  // member gets unlinked back to paying for themself. A no-op (nothing
+  // actually changed) just closes the modal without a network call.
+  // Shared by the picker's own "אישור" and the carousel's direct X-badge
+  // removal below — both ultimately just post the FULL desired membership
+  // (see link-personal-account-members's own comment on why).
+  async function submitAccountMembership(memberIds: string[]) {
+    if (!sessionId) return;
+    setLinkingFriends(true);
+    const { error } = await supabase.functions.invoke('link-personal-account-members', {
+      body: { session_id: sessionId, member_participant_ids: memberIds },
+    });
+    setLinkingFriends(false);
+    if (error) {
+      setLinkFriendsErrorMessage(t('addAccountMembersFailedMessage'));
+      return;
+    }
+    void refreshParticipants();
+  }
+
+  async function handleConfirmFriendPicker() {
+    if (!sessionId) {
+      setFriendPickerOpen(false);
+      return;
+    }
+    const currentMemberIds = new Set(myAccountMembers.map((m) => m.participantId));
+    const unchanged = selectedFriendIds.size === currentMemberIds.size && Array.from(selectedFriendIds).every((id) => currentMemberIds.has(id));
+    if (unchanged) {
+      setFriendPickerOpen(false);
+      return;
+    }
+    await submitAccountMembership(Array.from(selectedFriendIds));
+    setFriendPickerOpen(false);
+  }
+
+  // X-badge removal straight from the carousel (2026-11-15, explicit
+  // request, same badge styling as add-participants.tsx's own deselect
+  // badge) — an alternative to reopening the "+" picker and unchecking,
+  // not a replacement for it. Posts the remaining membership (everyone
+  // currently billed to me, minus this one).
+  function handleRemoveAccountMember(removeParticipantId: string) {
+    void submitAccountMembership(myAccountMembers.filter((m) => m.participantId !== removeParticipantId).map((m) => m.participantId));
+  }
 
   const me = participants.find((p) => p.participantId === participantId);
   const myFirstName = me?.displayName.trim().split(/\s+/)[0] || null;
@@ -89,38 +182,76 @@ export default function BillSummaryScreen() {
   const dinerNumber = myIndex >= 0 ? myIndex + 1 : 1;
 
   const subtotal = items.filter((i) => i.participantId === participantId).reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+  // Real split/full-payment choice (2026-11-15, explicit request) — once at
+  // least one friend is on this diner's own personal account, the automatic
+  // default is an even split of the COMBINED order across the whole group
+  // (this diner + every added friend), with full payment for the group as
+  // the alternative. combinedSubtotal reads every member's own order_items
+  // from the same `items` list AccountScreen's items hook already pulls for
+  // the whole session — no separate fetch needed. The server (confirm-card-
+  // payment) recomputes all of this itself from order_items and never
+  // trusts these client-side numbers; they're preview-only.
+  const [splitMode, setSplitMode] = useState<'even' | 'full'>('even');
+  const combinedSubtotal =
+    myAccountMembers.length > 0
+      ? items.filter((i) => combinedGroupParticipantIds.includes(i.participantId)).reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
+      : subtotal;
+  const myShareOfCombined = myAccountMembers.length > 0 ? combinedSubtotal / combinedGroupParticipantIds.length : subtotal;
+  const amountIOwe = myAccountMembers.length === 0 ? subtotal : splitMode === 'even' ? myShareOfCombined : combinedSubtotal;
 
-  // Restaurant-configured tip policy (2026-11-09, explicit request — Web
-  // Admin's RestaurantDetailsForm.tsx, its own "מדיניות טיפים" section).
-  // tipPolicyEnabled hides the whole tip card below when the restaurant
-  // doesn't solicit tips at all — not just a disabled control, the card
-  // simply isn't offered. When it IS enabled, minimumTipPercent (5-10 on
-  // the admin side) is the floor the quick-select chips generate from, in
-  // the same steps of 5 as before. Live, not just fetched once on mount
-  // (2026-11-09, explicit follow-up request) — subscribed via Realtime so
-  // a staff member changing either setting while this diner's screen is
-  // already open takes effect immediately, the same way restaurant-status
-  // changes already do elsewhere in this app (e.g. AvailabilityNoticeBanner's
-  // own restaurant-status channel). `restaurants` is already in the
-  // supabase_realtime publication (20261102100500_realtime_publication_
-  // restaurants.sql), so no further backend change was needed for this.
-  const [tipPolicyEnabled, setTipPolicyEnabled] = useState(true);
-  const [minimumTipPercent, setMinimumTipPercent] = useState(10);
+  // Tip redesign (2026-11-10, explicit user decision — replaces the
+  // 2026-11-09 restaurant-configured policy entirely): no more per-
+  // restaurant enable toggle or minimum-percent floor — every diner picks
+  // their own percentage from a fixed, app-wide 0/5/10/15/20/25% range (or
+  // a free amount), every time, with no restaurant-side control over it at
+  // all. tipMode starts at 'percent' — that's the view shown on load (the
+  // chips row, not the free-amount field) — but tipPercent starts at null:
+  // no specific percentage is pre-selected, so the diner still has to tap
+  // one explicitly (even "0%" counts as one) before the pay button below
+  // unlocks, see hasChosenTip. Two different things: which VIEW shows by
+  // default vs. whether a VALUE is already chosen for them.
+  const [tipMode, setTipMode] = useState<'percent' | 'custom'>('percent');
+  const [tipPercent, setTipPercent] = useState<number | null>(null);
+  const [tipCustomAmount, setTipCustomAmount] = useState('');
+  const customTipAmount = Number(tipCustomAmount.replace(',', '.')) || 0;
+  // Free-amount floor (2026-11-10, explicit request): a diner who wants to
+  // name their own amount still has to mean it as a real tip, not a token
+  // few agorot — 5% of their own subtotal, the same floor the percent chips
+  // themselves start from. Doesn't apply to the chips (0% is a real,
+  // offered choice on its own).
+  const customTipMeetsMinimum = customTipAmount >= subtotal * 0.05;
+  const hasChosenTip =
+    tipMode === 'percent' ? tipPercent !== null : tipMode === 'custom' ? tipCustomAmount.trim() !== '' && customTipMeetsMinimum : false;
+  const tipAmount = tipMode === 'percent' && tipPercent !== null ? subtotal * (tipPercent / 100) : tipMode === 'custom' && customTipMeetsMinimum ? customTipAmount : 0;
+  const total = amountIOwe + tipAmount;
+
+  // "X סועדים נתנו טיפ היום" (2026-11-10, explicit request) — real social-
+  // proof count, same "real data only, hide entirely at zero" rule AND the
+  // same live-refresh shape as MenuBrowser.tsx's own dish order-activity
+  // line (useDishOrderStats): subscribe unfiltered to the table whose
+  // change actually drives this number (payment_participant_shares has no
+  // restaurant_id column of its own to filter by at the subscription level
+  // — same reasoning as that hook's own order_items channel), then refetch
+  // the restaurant-scoped RPC on every change, letting the function's own
+  // query (not the subscription) narrow it down. Corrected 2026-11-10 from
+  // an earlier one-time-fetch version — a diner sitting on this screen
+  // while someone else tips should see the count update live, same as
+  // every other "today" counter in this app already does.
+  const [tippersToday, setTippersToday] = useState<number | null>(null);
   useEffect(() => {
     if (!restaurantId) return;
-    const id = restaurantId;
+    const rid = restaurantId;
     let cancelled = false;
-    async function refreshTipPolicy() {
-      const { data } = await supabase.from('restaurants').select('tip_policy_enabled, minimum_tip_percent').eq('id', id).maybeSingle();
-      if (cancelled || !data) return;
-      setTipPolicyEnabled(data.tip_policy_enabled);
-      setMinimumTipPercent(data.minimum_tip_percent);
-    }
-    void refreshTipPolicy();
 
+    async function refreshTippersToday() {
+      const { data } = await supabase.rpc('get_tippers_today_count', { p_restaurant_id: rid });
+      if (!cancelled) setTippersToday((data as number | null) ?? null);
+    }
+
+    void refreshTippersToday();
     const channel = supabase
-      .channel(`bill-summary-tip-policy-${id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'restaurants', filter: `id=eq.${id}` }, () => void refreshTipPolicy())
+      .channel(`bill-summary-tippers-today-${rid}-${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_participant_shares' }, () => void refreshTippersToday())
       .subscribe();
 
     return () => {
@@ -129,22 +260,8 @@ export default function BillSummaryScreen() {
     };
   }, [restaurantId]);
 
-  const [tipEnabled, setTipEnabled] = useState(true);
-  const [tipMode, setTipMode] = useState<'percent' | 'custom'>('percent');
-  // null = the diner hasn't picked a chip yet — falls back to the
-  // restaurant's own floor (minimumTipPercent) below, so the default
-  // selection always tracks that value once it loads instead of being
-  // stuck at whatever this state happened to initialize to before the
-  // (async) fetch resolved.
-  const [tipPercent, setTipPercent] = useState<number | null>(null);
-  const effectiveTipPercent = tipPercent ?? minimumTipPercent;
-  const [tipCustomAmount, setTipCustomAmount] = useState('');
-  const tipAmount = !tipPolicyEnabled || !tipEnabled ? 0 : tipMode === 'percent' ? subtotal * (effectiveTipPercent / 100) : Number(tipCustomAmount.replace(',', '.')) || 0;
-  const total = subtotal + tipAmount;
-
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
   const [smsReceipt, setSmsReceipt] = useState(false);
-  const [splitComingSoonOpen, setSplitComingSoonOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeFailedMessage, setCloseFailedMessage] = useState<string | null>(null);
   const [closeDoneOpen, setCloseDoneOpen] = useState(false);
@@ -172,9 +289,26 @@ export default function BillSummaryScreen() {
   async function handleCloseAccount() {
     if (!sessionId || closing) return;
     setClosing(true);
-    const { error } = await supabase.functions.invoke('confirm-card-payment', { body: { session_id: sessionId, tip_amount: tipAmount } });
+    const { error } = await supabase.functions.invoke('confirm-card-payment', {
+      body: { session_id: sessionId, tip_amount: tipAmount, split_mode: splitMode },
+    });
     setClosing(false);
     if (error) {
+      // Real duplicate-payment bug found live (2026-11-09): a second
+      // "בצעו תשלום" tap after an already-successful payment (e.g. the
+      // diner never dismissed the first success modal, or the app reloaded
+      // before they did) used to write a whole second payment record —
+      // see confirm-card-payment/index.ts's own comment. The server now
+      // rejects it with ALREADY_PAID instead of silently duplicating it;
+      // treated here as the same soft success the diner would have gotten
+      // the first time, not an error, so re-tapping pay always ends with
+      // the same "you're done" flow and gets them off this now-settled
+      // account either way.
+      const code = await extractFunctionErrorCode(error);
+      if (code === 'ALREADY_PAID') {
+        setCloseDoneOpen(true);
+        return;
+      }
       setCloseFailedMessage(t('billSummaryCloseFailedMessage'));
       return;
     }
@@ -214,15 +348,16 @@ export default function BillSummaryScreen() {
     void handleCloseAccount();
   }
 
-  // Four chips starting at the restaurant's own floor, in steps of 5
-  // (2026-11-09) — was a flat, restaurant-agnostic 10/15/20/25 before.
-  const tipChips: { key: 'percent' | 'custom'; percent?: number }[] = [
-    { key: 'percent', percent: minimumTipPercent },
-    { key: 'percent', percent: minimumTipPercent + 5 },
-    { key: 'percent', percent: minimumTipPercent + 10 },
-    { key: 'percent', percent: minimumTipPercent + 15 },
-    { key: 'custom' },
-  ];
+  // Fixed, app-wide range — 0% through 25% in steps of 5 (2026-11-10,
+  // explicit request, replacing the restaurant-configured floor this used
+  // to generate from). 0% is a real, equally-weighted option, not a
+  // disabled/hidden state — choosing it is exactly how a diner who doesn't
+  // want to tip satisfies hasChosenTip. All six always share one row (see
+  // the flex-1 chips below) — "סכום" (free amount) is its own separate
+  // control underneath, not a seventh chip in this same row anymore (two
+  // "tabs": tipMode==='percent' shows this row, tipMode==='custom' hides it
+  // in favor of the free-amount input — see the JSX below).
+  const tipPercentOptions = [0, 5, 10, 15, 20, 25];
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
@@ -236,23 +371,46 @@ export default function BillSummaryScreen() {
         left={<HeaderMenu />}
       />
 
-      {/* Identical to AccountScreen.tsx's own avatar carousel (2026-11-08,
-          explicit correction — a centered block before this didn't match
-          it): same component, same right-to-left anchoring, same "+" at the
-          reading-start end. */}
-      <ParticipantsRow participants={participants} />
-
-      <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
-        <Text className="mb-4 text-center text-xs" style={{ color: colors.textMuted }}>
-          {t('billSummaryAddFriendCaption')}
-        </Text>
-
-        {/* Same StripCell + card chrome as AccountScreen.tsx's own number
-            strip (2026-11-08, explicit request to match its styling
+      {/* Real bug (2026-11-10, user report, on a real Android device): the
+          free-amount TextInput sits well down the page and the keyboard
+          covered it with no way to see what was typed. Two earlier attempts
+          failed: KeyboardAvoidingView behavior="height" on Android double-
+          resized the screen (on top of Expo's own default window-resize)
+          and squeezed everything into a sliver; a manual scrollToEnd() on
+          focus overshot past the input (it isn't the last thing in this
+          scroll view — the payment-preference section and SMS row still
+          follow it) and left it just as cut off. KeyboardAwareScrollView
+          (already the established, proven pattern for exactly this in
+          email-auth.tsx/forgot-password.tsx/etc. — pure JS, no native
+          module, so it works in plain Expo Go) measures the actually-
+          focused input and scrolls precisely to it instead of guessing.
+          The pay button moved inside it (was a separate fixed bar below the
+          scroll area) so the library's own math accounts for it the same
+          way email-auth.tsx's submit button already does, rather than
+          risking the two fighting over how much room the keyboard leaves. */}
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 24 + insets.bottom }}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={80}
+        keyboardOpeningTime={0}
+      >
+        {/* No longer fixed above this scroll area (2026-11-10, explicit
+            request — both the account-info strip and the avatar carousel
+            now scroll away with the rest of the content instead of staying
+            pinned). Same StripCell + card chrome as AccountScreen.tsx's own
+            number strip (2026-11-08, explicit request to match its styling
             exactly, not approximate it). */}
         <View className="overflow-hidden rounded-xl bg-white" style={{ borderColor: colors.border, borderWidth: 1 }}>
           <View className="items-stretch px-1 py-2" style={{ flexDirection: rowDirection }}>
-            <StripCell label={t('billSummaryAccountLabel')} value={sessionAccountNumber ?? '—'} />
+            {/* Real bug found live (2026-11-15): this label reads "חשבון
+                האישי שלכם" (your PERSONAL account) but was bound to
+                sessionAccountNumber — the GENERAL account shared by the
+                whole table — instead of personalAccountDisplay, so it
+                showed the wrong number (e.g. 635287 instead of this
+                diner's own 714295, matching AccountScreen.tsx's own strip). */}
+            <StripCell label={t('billSummaryAccountLabel')} value={personalAccountDisplay} />
             <View className="w-px" style={{ backgroundColor: colors.border }} />
             <StripCell label={t('billSummaryTableNumberLabel')} value={tableNumber ?? '—'} />
             <View className="w-px" style={{ backgroundColor: colors.border }} />
@@ -260,18 +418,96 @@ export default function BillSummaryScreen() {
           </View>
         </View>
 
+        {/* Moved above the carousel (2026-11-15, explicit request), styled
+            as a dominant section heading — same text-lg font-bold treatment
+            as billSummaryTipTitle/billSummaryPaymentPreferenceTitle below —
+            instead of the small centered muted caption it used to be. "!"
+            info button beside it (same spot) explains the add-member
+            feature's own logic — same small light-blue circle +
+            information-outline icon convention as AccountScreen.tsx's own
+            info button (which explains the account-strip terms instead). */}
+        <View className="mt-4 items-center" style={{ flexDirection: rowDirection, gap: 8 }}>
+          <Text className="text-lg font-bold" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
+            {t('billSummaryAddFriendCaption')}
+          </Text>
+          <Pressable
+            onPress={() => setAddFriendInfoOpen(true)}
+            hitSlop={10}
+            className="h-6 w-6 items-center justify-center rounded-full"
+            style={{ backgroundColor: '#38BDF8' }}
+          >
+            <Ionicons name="information-outline" size={14} color="#FFFFFF" />
+          </Pressable>
+        </View>
+
+        {/* ParticipantsRow renders its own edge-to-edge white strip with a
+            border-bottom spanning the full screen width (see its own
+            definition, AccountScreen.tsx) — the negative horizontal margin
+            cancels out this ScrollView's own 16px side padding so it still
+            reaches both edges now that it scrolls with everything else
+            instead of sitting outside the padded area.
+            Scoped to just this diner's own personal-account group — me plus
+            whoever's actually been added (combinedGroupParticipantIds) —
+            not the whole table (2026-11-15, explicit correction: this used
+            to pass every session participant, the same full roster
+            AccountScreen.tsx's general-account tab shows; this carousel is
+            "who's in my account right now", which is just me until someone
+            is actually added, not everyone sharing the table).
+            removableParticipantIds/onRemoveParticipant (2026-11-15, explicit
+            request) — an X badge on each added friend's own avatar, same
+            styling as add-participants.tsx's own deselect badge; never
+            includes participantId itself, so my own avatar never shows it. */}
+        <View style={{ marginHorizontal: -16, marginTop: 8 }}>
+          <ParticipantsRow
+            participants={participants.filter((p) => combinedGroupParticipantIds.includes(p.participantId))}
+            onAddPress={openFriendPicker}
+            removableParticipantIds={new Set(myAccountMembers.map((m) => m.participantId))}
+            onRemoveParticipant={handleRemoveAccountMember}
+          />
+        </View>
+
         {/* Price breakdown — no row dividers, bigger text (2026-11-08,
             explicit request). */}
         <View className="mt-4 overflow-hidden rounded-xl bg-white px-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
           <View className="items-center justify-between py-3.5" style={{ flexDirection: rowDirection }}>
             <Text className="text-base" style={{ color: colors.ink }}>
-              {t('billSummaryDinerLineLabel').replace('{n}', String(dinerNumber))}
+              {/* "סועד {n}" only while solo — once a combined group exists,
+                  that reads ambiguously next to "ההזמנה המשותפת (X סועדים)"
+                  below it (2026-11-15, explicit request: is "1" also a
+                  diner count?). "ההזמנה האישית שלך" says plainly that this
+                  one line is just the viewer's own order. */}
+              {myAccountMembers.length > 0 ? t('billSummaryMyOwnOrderLabel') : t('billSummaryDinerLineLabel').replace('{n}', String(dinerNumber))}
             </Text>
             <Text className="text-base font-semibold" style={{ color: colors.ink }}>
               ₪{formatPrice(subtotal)}
             </Text>
           </View>
-          {tipPolicyEnabled && tipEnabled && (
+          {/* Combined-group lines (2026-11-15, real feature) — only once a
+              friend has actually been added. "Your share" only applies in
+              even-split mode; in full-payment mode amountIOwe already equals
+              combinedSubtotal, so showing both would just repeat the same
+              number twice. */}
+          {myAccountMembers.length > 0 && (
+            <View className="items-center justify-between py-3.5" style={{ flexDirection: rowDirection }}>
+              <Text className="text-base" style={{ color: colors.ink }}>
+                {t('billSummaryGroupOrderLabel').replace('{n}', String(combinedGroupParticipantIds.length))}
+              </Text>
+              <Text className="text-base font-semibold" style={{ color: colors.ink }}>
+                ₪{formatPrice(combinedSubtotal)}
+              </Text>
+            </View>
+          )}
+          {myAccountMembers.length > 0 && splitMode === 'even' && (
+            <View className="items-center justify-between py-3.5" style={{ flexDirection: rowDirection }}>
+              <Text className="text-base" style={{ color: colors.ink }}>
+                {t('billSummaryYourShareLabel')}
+              </Text>
+              <Text className="text-base font-semibold" style={{ color: colors.ink }}>
+                ₪{formatPrice(myShareOfCombined)}
+              </Text>
+            </View>
+          )}
+          {tipAmount > 0 && (
             <View className="items-center justify-between py-3.5" style={{ flexDirection: rowDirection }}>
               <Text className="text-base" style={{ color: colors.ink }}>
                 {t('billSummaryTipTitle')}
@@ -295,94 +531,184 @@ export default function BillSummaryScreen() {
           </Text>
         </View>
 
-        {/* Rectangular, rounded corners — not a pill (2026-11-08, explicit
-            correction). */}
-        <Pressable
-          onPress={() => setSplitComingSoonOpen(true)}
-          className="mt-4 items-center justify-center rounded-xl py-3"
-          style={{ backgroundColor: colors.royalBlue }}
-        >
-          <Text className="text-sm font-semibold text-white">{t('billSummarySplitEquallyButton')}</Text>
-        </Pressable>
-
-        {/* Tip — its own card, toggle defaults to on (2026-11-08, explicit
-            request). Percent chips 10/15/20/25 plus a free-amount option,
-            same chip visual language as MenuBrowser.tsx's own FilterChip.
-            The whole card is skipped (2026-11-09) when the restaurant's own
-            "מדיניות טיפים" is off — not shown disabled, simply not offered. */}
-        {tipPolicyEnabled && (
-        <View className="mt-4 overflow-hidden rounded-xl bg-white px-4 py-3" style={{ borderColor: colors.border, borderWidth: 1 }}>
-          {/* Encouraging microcopy question (2026-11-08, explicit request)
-              in place of a bare "טיפ:" label — the toggle itself answers it. */}
-          <View className="items-center justify-between" style={{ flexDirection: rowDirection, gap: 10 }}>
-            <Text className="flex-1 text-sm font-semibold" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
-              {t('billSummaryTipQuestion')}
-            </Text>
-            <Switch value={tipEnabled} onValueChange={setTipEnabled} trackColor={{ false: colors.border, true: colors.royalBlue }} thumbColor="#FFFFFF" />
+        {/* Real split/full-payment choice (2026-11-15, explicit request,
+            replaces the earlier "coming soon" placeholder). Hidden entirely,
+            not just dimmed, while no one has been added to THIS diner's own
+            personal account yet (2026-11-15, user correction — the original
+            version checked "anyone else at the whole table," which is
+            wrong: a shared table can seat several unrelated parties, each
+            with their own untouched personal account, see
+            session_participants.billed_to_participant_id's own comment).
+            Equal split is the default/pre-selected value (explicit
+            request). Sitting directly on the screen's own background now,
+            no card/title wrapper (2026-11-15, explicit correction — the
+            "אופן התשלום" card itself is gone, just the two buttons), same
+            visual language as the tip card's own percent chips: selected =
+            filled royalBlue, unselected = white with a border. */}
+        {myAccountMembers.length > 0 && (
+          <View className="mt-4" style={{ flexDirection: rowDirection, gap: 8 }}>
+            <Pressable
+              onPress={() => setSplitMode('even')}
+              className="flex-1 items-center rounded-lg border py-3"
+              style={{ borderColor: splitMode === 'even' ? colors.royalBlue : colors.border, backgroundColor: splitMode === 'even' ? colors.royalBlue : '#FFFFFF' }}
+            >
+              <Text className="text-center text-sm font-medium" style={{ color: splitMode === 'even' ? '#FFFFFF' : colors.ink }}>
+                {t('billSummarySplitEquallyButton')}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setSplitMode('full')}
+              className="flex-1 items-center rounded-lg border py-3"
+              style={{ borderColor: splitMode === 'full' ? colors.royalBlue : colors.border, backgroundColor: splitMode === 'full' ? colors.royalBlue : '#FFFFFF' }}
+            >
+              <Text className="text-center text-sm font-medium" style={{ color: splitMode === 'full' ? '#FFFFFF' : colors.ink }}>
+                {t('billSummaryPayFullForGroupButton')}
+              </Text>
+            </Pressable>
           </View>
-          {tipEnabled && (
-            <View className="mt-3">
-              <View className="items-center" style={{ flexDirection: rowDirection, flexWrap: 'wrap', gap: 8 }}>
-                {tipChips.map((chip) => {
-                  const selected = chip.key === 'percent' ? tipMode === 'percent' && effectiveTipPercent === chip.percent : tipMode === 'custom';
+        )}
+
+        {/* Tip — its own card, redesigned 2026-11-10 (explicit user
+            decision, replacing the 2026-11-09 restaurant-policy version):
+            no more on/off switch — the card is always offered, and the
+            diner always makes an explicit choice (0% included) rather than
+            starting from a restaurant-set default. Percent chips fixed at
+            0/5/10/15/20/25 plus a free-amount option, same chip visual
+            language as MenuBrowser.tsx's own FilterChip. */}
+        <View className="mt-4 overflow-hidden rounded-xl bg-white px-4 py-3" style={{ borderColor: colors.border, borderWidth: 1 }}>
+          {/* Bumped from text-sm to a dominant text-lg (2026-11-10, explicit
+              request), same as billSummaryPaymentPreferenceTitle below. */}
+          <Text className="text-lg font-bold" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
+            {t('billSummaryTipTitle')}
+          </Text>
+          {/* Encouraging explanation (2026-11-10, explicit request) in place
+              of the old toggle-adjacent question — this app pools tips
+              across the whole team (project_payments_and_cancellation_rules),
+              so the copy speaks to that directly rather than a generic
+              "want to tip?" prompt. "!" alert-circle in #38BDF8 (2026-11-10,
+              explicit request) — this app's own established attention-mark
+              convention for an informational note, not an error (same
+              icon/color pairing this screen's own too-low-amount note uses
+              further down, and AvailabilityNoticeBanner.tsx/MenuBrowser.tsx
+              elsewhere). */}
+          <View className="mt-1 items-start" style={{ flexDirection: rowDirection, gap: 5 }}>
+            <Ionicons name="alert-circle" size={16} color="#38BDF8" style={{ marginTop: 1 }} />
+            <Text className="flex-1 text-xs leading-4" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
+              {t('billSummaryTipEncouragementMessage')}
+            </Text>
+          </View>
+          {/* "X סועדים נתנו טיפ היום" (2026-11-10, explicit request) — same
+              real-data-only rule and exact styling as MenuBrowser.tsx's own
+              dish order-activity line (colors.bottleGreen), never shown at
+              zero. */}
+          {tippersToday !== null && tippersToday > 0 && (
+            <Text
+              className="mt-1.5 text-[11px] font-medium"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+              style={{ color: colors.bottleGreen, textAlign: physicalReadingStart(isRTL) }}
+            >
+              {tippersToday === 1 ? t('billSummaryTipperCountSingularLabel') : t('billSummaryTipperCountLabel').replace('{count}', String(tippersToday))}
+            </Text>
+          )}
+          <View className="mt-3">
+            {/* Two "tabs" (2026-11-10, explicit request): tipMode==='percent'
+                (the default) shows this one-row strip of all six chips —
+                flex-1 each, not flexWrap, so all six always share exactly
+                one row regardless of screen width, never wrapping to a
+                second line. Tapping "סכום" below switches tipMode to
+                'custom', which hides this whole row — not just visually
+                dims it — in favor of the free-amount input underneath. */}
+            {tipMode === 'percent' && (
+              <View style={{ flexDirection: rowDirection, gap: 6 }}>
+                {tipPercentOptions.map((percent) => {
+                  const selected = tipPercent === percent;
                   return (
                     <Pressable
-                      key={chip.key === 'percent' ? `p${chip.percent}` : 'custom'}
-                      onPress={() => {
-                        if (chip.key === 'percent' && chip.percent !== undefined) {
-                          setTipMode('percent');
-                          setTipPercent(chip.percent);
-                        } else {
-                          setTipMode('custom');
-                        }
-                      }}
-                      className="items-center rounded-lg border px-3 py-2"
+                      key={percent}
+                      onPress={() => setTipPercent(percent)}
+                      className="flex-1 items-center rounded-lg border py-2"
                       style={{ borderColor: selected ? colors.royalBlue : colors.border, backgroundColor: selected ? colors.royalBlue : '#FFFFFF' }}
                     >
-                      <Text className="text-sm font-medium" style={{ color: selected ? '#FFFFFF' : colors.ink }}>
-                        {chip.key === 'percent' ? `${chip.percent}%` : t('billSummaryTipCustomAmountChip')}
-                      </Text>
+                      <Text className="text-sm font-medium" style={{ color: selected ? '#FFFFFF' : colors.ink }}>{percent}%</Text>
                     </Pressable>
                   );
                 })}
               </View>
+            )}
+            {/* The "סכום" tab itself — its own row below the percent strip
+                (2026-11-10, explicit request), not a seventh chip mixed into
+                that row. Sized to its own content (not full-width), aligned
+                to the row's own reading-start side via a single-child flex
+                row container — same technique already used elsewhere in
+                this app for a non-stretching flex child (see i18n.tsx's own
+                comment on why a literal alignSelf isn't trusted here).
+                Tapping it while already selected used to toggle back to the
+                percent tab (2026-11-10, user correction: not obvious to a
+                diner — a double-tap-to-undo isn't a real affordance). A
+                dedicated "אחוז טיפ" chip now appears alongside it once
+                selected instead, an explicit, visible way back. */}
+            <View className="mt-2" style={{ flexDirection: rowDirection, gap: 6 }}>
               {tipMode === 'custom' && (
-                <TextInput
-                  value={tipCustomAmount}
-                  onChangeText={setTipCustomAmount}
-                  placeholder={t('billSummaryTipCustomAmountPlaceholder')}
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="decimal-pad"
-                  className="mt-3 rounded-xl border px-4 py-3 text-sm"
-                  style={{ borderColor: colors.border, color: colors.ink, textAlign: physicalReadingStart(isRTL) }}
-                />
+                <Pressable
+                  onPress={() => setTipMode('percent')}
+                  className="items-center rounded-lg border px-3 py-2"
+                  style={{ borderColor: colors.border, backgroundColor: '#FFFFFF' }}
+                >
+                  <Text className="text-sm font-medium" style={{ color: colors.ink }}>{t('billSummaryTipPercentChip')}</Text>
+                </Pressable>
               )}
-              {/* 2026-11-09, explicit request — the chips above are no
-                  longer a fixed, app-wide range (see minimumTipPercent's
-                  own comment); this tells the diner why, instead of
-                  leaving a restaurant-specific range unexplained. "!"
-                  alert-circle in #38BDF8 (2026-11-09, explicit request) —
-                  this app's own established attention-mark convention for
-                  an informational note, not an error (see
-                  AvailabilityNoticeBanner.tsx/MenuBrowser.tsx's own addon-
-                  group hint for the same icon/color pairing). */}
+              <Pressable
+                onPress={() => setTipMode('custom')}
+                className="items-center rounded-lg border px-3 py-2"
+                style={{ borderColor: tipMode === 'custom' ? colors.royalBlue : colors.border, backgroundColor: tipMode === 'custom' ? colors.royalBlue : '#FFFFFF' }}
+              >
+                <Text className="text-sm font-medium" style={{ color: tipMode === 'custom' ? '#FFFFFF' : colors.ink }}>
+                  {t('billSummaryTipCustomAmountChip')}
+                </Text>
+              </Pressable>
+            </View>
+            {tipMode === 'custom' && (
+              <TextInput
+                value={tipCustomAmount}
+                onChangeText={setTipCustomAmount}
+                placeholder={t('billSummaryTipCustomAmountPlaceholder')}
+                placeholderTextColor="#9CA3AF"
+                keyboardType="decimal-pad"
+                className="mt-3 rounded-xl border px-4 py-3 text-sm"
+                style={{ borderColor: colors.border, color: colors.ink, textAlign: physicalReadingStart(isRTL) }}
+              />
+            )}
+            {/* Friendly, warm floor message (2026-11-10, explicit request) —
+                shown only once the diner has actually typed something that
+                doesn't clear the 5%-of-subtotal floor, not as a blocking
+                error but as a quiet explanation; the pay button simply
+                stays disabled underneath it in the meantime (hasChosenTip).
+                "!" alert-circle in #38BDF8, this app's own established
+                attention-mark convention for an informational note, not an
+                error (see AvailabilityNoticeBanner.tsx/MenuBrowser.tsx's own
+                addon-group hint for the same icon/color pairing). */}
+            {tipMode === 'custom' && tipCustomAmount.trim() !== '' && !customTipMeetsMinimum && (
               <View className="mt-3 items-start" style={{ flexDirection: rowDirection, gap: 5 }}>
                 <Ionicons name="alert-circle" size={18} color="#38BDF8" style={{ marginTop: 1 }} />
                 <Text className="flex-1 text-[11px] leading-4" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
-                  {t('billSummaryTipPolicyNote')}
+                  {t('billSummaryTipCustomAmountTooLowMessage')}
                 </Text>
               </View>
-            </View>
-          )}
+            )}
+          </View>
         </View>
-        )}
 
         {/* Payment preference — no row dividers, equal padding on every row
-            (2026-11-08, explicit "symmetric spacing" request). */}
-        <Text className="mb-2 mt-6 text-sm font-bold" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
-          {t('billSummaryPaymentPreferenceTitle')}
-        </Text>
-        <View className="overflow-hidden rounded-xl bg-white px-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
+            (2026-11-08, explicit "symmetric spacing" request). Title moved
+            inside the card itself (2026-11-10, explicit request — was a
+            separate heading floating above it), matching how
+            billSummaryTipTitle sits inside its own card above. */}
+        <View className="mt-6 overflow-hidden rounded-xl bg-white px-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
+          <Text className="pt-3 text-lg font-bold" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
+            {t('billSummaryPaymentPreferenceTitle')}
+          </Text>
           <Pressable onPress={() => setPaymentMethod('card')} className="items-center py-3.5" style={{ flexDirection: rowDirection, gap: 10 }}>
             <Ionicons
               name={paymentMethod === 'card' ? 'radio-button-on' : 'radio-button-off'}
@@ -433,18 +759,33 @@ export default function BillSummaryScreen() {
             </Text>
           </Pressable>
         </View>
-      </ScrollView>
 
-      <View className="px-4 pt-3" style={{ backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }}>
-        <Pressable
-          onPress={handlePayButtonPress}
-          disabled={closing || cashCalling}
-          className="items-center justify-center rounded-xl"
-          style={{ backgroundColor: colors.royalBlue, minHeight: 48, opacity: closing || cashCalling ? 0.7 : 1 }}
-        >
-          <Text className="text-lg font-semibold text-white">{t('billSummaryPayButton')}</Text>
-        </Pressable>
-      </View>
+        {/* Pay button (2026-11-10, moved in here from a separate fixed bar
+            below the scroll area — see KeyboardAwareScrollView's own
+            comment above for why) — mt-4 fills in for that bar's own pt-3,
+            insets.bottom already folded into the outer contentContainerStyle's
+            own paddingBottom instead of repeated here. */}
+        <View className="mt-4">
+          {/* Required-choice hint (2026-11-10, explicit request): the button
+              below stays disabled until the diner has picked a tip chip or a
+              valid free amount — no default is ever pre-selected for them,
+              0% included, so this explains why rather than leaving a
+              disabled button unexplained. */}
+          {!hasChosenTip && (
+            <Text className="mb-2 text-center text-xs" style={{ color: colors.textMuted }}>
+              {t('billSummaryTipRequiredHint')}
+            </Text>
+          )}
+          <Pressable
+            onPress={handlePayButtonPress}
+            disabled={!hasChosenTip || closing || cashCalling}
+            className="items-center justify-center rounded-xl"
+            style={{ backgroundColor: colors.royalBlue, minHeight: 48, opacity: !hasChosenTip || closing || cashCalling ? 0.7 : 1 }}
+          >
+            <Text className="text-lg font-semibold text-white">{t('billSummaryPayButton')}</Text>
+          </Pressable>
+        </View>
+      </KeyboardAwareScrollView>
 
       <Modal visible={closeDoneOpen} transparent animationType="fade" onRequestClose={handleCloseDone}>
         <View className="flex-1 items-center justify-center bg-black/40 px-6">
@@ -477,12 +818,122 @@ export default function BillSummaryScreen() {
         onDismiss={() => setCloseFailedMessage(null)}
       />
 
-      <Modal visible={splitComingSoonOpen} transparent animationType="fade" onRequestClose={() => setSplitComingSoonOpen(false)}>
+      {/* "הוספת חבר לחשבון האישי" (2026-11-15, real feature, replaces the
+          carousel's own default "invite a new diner" behavior on this
+          screen specifically — see ParticipantsRow's own onAddPress
+          comment). Already-added members are fully interactive now (real
+          bug found live: they used to be checked and disabled, so reopening
+          this picker after adding someone had no way to undo it) —
+          unchecking one removes them, see handleConfirmFriendPicker's own
+          comment for how that's sent. */}
+      <Modal visible={friendPickerOpen} transparent animationType="fade" onRequestClose={() => setFriendPickerOpen(false)}>
         <View className="flex-1 items-center justify-center bg-black/40 px-6">
           <View className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <Text className="mb-2 text-lg font-bold text-[#1B2430]">{t('billSummarySplitComingSoonTitle')}</Text>
-            <Text className="mb-5 text-sm leading-5 text-[#6E6A61]">{t('billSummarySplitComingSoonMessage')}</Text>
-            <Pressable onPress={() => setSplitComingSoonOpen(false)} className="items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
+            <Text className="mb-1 text-lg font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('addAccountMembersTitle')}
+            </Text>
+            <Text className="mb-4 text-sm leading-5 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('addAccountMembersInstruction')}
+            </Text>
+            {eligibleFriends.length === 0 ? (
+              <Text className="mb-2 py-4 text-center text-sm text-[#9CA3AF]">{t('addAccountMembersEmpty')}</Text>
+            ) : (
+              <>
+                {/* "בחרו את כולם" (2026-11-15, explicit request) — only once
+                    there's actually more than one friend to choose between;
+                    a single eligible friend makes a select-all shortcut
+                    meaningless. Acts as a master checkbox: checked (and
+                    tapping it clears everyone) once every eligible friend is
+                    already selected, otherwise selects everyone. */}
+                {eligibleFriends.length > 1 &&
+                  (() => {
+                    const allSelected = eligibleFriends.every((f) => selectedFriendIds.has(f.participantId));
+                    return (
+                      <Pressable
+                        onPress={() => setSelectedFriendIds(allSelected ? new Set() : new Set(eligibleFriends.map((f) => f.participantId)))}
+                        className="items-center gap-3 pb-2.5"
+                        style={{ flexDirection: rowDirection, borderBottomWidth: 1, borderColor: colors.border, marginBottom: 4 }}
+                      >
+                        <Ionicons name={allSelected ? 'checkbox' : 'square-outline'} size={22} color={allSelected ? colors.royalBlue : colors.textMuted} />
+                        <Text className="flex-1 text-sm font-semibold" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
+                          {t('addAccountMembersSelectAll')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })()}
+                <ScrollView style={{ maxHeight: 280 }}>
+                {eligibleFriends.map((friend) => {
+                  const checked = selectedFriendIds.has(friend.participantId);
+                  return (
+                    <Pressable
+                      key={friend.participantId}
+                      onPress={() => toggleFriendSelected(friend.participantId)}
+                      className="items-center gap-3 py-2.5"
+                      style={{ flexDirection: rowDirection }}
+                    >
+                      <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={22} color={checked ? colors.royalBlue : colors.textMuted} />
+                      {friend.photoUrl ? (
+                        <Image source={{ uri: friend.photoUrl }} style={{ height: 32, width: 32, borderRadius: 16 }} />
+                      ) : (
+                        <View className="items-center justify-center rounded-full" style={{ height: 32, width: 32, backgroundColor: colors.royalBlue }}>
+                          <Text className="text-xs font-bold text-white">{(friend.displayName ?? '?').charAt(0)}</Text>
+                        </View>
+                      )}
+                      <Text className="flex-1 text-sm" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
+                        {friend.displayName}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                </ScrollView>
+              </>
+            )}
+            <View className="mt-4" style={{ flexDirection: rowDirection, gap: 10 }}>
+              <Pressable
+                onPress={() => setFriendPickerOpen(false)}
+                disabled={linkingFriends}
+                className="flex-1 items-center rounded-lg border py-3"
+                style={{ borderColor: colors.border }}
+              >
+                <Text className="font-semibold" style={{ color: colors.ink }}>
+                  {t('back')}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleConfirmFriendPicker()}
+                disabled={linkingFriends || eligibleFriends.length === 0}
+                className="flex-1 items-center rounded-lg py-3"
+                style={{ backgroundColor: colors.royalBlue, opacity: linkingFriends || eligibleFriends.length === 0 ? 0.6 : 1 }}
+              >
+                <Text className="font-semibold text-white">{t('addAccountMembersConfirm')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <ErrorModal
+        visible={linkFriendsErrorMessage !== null}
+        title={t('addAccountMembersFailedTitle')}
+        message={linkFriendsErrorMessage ?? ''}
+        dismissLabel={t('gotIt')}
+        onDismiss={() => setLinkFriendsErrorMessage(null)}
+      />
+
+      {/* "!" explanation for the add-members feature (2026-11-15, explicit
+          request) — same modal shape as AccountScreen.tsx's own info modal
+          (title + explanation + a single close button), just one topic
+          instead of that one's four. */}
+      <Modal visible={addFriendInfoOpen} transparent animationType="fade" onRequestClose={() => setAddFriendInfoOpen(false)}>
+        <View className="flex-1 items-center justify-center bg-black/40 px-6">
+          <View className="w-full max-w-sm rounded-2xl bg-white p-5">
+            <Text className="mb-2 text-lg font-bold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('addAccountMembersInfoTitle')}
+            </Text>
+            <Text className="text-sm leading-5 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+              {t('addAccountMembersInfoExplanation')}
+            </Text>
+            <Pressable onPress={() => setAddFriendInfoOpen(false)} className="mt-5 items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
               <Text className="font-semibold text-white">{t('closeModal')}</Text>
             </Pressable>
           </View>

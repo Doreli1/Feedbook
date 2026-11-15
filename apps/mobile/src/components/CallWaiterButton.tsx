@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
-import { useI18n, visualRowDirection, physicalReadingStart } from '../lib/i18n';
+import { useI18n, physicalReadingStart } from '../lib/i18n';
 import type { TranslationKey } from '../lib/translations';
 import { supabase } from '../lib/supabase';
 import { useTableSessionStore } from '../lib/tableSessionStore';
@@ -119,10 +119,12 @@ export function CallWaiterModals({
 // was requested in round 4 but doesn't exist in any bundled icon set
 // (Ionicons, MaterialCommunityIcons, MaterialIcons, FontAwesome5/6, Feather,
 // AntDesign, Octicons, Fontisto — checked all of them directly against the
-// installed glyph maps), so concierge-bell stays. Label renders before the
-// icon in JSX so it lands on the icon's right under native RTL.
+// installed glyph maps), so concierge-bell stays. Label removed (2026-11-10,
+// user request) — the icon-only circle grew instead (36→44) to read as more
+// clearly tappable on its own, accessibilityLabel carries the spoken name
+// the visible text used to provide.
 export function CallWaiterInlineTrigger() {
-  const { t, isRTL } = useI18n();
+  const { t } = useI18n();
   const { calling, called, error, handlePress, dismissCalled, dismissError } = useCallWaiter();
   // Accidental-tap guard (2026-10-11, user request): a real-world miss-tap
   // sends a waiter across the restaurant for nothing. ConfirmModal is the
@@ -132,22 +134,15 @@ export function CallWaiterInlineTrigger() {
 
   return (
     <>
-      {/* Real bug (2026-10-27): plain flex-row relied on a native RTL flag
-          that doesn't reliably flip on a real device — driven explicitly
-          instead (see i18n.tsx's visualRowDirection). */}
       <Pressable
         onPress={() => setConfirmOpen(true)}
         disabled={calling}
         accessibilityRole="button"
-        className="items-center gap-2"
-        style={{ flexDirection: visualRowDirection(isRTL) }}
+        accessibilityLabel={t('callWaiterButton')}
+        className="items-center justify-center rounded-full"
+        style={{ height: 44, width: 44, backgroundColor: colors.royalBlueDark }}
       >
-        <Text className="text-sm font-semibold" style={{ color: colors.royalBlueDark }}>
-          {t('callWaiterButton')}
-        </Text>
-        <View className="items-center justify-center rounded-full" style={{ height: 36, width: 36, backgroundColor: colors.royalBlueDark }}>
-          {calling ? <ActivityIndicator color="#FFFFFF" size="small" /> : <FontAwesome5 name="concierge-bell" size={15} color="#FFFFFF" />}
-        </View>
+        {calling ? <ActivityIndicator color="#FFFFFF" size="small" /> : <FontAwesome5 name="concierge-bell" size={18} color="#FFFFFF" />}
       </Pressable>
 
       <ConfirmModal

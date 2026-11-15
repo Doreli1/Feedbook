@@ -6,6 +6,12 @@ export interface SessionParticipant {
   displayName: string;
   photoUrl: string | null;
   isHost: boolean;
+  // Set once this participant has been added to ANOTHER participant's own
+  // personal account (2026-11-15, real feature — see
+  // 20261115090000_personal_account_members.sql) — null means they pay for
+  // themself, the default/common case. Points at the participantId whose
+  // account their charges are actually billed to.
+  billedToParticipantId: string | null;
 }
 
 // Table-mates row (ניהול חשבון, מוקאפים 10.1/10.2) — every participant who
@@ -38,6 +44,7 @@ export function useSessionParticipants(sessionId: string | null) {
         displayName: row.display_name,
         photoUrl: row.profile_photo_url,
         isHost: row.is_host,
+        billedToParticipantId: row.billed_to_participant_id,
       })),
     );
     setLoading(false);
@@ -50,11 +57,15 @@ export function useSessionParticipants(sessionId: string | null) {
     void refresh();
   }, [refresh]);
 
-  // Live-updates the row the moment someone else joins the same table —
-  // matches the "שוטף" expectation already set for the account screen's
-  // other data (AFD §3.10). Unfiltered subscribe + refetch, same pattern as
-  // apps/web/src/screens/Dashboard.tsx's own kitchen channel: RLS on the
-  // underlying RPC still correctly narrows what refresh() can actually see.
+  // Live-updates the row the moment someone else joins the same table, OR
+  // (2026-11-15) the moment anyone's billedToParticipantId changes — adding
+  // a member to a personal account is a plain UPDATE on an existing row,
+  // not an INSERT, so this widened from 'INSERT' to '*' to actually pick
+  // that up live too. Matches the "שוטף" expectation already set for the
+  // account screen's other data (AFD §3.10). Unfiltered subscribe +
+  // refetch, same pattern as apps/web/src/screens/Dashboard.tsx's own
+  // kitchen channel: RLS on the underlying RPC still correctly narrows what
+  // refresh() can actually see.
   useEffect(() => {
     if (!sessionId) return;
     // Unique per-mount suffix — AccountScreen fully unmounts/remounts on every
@@ -68,7 +79,7 @@ export function useSessionParticipants(sessionId: string | null) {
     // depends on the channel name.
     const channel = supabase
       .channel(`session-participants-${sessionId}-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'session_participants', filter: `session_id=eq.${sessionId}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'session_participants', filter: `session_id=eq.${sessionId}` }, () => {
         void refresh();
       })
       .subscribe();

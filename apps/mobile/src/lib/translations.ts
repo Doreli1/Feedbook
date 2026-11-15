@@ -97,6 +97,9 @@ const translations = {
     activateQrScanner: 'הפעילו סורק QR',
     editProfile: 'עריכת פרופיל',
     changePassword: 'שינוי סיסמה',
+    // Biometric/device-PIN gate shown before entering set-new-password.tsx
+    // (2026-11-15, explicit request) — see profile.tsx's own comment.
+    changePasswordAuthPrompt: 'אמתו את זהותכם כדי להמשיך לשינוי הסיסמה',
     displayName: 'שם תצוגה',
     save: 'שמירה',
     signOut: 'התנתקות',
@@ -139,6 +142,23 @@ const translations = {
     // larger (AvailabilityNoticeBanner's `emphasize`), not a plain line
     // the way kitchenClosedMessage/barNoFoodDishesMessage stay.
     barClosingNoticeMessage: 'הבר סיים לקבל הזמנות להיום — תודה שהייתם איתנו!',
+    // Real gap found live (2026-11-10): a regular table had no notice at
+    // all once the restaurant's own hours fully closed, and could still
+    // place a drink order — this is NOT kitchenClosedMessage (which only
+    // narrows food out, drinks stay orderable past it by design, see
+    // kitchen_closing_cutoff.sql); here nothing is orderable at all.
+    // Shortened (2026-11-10, user correction) to mirror
+    // barClosingNoticeMessage's own exact lesson one line up — an explicit
+    // "you can close your account and pay" instruction read as the
+    // restaurant trying to move the diner along, same mistake that message
+    // already went through and fixed on 2026-11-04 (see its own comment).
+    // Just the warm thank-you, nothing else.
+    restaurantClosedOrderingBlockedMessage: 'המסעדה סגורה כעת — תודה שהייתם איתנו!',
+    // Shown in the menu content area itself (not the bottom banner) once the
+    // restaurant's closed — replaces the category grid/dish list entirely
+    // (2026-11-10, user correction: dimming the tabs alone left the content
+    // underneath fully visible and browsable).
+    restaurantClosedMenuEmptyState: 'אין תפריט להצגה כרגע.',
     // Title added 2026-11-03 (friendly 'info' tone, same treatment as
     // restaurantClosedTitle/barClosedTitle) — message body kept exactly as
     // it was before (user's explicit call), even though it now repeats
@@ -408,11 +428,9 @@ const translations = {
     personalAccountTab: 'חשבון אישי',
     accountColumnDescription: 'תיאור',
     accountColumnQuantity: 'כמות',
-    accountColumnUnitPrice: 'מחיר ליחידה',
+    accountColumnUnitPrice: "מחיר ליח'",
     accountColumnTotalPrice: 'מחיר כללי',
     accountColumnMember: 'חבר חשבון',
-    serviceFeeDisclaimerPrefix: 'דמי השירות ',
-    serviceFeeDisclaimerEmphasis: 'אינם כלולים בחשבון',
     accountTotalLabel: 'סך עלות',
     requestBillButton: 'סגרו חשבון',
     endVisitButton: 'סיימו ביקור',
@@ -424,30 +442,81 @@ const translations = {
     // when "סגרו חשבון" is tapped with a real balance outstanding, replacing
     // the earlier plain "coming soon" modal with a real pre-payment review
     // screen, per the real mockup supplied for it.
-    billSummaryAccountLabel: 'החשבון שלכם:',
+    billSummaryAccountLabel: 'חשבון האישי שלכם:',
     billSummaryTableNumberLabel: 'שולחן מספר:',
     billSummaryGuestNameLabel: 'שם האורח:',
-    billSummaryAddFriendCaption: 'הוסיפו חבר לחשבון',
+    billSummaryAddFriendCaption: 'הוסיפו חברים לחשבון האישי',
+    // "הוספת חבר לחשבון האישי" picker (2026-11-15, real feature) — opened
+    // from the carousel's own "+" on this screen specifically (see
+    // ParticipantsRow's onAddPress comment).
+    addAccountMembersTitle: 'הוספת חברים לחשבון האישי',
+    addAccountMembersInstruction: 'בחרו את מי מהחברים בשולחן תרצו להוסיף לחשבון שלכם.',
+    addAccountMembersEmpty: 'אין כרגע חברים נוספים בשולחן להוספה.',
+    addAccountMembersSelectAll: 'בחרו את כולם',
+    addAccountMembersConfirm: 'אישור',
+    addAccountMembersFailedTitle: 'לא הצלחנו להוסיף',
+    addAccountMembersFailedMessage: 'משהו השתבש בהוספת החברים לחשבון. נסו שוב בעוד רגע.',
+    // "!" info button next to the heading above the carousel (2026-11-15,
+    // explicit request) — same small light-blue circle + information-outline
+    // icon convention as AccountScreen.tsx's own info button, explaining
+    // THIS feature's own logic rather than the account-strip terms that one
+    // explains.
+    addAccountMembersInfoTitle: 'מה זה אומר להוסיף חבר לחשבון האישי?',
+    addAccountMembersInfoExplanation: 'כשתוסיפו חברים אחרים מהשולחן לחשבון האישי שלכם, ההזמנות שלהם יצטרפו לחשבון שלכם — כך תוכלו לשלם עבורם, או לחלק את הסכום שווה בשווה ביניכם.',
     billSummaryDinerLineLabel: 'סועד {n}',
+    // Replaces "סועד {n}" for this exact line once a combined group exists
+    // (2026-11-15, explicit request — "סועד 1" right above "ההזמנה המשותפת
+    // (X סועדים)" read ambiguously, as if the "1" and the "X" were both
+    // counting diners instead of one being a position and the other a
+    // count). "סועד {n}" itself is left untouched for the solo case, where
+    // there's nothing below it to conflict with.
+    // "סכום", not "הזמנה" (2026-11-15, explicit correction) — this line (and
+    // its two siblings below) is a money figure to pay, not a description of
+    // what was ordered.
+    billSummaryMyOwnOrderLabel: 'הסכום האישי שלך',
     billSummaryTotalLabel: 'מחיר',
-    billSummarySplitEquallyButton: 'חלקו את התשלום שווה',
-    billSummarySplitComingSoonTitle: 'בקרוב',
-    billSummarySplitComingSoonMessage: 'חלוקת התשלום בין משתתפי החשבון תהיה זמינה כאן בקרוב.',
+    // Real split/full-payment choice (2026-11-15, replaces the old
+    // "coming soon" placeholder) — shown only once at least one friend has
+    // been added to this diner's own personal account. Equal split is the
+    // default/pre-selected option (explicit request); the group-order and
+    // your-share lines above the total only appear once a real group
+    // exists, see bill-summary.tsx's own combinedSubtotal/myShareOfCombined.
+    billSummarySplitEquallyButton: 'חלוקה שווה בין כולם',
+    billSummaryPayFullForGroupButton: 'תשלום מלא עליי',
+    billSummaryGroupOrderLabel: 'הסכום המשותף ({n} סועדים)',
+    // Tied explicitly to "ההזמנה המשותפת" above it (2026-11-15, wording
+    // pass) rather than a bare "your share", so the two lines read as one
+    // clear pair: the combined total, then your own slice of it.
+    billSummaryYourShareLabel: 'החלק שלך בסכום המשותף',
     // Tip card (2026-11-08, replaces the earlier flat "service fee" line —
     // real user correction: this app pools tips rather than charging a
     // mandatory service fee, see project_payments_and_cancellation_rules).
     // Renamed from the bare "טיפ" the same day, per explicit request for
     // wording that fits the app's own tone — "tip" pooled for the whole
     // team, not a per-server gratuity, so "team appreciation" rather than
-    // "tip". billSummaryTipQuestion is the encouraging microcopy shown next
-    // to the on/off toggle itself, not just a card title.
+    // "tip".
     billSummaryTipTitle: 'הערכה לצוות',
-    billSummaryTipQuestion: 'רוצים להביע הערכה לצוות הערב?',
-    billSummaryTipCustomAmountChip: 'סכום אחר',
+    // Replaces billSummaryTipQuestion (2026-11-10, redesign — there's no
+    // on/off toggle for this to sit next to anymore) — an encouraging
+    // explanation of why tipping is worth it, not just a bare question.
+    billSummaryTipEncouragementMessage: 'הטיפ שלכם מתחלק בין כל הצוות שדאג לכם היום ועושה הבדל אמיתי עבורם — כל אחוז שתבחרו מתקבל בהערכה רבה.',
+    billSummaryTipCustomAmountChip: 'סכום ידני',
+    // Explicit "go back to percent" chip (2026-11-10, user correction —
+    // replaces tapping the already-selected "סכום אחר" chip again, which
+    // wasn't an obvious affordance) — shown only once "סכום אחר" is active.
+    billSummaryTipPercentChip: 'אחוז טיפ',
     billSummaryTipCustomAmountPlaceholder: 'הזינו סכום',
-    // 2026-11-09 — explains why the chips above vary per restaurant (see
-    // minimumTipPercent in bill-summary.tsx).
-    billSummaryTipPolicyNote: 'טווח אחוזי הטיפ המוצע נקבע בהתאם למדיניות המסעדה, ומשתנה בין מסעדה למסעדה.',
+    // "X סועדים נתנו טיפ היום" (2026-11-10) — same singular/plural split as
+    // dishOrdersTodayLabel/dishOrdersTodaySingularLabel.
+    billSummaryTipperCountLabel: '{count} סועדים נתנו טיפ היום',
+    billSummaryTipperCountSingularLabel: 'סועד אחד נתן טיפ היום',
+    // Shown above the pay button while no tip chip/amount has been chosen
+    // yet (2026-11-10) — explains why it's disabled.
+    billSummaryTipRequiredHint: 'בחרו אחוז טיפ כדי להמשיך — אפשר גם 0%.',
+    // Warm floor message for the free-amount field (2026-11-10, explicit
+    // request: friendly tone, not a scolding error) — shown only once the
+    // diner has typed something below 5% of their own subtotal.
+    billSummaryTipCustomAmountTooLowMessage: 'תודה שבחרתם לתת טיפ משלכם! נשמח שהסכום יהיה לפחות 5% מהחשבון, כדי שהוא יעזור לצוות כמו שצריך.',
     // Shown directly under the price breakdown's total line (2026-11-08).
     billSummaryVatNote: 'המחיר כולל מע"מ',
     billSummaryPaymentPreferenceTitle: 'העדפה לתשלום',
@@ -496,6 +565,8 @@ const translations = {
     endVisitDoneMessage: 'הביקור שלכם הסתיים בהצלחה. נשמח לראותכם בפעם הבאה.',
     endVisitFailedTitle: 'לא הצלחנו לסיים את הביקור',
     endVisitFailedMessage: 'משהו השתבש בסיום הביקור. נסו שוב בעוד רגע.',
+    sessionClosedTitle: 'החשבון נסגר',
+    sessionClosedMessage: 'החשבון שאליו הייתם מחוברים נסגר. סרקו את קוד ה-QR שוב כדי להצטרף מחדש.',
     endVisitHasPendingOrdersMessage: 'התקבלה הזמנה חדשה בחשבון שלכם - לא ניתן לסיים את הביקור כרגע.',
     accountNoItemsYet: 'עדיין לא הוזמנו מנות.',
 
@@ -607,6 +678,7 @@ const translations = {
     activateQrScanner: 'Activate QR scanner',
     editProfile: 'Edit profile',
     changePassword: 'Change password',
+    changePasswordAuthPrompt: 'Verify your identity to continue to change your password',
     displayName: 'Display name',
     save: 'Save',
     signOut: 'Sign out',
@@ -627,6 +699,8 @@ const translations = {
     barNotActive: "The bar is closed right now. Check the opening hours and try again later.",
     barClosedScanMessage: "You can come back and scan once the bar is open.",
     barClosingNoticeMessage: "The bar has stopped taking new orders for today — thanks for being with us!",
+    restaurantClosedOrderingBlockedMessage: "The restaurant is closed now — thanks for being with us!",
+    restaurantClosedMenuEmptyState: "No menu to show right now.",
     tableArchivedTitle: "This table isn't in use",
     tableArchived: "This table is no longer in use. Please ask the restaurant staff for help.",
     restaurantClosedTitle: "The restaurant is closed right now",
@@ -851,26 +925,39 @@ const translations = {
     accountColumnUnitPrice: 'Unit price',
     accountColumnTotalPrice: 'Total price',
     accountColumnMember: 'Account member',
-    serviceFeeDisclaimerPrefix: 'Service fees ',
-    serviceFeeDisclaimerEmphasis: 'are not included in the bill',
     accountTotalLabel: 'Total',
     requestBillButton: 'Close the bill',
     endVisitButton: 'End visit',
     endVisitFreeTooltip: 'You can end your visit whenever it suits you.',
-    billSummaryAccountLabel: 'Your account:',
+    billSummaryAccountLabel: 'Your personal account:',
     billSummaryTableNumberLabel: 'Table number:',
     billSummaryGuestNameLabel: 'Guest name:',
-    billSummaryAddFriendCaption: 'Add a friend to the account',
+    billSummaryAddFriendCaption: 'Add members to your personal account',
+    addAccountMembersTitle: 'Add members to your personal account',
+    addAccountMembersInstruction: "Choose which diners at the table you'd like to add to your account.",
+    addAccountMembersEmpty: 'There are no other diners at the table to add right now.',
+    addAccountMembersSelectAll: 'Select everyone',
+    addAccountMembersConfirm: 'Confirm',
+    addAccountMembersFailedTitle: "We couldn't add them",
+    addAccountMembersFailedMessage: 'Something went wrong adding them to your account. Please try again in a moment.',
+    addAccountMembersInfoTitle: 'What does adding a member to your personal account mean?',
+    addAccountMembersInfoExplanation: "When you add other members from the table to your personal account, their orders become part of your account — so you can pay for them, or split the total evenly between you.",
     billSummaryDinerLineLabel: 'Diner {n}',
+    billSummaryMyOwnOrderLabel: 'Your own amount',
     billSummaryTotalLabel: 'Total',
-    billSummarySplitEquallyButton: 'Split the payment equally',
-    billSummarySplitComingSoonTitle: 'Coming soon',
-    billSummarySplitComingSoonMessage: 'Splitting the payment between account members will be available here soon.',
+    billSummarySplitEquallyButton: 'Split equally between everyone',
+    billSummaryPayFullForGroupButton: "It's on me",
+    billSummaryGroupOrderLabel: 'Combined amount ({n} diners)',
+    billSummaryYourShareLabel: 'Your share of the combined amount',
     billSummaryTipTitle: 'Team appreciation',
-    billSummaryTipQuestion: 'Want to show the team some appreciation tonight?',
-    billSummaryTipCustomAmountChip: 'Other amount',
+    billSummaryTipEncouragementMessage: 'Your tip is shared among the whole team that took care of you today, and it really makes a difference for them — whatever percentage you choose is deeply appreciated.',
+    billSummaryTipCustomAmountChip: 'Manual amount',
+    billSummaryTipPercentChip: 'Tip percentage',
     billSummaryTipCustomAmountPlaceholder: 'Enter an amount',
-    billSummaryTipPolicyNote: "The suggested tip range is set by the restaurant's own policy, and varies between restaurants.",
+    billSummaryTipperCountLabel: '{count} diners tipped today',
+    billSummaryTipperCountSingularLabel: 'One diner tipped today',
+    billSummaryTipRequiredHint: 'Pick a tip percentage to continue — 0% works too.',
+    billSummaryTipCustomAmountTooLowMessage: 'Thanks for choosing your own tip amount! Please make it at least 5% of the bill, so it really helps the team.',
     billSummaryVatNote: 'Price includes VAT',
     billSummaryPaymentPreferenceTitle: 'Payment preference',
     billSummaryCardLabel: 'Mastercard •••• 5555',
@@ -901,6 +988,8 @@ const translations = {
     endVisitDoneMessage: 'Your visit has ended. We hope to see you again soon.',
     endVisitFailedTitle: "We couldn't end your visit",
     endVisitFailedMessage: 'Something went wrong ending your visit. Please try again in a moment.',
+    sessionClosedTitle: 'This account was closed',
+    sessionClosedMessage: 'The account you were connected to has been closed. Scan the QR code again to rejoin.',
     endVisitHasPendingOrdersMessage: "A new order just came in on your account — you can't end your visit right now.",
     accountNoItemsYet: 'No dishes ordered yet.',
 

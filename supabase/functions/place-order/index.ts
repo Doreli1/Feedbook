@@ -213,6 +213,15 @@ Deno.serve(async (req) => {
     if (message.includes("SESSION_NOT_OPEN")) {
       return errorResponse("SESSION_NOT_OPEN", "The session is not open for orders", 409);
     }
+    // 2026-11-10: the restaurant's own configured hours have fully ended for
+    // a regular (non-bar) table — distinct from KITCHEN_CLOSED below, which
+    // only narrows food out; nothing is orderable past this point, the
+    // diner's only remaining action is to close out and pay. A bar table
+    // never raises this — bar_is_active already hard-gates on
+    // restaurant_is_active itself, so BAR_NOT_ACTIVE covers it there.
+    if (message.includes("RESTAURANT_NOT_ACTIVE")) {
+      return errorResponse("RESTAURANT_NOT_ACTIVE", "The restaurant is closed — no new orders can be placed", 409);
+    }
     // 2026-11-02: a bar-type session can stay 'open' past the bar's own
     // active window (e.g. an unpaid balance, see
     // 20261102093000_bar_close_if_inactive_skip_unpaid.sql) — same

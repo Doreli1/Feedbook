@@ -64,8 +64,12 @@ export function usePaymentNotifications(userId: string | undefined) {
 
   useEffect(() => {
     if (!userId) return;
+    // Unique per-mount suffix — see useOrderingAvailability.ts's own comment
+    // for the full "cannot add postgres_changes callbacks ... after
+    // subscribe()" story (real crash found live 2026-11-09). This mail icon
+    // renders on every post-auth screen, so it remounts constantly too.
     const channel = supabase
-      .channel(`payment-notifications-${userId}`)
+      .channel(`payment-notifications-${userId}-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => void refresh())
       .subscribe();
     return () => void supabase.removeChannel(channel);

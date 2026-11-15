@@ -28,11 +28,22 @@ export function useOrderingAvailability(restaurantId: string | null, isBarTable:
   // only checks bar_is_active for table_type='bar' sessions), so there's no
   // "bar closed" state to track there at all, not just nothing to show.
   const [barActive, setBarActive] = useState<boolean | null>(null);
+  // Real gap found live (2026-11-10): a regular table had no live signal at
+  // all for "the restaurant's own hours have fully ended" — only kitchenOpen
+  // (which only ever narrows food out, drinks stay orderable past it, see
+  // kitchen_closing_cutoff.sql's own 2026-11-02 decision) was tracked, so an
+  // already-seated diner could keep ordering drinks indefinitely with no
+  // notice. null when seated at the bar — bar_is_active already hard-gates
+  // on restaurant_is_active itself (20261102120000_bar_bounded_by_
+  // restaurant_hours.sql), so barActive alone already covers a bar table;
+  // this is only ever used/shown for a regular table.
+  const [restaurantActive, setRestaurantActive] = useState<boolean | null>(null);
 
   const refresh = useCallback(async () => {
     if (!restaurantId) {
       setKitchenOpen(null);
       setBarActive(null);
+      setRestaurantActive(null);
       return;
     }
     // bar_close_if_inactive (not plain bar_is_active), same reasoning as
@@ -40,12 +51,14 @@ export function useOrderingAvailability(restaurantId: string | null, isBarTable:
     // auto-closes a lingering open bar session once the bar's gone
     // inactive — real for this diner's own session too, not just staff
     // screens.
-    const [kitchenResult, barResult] = await Promise.all([
+    const [kitchenResult, barResult, restaurantResult] = await Promise.all([
       supabase.rpc('kitchen_is_open', { p_restaurant_id: restaurantId }),
       isBarTable ? supabase.rpc('bar_close_if_inactive', { p_restaurant_id: restaurantId }) : Promise.resolve({ data: null }),
+      isBarTable ? Promise.resolve({ data: null }) : supabase.rpc('restaurant_is_active', { p_restaurant_id: restaurantId }),
     ]);
     setKitchenOpen((kitchenResult.data as boolean | null) ?? null);
     setBarActive(isBarTable ? ((barResult.data as boolean | null) ?? null) : null);
+    setRestaurantActive(isBarTable ? null : ((restaurantResult.data as boolean | null) ?? null));
   }, [restaurantId, isBarTable]);
 
   useEffect(() => {
@@ -54,8 +67,19 @@ export function useOrderingAvailability(restaurantId: string | null, isBarTable:
 
   useEffect(() => {
     if (!restaurantId) return;
+    // Unique per-mount suffix (real crash found live 2026-11-09: "cannot add
+    // `postgres_changes` callbacks for realtime:ordering-availability-<id>
+    // after `subscribe()`", a hard Render Error, not a caught warning —
+    // crashed the whole menu screen white/red right after join-session,
+    // intermittently, exactly matching useAccountItems.ts's/
+    // useSessionParticipants.ts's own fix for this identical bug class: a
+    // channel named only by a stable id is the SAME object across a fast
+    // remount whose previous cleanup hasn't finished yet, and re-adding a
+    // postgres_changes listener to an already-`subscribe()`d channel throws.
+    // This hook was added 2026-11-04, after that lesson, without carrying it
+    // forward. See those two files' own comments for the fuller history.
     const channel = supabase
-      .channel(`ordering-availability-${restaurantId}`)
+      .channel(`ordering-availability-${restaurantId}-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'restaurants', filter: `id=eq.${restaurantId}` }, () => void refresh())
       .subscribe();
     const interval = setInterval(() => void refresh(), POLL_INTERVAL_MS);
@@ -69,5 +93,5 @@ export function useOrderingAvailability(restaurantId: string | null, isBarTable:
     };
   }, [restaurantId, refresh]);
 
-  return { kitchenOpen, barActive };
+  return { kitchenOpen, barActive, restaurantActive };
 }

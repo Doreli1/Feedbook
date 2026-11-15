@@ -6,6 +6,7 @@ import { AccountScreen } from './account/AccountScreen';
 import { AvailabilityNoticeBanner, type AvailabilityNotice } from './AvailabilityNoticeBanner';
 import { BurgerSideMenuPanel } from './BurgerSideMenu';
 import { CallWaiterInlineTrigger } from './CallWaiterButton';
+import { ErrorModal } from './ErrorModal';
 import { CartBarInlineTrigger, MenuBrowser } from './menu/MenuBrowser';
 import { OrderTracker } from './orders/OrderTracker';
 import { OrderingHeader } from './OrderingHeader';
@@ -13,6 +14,7 @@ import { OrderingTabBar, type OrderingTabKey } from './OrderingTabBar';
 import { useCartStore } from '../lib/cartStore';
 import { useI18n, visualRowDirection } from '../lib/i18n';
 import { useOrderingAvailability } from '../lib/useOrderingAvailability';
+import { supabase } from '../lib/supabase';
 import { useTableSessionStore } from '../lib/tableSessionStore';
 import { colors } from '../theme';
 
@@ -33,7 +35,7 @@ import { colors } from '../theme';
 export function OrderingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isRTL } = useI18n();
+  const { isRTL, t } = useI18n();
   // RN 0.88 (New Architecture) exposes a dedicated *Instance type per host
   // component for refs — useRef<View> no longer carries measureInWindow().
   const wrapperRef = useRef<ViewInstance>(null);
@@ -54,8 +56,10 @@ export function OrderingScreen() {
   const restaurantId = useTableSessionStore((s) => s.restaurantId);
   const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
   const hasHydrated = useTableSessionStore((s) => s.hasHydrated);
+  const clearTableSession = useTableSessionStore((s) => s.clearTableSession);
   const cartItemCount = useCartStore((s) => s.items.length);
-  const { kitchenOpen, barActive } = useOrderingAvailability(restaurantId, isBarTable);
+  const { kitchenOpen, barActive, restaurantActive } = useOrderingAvailability(restaurantId, isBarTable);
+  const [sessionClosedModalOpen, setSessionClosedModalOpen] = useState(false);
   // sessionId/participantId/restaurantId were added 2026-09-14 (Stage 5) —
   // a session persisted by an app install from before that still has
   // subAccountNumber but none of these three, since they were never part of
@@ -73,6 +77,71 @@ export function OrderingScreen() {
       router.replace('/profile');
     }
   }, [hasHydrated, hasCompleteSession, router]);
+
+  // Real bug found live (2026-11-09): the bar's general account can close
+  // out from under an already-connected diner — the bar's own schedule
+  // ending, or staff changing its hours right as the window flips — with
+  // zero warning. The session/participant cached in tableSessionStore just
+  // goes stale, and every server-validated action (place-order,
+  // call-waiter, ...) then fails silently with a generic error, since this
+  // screen's own `hasCompleteSession` guard above only checks that the
+  // store HAS values, never whether the session they name is still real.
+  //
+  // Scoped to a diner with nothing outstanding (totalCost === 0, the exact
+  // same zero-balance rule useAccounts.ts and confirm-*-payment's own
+  // "everyoneElseSettled" check already use) — explicit user decision: a
+  // diner who actually ordered something is the "forgotten session" gap
+  // already tracked separately (see project_forgotten_session_table_
+  // release_gap memory) and deliberately NOT handled here; silently
+  // disconnecting someone with money already on the table would make that
+  // gap worse, not better, so they're left exactly as before (same stale
+  // state, no new behavior) until that fuller spec exists.
+  useEffect(() => {
+    if (!sessionId || !participantId) return;
+    const myParticipantId = participantId;
+    let cancelled = false;
+
+    async function checkAndHandleClosedSession() {
+      const { data: orderItemRows } = await supabase
+        .from('order_items')
+        .select('quantity, unit_price, status, orders!inner(participant_id), order_item_modifiers(price_delta_at_order)')
+        .eq('orders.participant_id', myParticipantId)
+        .neq('status', 'cancelled');
+      let totalCost = 0;
+      for (const row of orderItemRows ?? []) {
+        const modifierTotal = (row.order_item_modifiers ?? []).reduce(
+          (sum: number, m: { price_delta_at_order: number }) => sum + Number(m.price_delta_at_order),
+          0,
+        );
+        totalCost += (Number(row.unit_price) + modifierTotal) * row.quantity;
+      }
+      if (!cancelled && totalCost === 0) {
+        setSessionClosedModalOpen(true);
+      }
+    }
+
+    const channel = supabase
+      .channel(`session-closed-guard-${sessionId}-${Math.random().toString(36).slice(2)}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'table_sessions', filter: `id=eq.${sessionId}` },
+        (payload) => {
+          if ((payload.new as { status?: string })?.status !== 'open') void checkAndHandleClosedSession();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [sessionId, participantId]);
+
+  function handleSessionClosedDismiss() {
+    setSessionClosedModalOpen(false);
+    clearTableSession();
+    router.replace('/profile');
+  }
 
   function selectTab(tab: OrderingTabKey) {
     if (tab === activeTab) return;
@@ -117,6 +186,7 @@ export function OrderingScreen() {
             onOrderPlaced={() => selectTab('orders')}
             kitchenOpen={kitchenOpen}
             barActive={barActive}
+            restaurantActive={restaurantActive}
             onAvailabilityNoticeChange={setAvailabilityNotice}
           />
         )}
@@ -171,6 +241,15 @@ export function OrderingScreen() {
           )}
         </View>
       )}
+
+      <ErrorModal
+        visible={sessionClosedModalOpen}
+        tone="info"
+        title={t('sessionClosedTitle')}
+        message={t('sessionClosedMessage')}
+        dismissLabel={t('gotIt')}
+        onDismiss={handleSessionClosedDismiss}
+      />
     </View>
   );
 }

@@ -122,8 +122,17 @@ export function useMenuData(restaurantId: string | null) {
 
     setLoading(true);
     void refresh();
+    // Unique per-mount suffix — real crash found live 2026-11-09 on this
+    // exact screen's sibling hook (useOrderingAvailability.ts): a channel
+    // named only by a stable id is the same object across a fast remount
+    // whose previous cleanup hasn't finished yet, and re-adding a
+    // postgres_changes listener to an already-`subscribe()`d channel throws
+    // "cannot add `postgres_changes` callbacks ... after `subscribe()`" — a
+    // hard Render Error, not a caught warning. See that file's own comment,
+    // and useAccountItems.ts's/useSessionParticipants.ts's original fix for
+    // this same bug class.
     const channel = supabase
-      .channel(`menu-data-${rid}`)
+      .channel(`menu-data-${rid}-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_categories' }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dishes' }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dish_size_options' }, () => void refresh())
@@ -238,8 +247,9 @@ function useDishOrderStats(restaurantId: string | null) {
     }
 
     void refresh();
+    // Unique per-mount suffix — see menu-data channel's own comment above.
     const channel = supabase
-      .channel(`dish-order-stats-${rid}`)
+      .channel(`dish-order-stats-${rid}-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => void refresh())
       .subscribe();
     return () => {
@@ -3148,6 +3158,12 @@ function CartModal({
       // just scan-qr) — reuses the same message resolveTableToken.ts shows
       // when the bar is closed at scan time.
       else if (code === 'BAR_NOT_ACTIVE') setErrorMessage(t('barNotActive'));
+      // 2026-11-10: a regular table past the restaurant's own closing time
+      // — tabs are already disabled client-side for this (see
+      // restaurantBlocksEverything above), this is defense-in-depth for the
+      // same race every other code here already guards (cart opened just
+      // before the boundary, or a stale local poll).
+      else if (code === 'RESTAURANT_NOT_ACTIVE') setErrorMessage(t('restaurantClosedOrderingBlockedMessage'));
       // 2026-11-02: the kitchen's own closing cutoff (separate from the
       // bar) — the cart contains a food dish and the kitchen has already
       // stopped taking them for the day, even though the session itself
@@ -3378,11 +3394,13 @@ export function MenuBrowser({
   onOrderPlaced,
   kitchenOpen,
   barActive,
+  restaurantActive,
   onAvailabilityNoticeChange,
 }: {
   onOrderPlaced: () => void;
   kitchenOpen: boolean | null;
   barActive: boolean | null;
+  restaurantActive: boolean | null;
   onAvailabilityNoticeChange: (notice: AvailabilityNotice | null) => void;
 }) {
   const { t, isRTL } = useI18n();
@@ -3470,7 +3488,11 @@ export function MenuBrowser({
   // applies to every item, not just drinks — see 20261102120000_bar_
   // bounded_by_restaurant_hours.sql), so it supersedes the kitchen's own
   // message rather than showing both; kitchen-closed only ever affects the
-  // food tab and never applies to a regular table's drinks.
+  // food tab and never applies to a regular table's drinks. The restaurant-
+  // closed notice (2026-11-10, user report — a regular table had no notice
+  // at all and could still place a drink order past closing) is the same
+  // kind of "blocks everything" state as a closed bar, just for a regular
+  // table instead, so it gets the same priority/emphasis treatment.
   const availabilityNotice = useMemo<AvailabilityNotice | null>(() => {
     // barClosingNoticeMessage, not barNotActive (2026-11-04, user
     // correction) — barNotActive is phrased as a reactive rejection ("try
@@ -3479,10 +3501,11 @@ export function MenuBrowser({
     // the day — see that key's own comment in translations.ts. emphasize
     // renders it bold + slightly larger (2026-11-04, user request).
     if (isBarTable && barActive === false) return { messageKey: 'barClosingNoticeMessage', emphasize: true };
+    if (!isBarTable && restaurantActive === false) return { messageKey: 'restaurantClosedOrderingBlockedMessage', emphasize: true };
     if (kitchenOpen === false) return { messageKey: 'kitchenClosedMessage' };
     if (barHasNoFoodDishes) return { messageKey: 'barNoFoodDishesMessage' };
     return null;
-  }, [isBarTable, barActive, kitchenOpen, barHasNoFoodDishes]);
+  }, [isBarTable, barActive, restaurantActive, kitchenOpen, barHasNoFoodDishes]);
 
   useEffect(() => {
     onAvailabilityNoticeChange(availabilityNotice);
@@ -3497,10 +3520,13 @@ export function MenuBrowser({
   // something can actually be ordered from it right now — a closed bar
   // blocks both tabs (see availabilityNotice's own priority comment above),
   // a closed kitchen or an empty bar food menu only ever blocks the food
-  // tab. A regular table's drink tab is never disabled.
+  // tab. A regular table's drink tab is never disabled — EXCEPT when the
+  // restaurant itself has fully closed (2026-11-10, user report): at that
+  // point nothing is orderable, same as a closed bar for a bar table.
   const barBlocksEverything = isBarTable && barActive === false;
-  const foodTabDisabled = barBlocksEverything || kitchenOpen === false || barHasNoFoodDishes;
-  const drinkTabDisabled = barBlocksEverything;
+  const restaurantBlocksEverything = !isBarTable && restaurantActive === false;
+  const foodTabDisabled = barBlocksEverything || restaurantBlocksEverything || kitchenOpen === false || barHasNoFoodDishes;
+  const drinkTabDisabled = barBlocksEverything || restaurantBlocksEverything;
 
   // Whichever tab isn't dimmed is the default (2026-11-04, user rule,
   // stated generally — not just "start on drink when there's no food
@@ -3516,6 +3542,18 @@ export function MenuBrowser({
       setSection('food');
     }
   }, [section, foodTabDisabled, drinkTabDisabled]);
+
+  // Real bug (2026-11-10, user report, same visit as the fix above): dimming
+  // the tab buttons alone left the category grid/dish list fully visible and
+  // browsable underneath — the diner could still drill into a category and
+  // see dishes, just not add/order them. "Nothing orderable" was supposed to
+  // mean nothing shown, per the user's own words. Kicks back out of whatever
+  // category the diner was already inside (if any) the moment the
+  // restaurant goes inactive, so the content area below can always render
+  // the plain empty state instead of either the dish list or FilterSortBar.
+  useEffect(() => {
+    if (restaurantBlocksEverything) setCategoryId(null);
+  }, [restaurantBlocksEverything]);
 
   if (loading || !data) {
     return (
@@ -3632,7 +3670,11 @@ export function MenuBrowser({
         </View>
       )}
 
-      {activeCategory ? (
+      {restaurantBlocksEverything ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-center text-sm text-[#9CA3AF]">{t('restaurantClosedMenuEmptyState')}</Text>
+        </View>
+      ) : activeCategory ? (
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
           {/* Only the category name text itself is tappable (2026-10-01, per
               explicit request) — the chevron icon is now purely decorative,

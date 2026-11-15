@@ -266,49 +266,85 @@ function ParticipantItemTable({
         </thead>
         <tbody>
           {items.map((item) => {
-            const unitPrice = item.unitPrice + item.modifierTotal;
-            const lineTotal = unitPrice * item.quantity;
+            // Dish's own row never includes a paid add-on's price anymore
+            // (real request, 2026-11-09) — a priced modifier now gets its
+            // own separate row right below its dish, same split
+            // mergeAccountItemsByDish already does one level up for the
+            // session-wide table; a FREE (priceDelta 0) modifier still has
+            // nothing of its own to show and stays folded in, same as
+            // everywhere else in this codebase.
+            const lineTotal = item.unitPrice * item.quantity;
             const isCancelled = item.status === 'cancelled';
             const canCancelThis = canAct && !isCancelled && !item.pendingCancellationRequestId;
-            return (
-              <tr key={item.id} className="border-b border-border last:border-b-0">
-                <td className={`px-3 py-2 ${isCancelled ? 'text-muted-foreground line-through' : 'text-ink'}`}>
-                  {item.dishName}
-                  {item.sizeOptionName && <span className="text-muted-foreground"> ({item.sizeOptionName})</span>}
-                </td>
-                <td className="px-3 py-2 text-ink">{item.quantity}</td>
-                <td className="px-3 py-2 text-ink">₪{formatAmount(unitPrice)}</td>
-                <td className={`px-3 py-2 font-medium ${isCancelled ? 'text-danger' : 'text-ink'}`}>
-                  {isCancelled ? formatCancelledAmount(lineTotal) : `₪${formatAmount(lineTotal)}`}
-                </td>
-                <td className="px-3 py-2">
-                  <ItemStatusBadge status={item.status} />
-                </td>
-                <td className="px-3 py-2 text-xs italic text-muted-foreground">{isCancelled ? (item.cancellationReason ?? '—') : '—'}</td>
-                {!sessionClosed && (
-                  <td className="px-3 py-2">
-                    {item.pendingCancellationRequestId ? (
-                      myRole === 'manager' ? (
-                        <div className="flex items-center gap-1">
-                          <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning">{t('accountsPendingApprovalBadge')}</span>
-                          <button type="button" onClick={() => onDecide(item.pendingCancellationRequestId!, 'approve')} aria-label={t('accountsApproveAction')} className="rounded p-1 text-success hover:bg-success-soft">
-                            <CheckIcon className="h-4 w-4" />
-                          </button>
-                          <button type="button" onClick={() => onDecide(item.pendingCancellationRequestId!, 'reject')} aria-label={t('accountsRejectAction')} className="rounded p-1 text-danger hover:bg-danger-soft">
-                            <CloseIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning">{t('accountsPendingApprovalBadge')}</span>
-                      )
-                    ) : canCancelThis ? (
-                      <button type="button" onClick={() => onRequestCancel(item.id)} className="rounded border border-danger px-2 py-1 text-xs font-semibold text-danger hover:bg-danger-soft">
-                        {t('accountsCancelItemTitle')}
+            const paidModifiers = item.modifiers.filter((m) => m.priceDelta > 0);
+            const actionCell = !sessionClosed && (
+              <td className="px-3 py-2">
+                {item.pendingCancellationRequestId ? (
+                  myRole === 'manager' ? (
+                    <div className="flex items-center gap-1">
+                      <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning">{t('accountsPendingApprovalBadge')}</span>
+                      <button type="button" onClick={() => onDecide(item.pendingCancellationRequestId!, 'approve')} aria-label={t('accountsApproveAction')} className="rounded p-1 text-success hover:bg-success-soft">
+                        <CheckIcon className="h-4 w-4" />
                       </button>
-                    ) : null}
+                      <button type="button" onClick={() => onDecide(item.pendingCancellationRequestId!, 'reject')} aria-label={t('accountsRejectAction')} className="rounded p-1 text-danger hover:bg-danger-soft">
+                        <CloseIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning">{t('accountsPendingApprovalBadge')}</span>
+                  )
+                ) : canCancelThis ? (
+                  <button type="button" onClick={() => onRequestCancel(item.id)} className="rounded border border-danger px-2 py-1 text-xs font-semibold text-danger hover:bg-danger-soft">
+                    {t('accountsCancelItemTitle')}
+                  </button>
+                ) : null}
+              </td>
+            );
+            return (
+              <Fragment key={item.id}>
+                <tr className="border-b border-border last:border-b-0">
+                  <td className={`px-3 py-2 ${isCancelled ? 'text-muted-foreground line-through' : 'text-ink'}`}>
+                    {item.dishName}
+                    {item.sizeOptionName && <span className="text-muted-foreground"> ({item.sizeOptionName})</span>}
                   </td>
-                )}
-              </tr>
+                  <td className="px-3 py-2 text-ink">{item.quantity}</td>
+                  <td className="px-3 py-2 text-ink">₪{formatAmount(item.unitPrice)}</td>
+                  <td className={`px-3 py-2 font-medium ${isCancelled ? 'text-danger' : 'text-ink'}`}>
+                    {isCancelled ? formatCancelledAmount(lineTotal) : `₪${formatAmount(lineTotal)}`}
+                  </td>
+                  <td className="px-3 py-2">
+                    <ItemStatusBadge status={item.status} />
+                  </td>
+                  <td className="px-3 py-2 text-xs italic text-muted-foreground">{isCancelled ? (item.cancellationReason ?? '—') : '—'}</td>
+                  {actionCell}
+                </tr>
+                {paidModifiers.map((modifier, i) => {
+                  // A plain record, same weight as its dish's own row (real
+                  // request, 2026-11-09 — a muted sub-row background read as
+                  // "not really part of the order"). It shares the parent
+                  // item's status/cancellation/action rather than having its
+                  // own, since a modifier was never independently
+                  // cancellable to begin with — cancelling either row here
+                  // cancels the one real order_item underneath both.
+                  const addOnLabel = modifier.servingVariantName ? `${modifier.name} (${modifier.servingVariantName})` : modifier.name;
+                  const addOnLineTotal = modifier.priceDelta * item.quantity;
+                  return (
+                    <tr key={`${item.id}-${i}`} className="border-b border-border last:border-b-0">
+                      <td className={`px-3 py-2 ${isCancelled ? 'text-muted-foreground line-through' : 'text-ink'}`}>{addOnLabel}</td>
+                      <td className="px-3 py-2 text-ink">{item.quantity}</td>
+                      <td className="px-3 py-2 text-ink">₪{formatAmount(modifier.priceDelta)}</td>
+                      <td className={`px-3 py-2 font-medium ${isCancelled ? 'text-danger' : 'text-ink'}`}>
+                        {isCancelled ? formatCancelledAmount(addOnLineTotal) : `₪${formatAmount(addOnLineTotal)}`}
+                      </td>
+                      <td className="px-3 py-2">
+                        <ItemStatusBadge status={item.status} />
+                      </td>
+                      <td className="px-3 py-2 text-xs italic text-muted-foreground">{isCancelled ? (item.cancellationReason ?? '—') : '—'}</td>
+                      {actionCell}
+                    </tr>
+                  );
+                })}
+              </Fragment>
             );
           })}
         </tbody>

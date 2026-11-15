@@ -46,24 +46,25 @@ export interface AccountParticipant {
   // This diner's own tip (payment_participant_shares.tip_amount, keyed by
   // participant_id this time instead of summed per-session) — 2026-10-21,
   // per explicit request for a standalone, per-diner tip data point feeding
-  // a future "קופת טיפים" (shared tip pool) aggregate and analytics. Always
-  // 0 today for the same reason as AccountRow.totalTip: no real payment
-  // flow writes these rows yet. Bar pseudo-participants (no stable
-  // session_participants link across orders) always get 0 here too — the
-  // bar doesn't track per-diner identity to begin with.
+  // a future "קופת טיפים" (shared tip pool) aggregate and analytics. Real
+  // since confirm-card-payment/confirm-cash-payment started writing these
+  // rows (2026-11-08/09) — resolved via order.session_participants.id,
+  // which is now real and stable for a bar diner too (bar_ticket_number
+  // lives on session_participants as of 2026-10-15, assigned once at
+  // join-session and reused by every order), not bar-excluded anymore.
   tipAmount: number;
   // How THIS diner settled their own share (payments.payment_method,
   // resolved through their own payment_participant_shares row) — moved
   // here from AccountRow 2026-10-22, per explicit request: payment method
   // is naturally a per-diner fact (each participant can settle separately,
-  // by_item or even), not a session-wide one. Always null today, same
-  // reason as tipAmount; bar pseudo-participants always null too.
+  // by_item or even), not a session-wide one. Real for the bar too — see
+  // tipAmount's own comment above.
   paymentMethod: 'credit_card' | 'cash' | null;
   // This diner's own share status (payment_participant_shares.status) —
   // 2026-10-22, per explicit request to show "פתוח"/"שולם" per personal
   // account, not just at the session level. 'open' when there's no share
   // row yet (nothing paid) or it's still 'pending'; 'paid' once their share
-  // is settled. Always 'open' today for the same reason as paymentMethod.
+  // is settled. Real for the bar too — see tipAmount's own comment above.
   paymentStatus: 'open' | 'paid';
 }
 
@@ -356,19 +357,23 @@ export function useAccounts(restaurantId: string | undefined) {
       const displayNumber = isBar ? String(order.bar_ticket_number).padStart(4, '0') : (order.session_participants?.sub_account_number ?? '—');
       let participant = sessionRow.participants.find((p) => p.participantId === participantKey);
       if (!participant) {
-        // Bar pseudo-participants are keyed by order.id, not a real
-        // session_participants.id, so they never resolve a real payment
-        // share — consistent with the bar not tracking per-diner identity.
+        // The row itself is still keyed per order for the bar (participantKey
+        // above) — unchanged. But the real payment lookup below is NOT
+        // bar-excluded anymore (real bug found live 2026-11-09, same shape
+        // as the closed-session-≠-paid fix: a bar diner paid for real via
+        // confirm-card-payment/confirm-cash-payment — a genuine
+        // payment_participant_shares row exists, keyed to their real
+        // session_participants.id — yet this row stayed hardcoded 'open'/0/
+        // null forever). The "bar has no stable per-diner identity" reasoning
+        // this used to rely on stopped being true on 2026-10-15
+        // (bar_ticket_as_personal_account): a bar diner's ticket number is
+        // assigned once at join-session and reused by every order they
+        // place, so order.session_participants?.id is exactly as real and
+        // stable for the bar as it already is for a table.
         const realParticipantId = order.session_participants?.id;
-        const tipAmount = isBar || !realParticipantId ? 0 : (tipByParticipantId.get(realParticipantId) ?? 0);
-        const paymentMethod = isBar || !realParticipantId ? null : (paymentMethodByParticipantId.get(realParticipantId) ?? null);
-        // No inheritance from the session (2026-10-22, per explicit
-        // correction — the causality runs the other way: see
-        // AccountRow.paymentStatus below). A participant's own status comes
-        // only from their own real payment_participant_shares row; with no
-        // such row yet, they're honestly 'open' — never assumed paid just
-        // because something else says the account is.
-        const paymentStatus: 'open' | 'paid' = isBar || !realParticipantId ? 'open' : (paymentStatusByParticipantId.get(realParticipantId) ?? 'open');
+        const tipAmount = !realParticipantId ? 0 : (tipByParticipantId.get(realParticipantId) ?? 0);
+        const paymentMethod = !realParticipantId ? null : (paymentMethodByParticipantId.get(realParticipantId) ?? null);
+        const paymentStatus: 'open' | 'paid' = !realParticipantId ? 'open' : (paymentStatusByParticipantId.get(realParticipantId) ?? 'open');
         participant = { participantId: participantKey, displayNumber, items: [], totalCost: 0, tipAmount, paymentMethod, paymentStatus };
         sessionRow.participants.push(participant);
       }
