@@ -152,6 +152,21 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
   const [cancellationWindow, setCancellationWindow] = useState(
     restaurant?.cancellation_window_minutes != null ? String(restaurant.cancellation_window_minutes) : '',
   );
+  // Per-restaurant Saturday-evening floor (2026-11-21, real feature,
+  // explicit user request) — lets a certified restaurant that opens on
+  // מוצאי שבת define hours on Saturday after all, instead of the original
+  // blanket "closed all Saturday" rule. There is no sunset/havdalah
+  // calculation anywhere in this project (varies by week/season/location),
+  // so per explicit user decision this is a plain custom field the owner
+  // sets themselves, not a computed one — see
+  // 20261121110000_kosher_saturday_evening_hours.sql's own comment for the
+  // full reasoning and the backend enforcement this feeds. Stored as SQL
+  // `time` ("20:30:00"), trimmed to the "HH:MM" an <input type="time">
+  // round-trips — "" (never set) means "no Saturday hours at all", same as
+  // the original behavior.
+  const [kosherSaturdayEarliestOpen, setKosherSaturdayEarliestOpen] = useState(
+    restaurant?.kosher_saturday_earliest_open?.slice(0, 5) ?? '',
+  );
   const [vatRate, setVatRate] = useState(restaurant ? String(restaurant.vat_rate_percent) : '18');
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -211,6 +226,30 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
     ? `${uncontainedBarRule.fromDay === uncontainedBarRule.toDay ? dayLabel(String(uncontainedBarRule.fromDay)) : `${dayLabel(String(uncontainedBarRule.fromDay))}-${dayLabel(String(uncontainedBarRule.toDay))}`} ${uncontainedBarRule.open}-${uncontainedBarRule.close}`
     : null;
 
+  // Same live-validation treatment as uncontainedBarRule just above (2026-11-21,
+  // explicit user request after a real live test: the backend's own
+  // self-healing trigger DOES silently strip a non-compliant Saturday rule
+  // correctly — confirmed directly against the DB — but silently stripping
+  // on save, with no visible error, left the user unsure whether it was a
+  // real bug or just an unsaved edit. Mirrors
+  // restaurant_hours_saturday_compliant(hours, kosher_saturday_earliest_open)
+  // exactly (20261121110000_kosher_saturday_evening_hours.sql) so the client
+  // catches the same condition the server would otherwise have to silently
+  // fix up. '' (no floor set) matches the function's own null-floor
+  // behavior: no Saturday rule is ever compliant.
+  function ruleCoversSaturday(rule: { fromDay: number; toDay: number }): boolean {
+    return rule.fromDay <= rule.toDay ? 6 >= rule.fromDay && 6 <= rule.toDay : 6 >= rule.fromDay || 6 <= rule.toDay;
+  }
+  // Not the `isCertified` const below (declared later in this component,
+  // after this block) — same underlying check, computed again here to avoid
+  // a use-before-declaration ordering problem.
+  const nonCompliantSaturdayRule = restaurant?.kosher_status === 'certified'
+    ? generalRulesNumeric.find((r) => ruleCoversSaturday(r) && (kosherSaturdayEarliestOpen === '' || r.open < kosherSaturdayEarliestOpen))
+    : undefined;
+  const nonCompliantSaturdayRuleText = nonCompliantSaturdayRule
+    ? `${nonCompliantSaturdayRule.fromDay === nonCompliantSaturdayRule.toDay ? dayLabel(String(nonCompliantSaturdayRule.fromDay)) : `${dayLabel(String(nonCompliantSaturdayRule.fromDay))}-${dayLabel(String(nonCompliantSaturdayRule.toDay))}`} ${nonCompliantSaturdayRule.open}-${nonCompliantSaturdayRule.close}`
+    : null;
+
   const barOverrideOptions: { value: 'open' | 'closed' | null; labelKey: TranslationKey }[] = [
     { value: null, labelKey: followScheduleLabelKey(completeBarRules.length > 0, completeRules.length > 0) },
     { value: 'open', labelKey: 'barOverrideOpenNowLabel' },
@@ -233,7 +272,21 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, address, phone, hourRules, barHourRules, barOverride, kitchenCutoff, logoFile, description, cuisineTags, cancellationWindow, vatRate]);
+  }, [
+    name,
+    address,
+    phone,
+    hourRules,
+    barHourRules,
+    barOverride,
+    kitchenCutoff,
+    logoFile,
+    description,
+    cuisineTags,
+    cancellationWindow,
+    vatRate,
+    kosherSaturdayEarliestOpen,
+  ]);
 
   useEffect(() => {
     if (uncontainedBarRule && !barHoursErrorSeenRef.current) {
@@ -371,6 +424,14 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
       return false;
     }
 
+    // Same backstop shape as uncontainedBarRule just above (2026-11-21) —
+    // the save button is disabled whenever nonCompliantSaturdayRule is set
+    // (see the render below), this covers the debounced autosave timer.
+    if (nonCompliantSaturdayRule) {
+      setSaveState('idle');
+      return false;
+    }
+
     if (!restaurantId) {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/register-restaurant`, {
         method: 'POST',
@@ -425,6 +486,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
         cuisine_tags: cuisineTags,
         cancellation_window_minutes: cancellationWindow.trim() === '' ? null : Number(cancellationWindow),
         vat_rate_percent: vatRate.trim() === '' ? 18 : Number(vatRate),
+        kosher_saturday_earliest_open: kosherSaturdayEarliestOpen.trim() === '' ? null : kosherSaturdayEarliestOpen,
       })
       .eq('id', restaurantId);
 
@@ -633,13 +695,33 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           />
         </div>
         {phoneNumber !== '' && !isPhoneValid && (
-          <p className="mb-3 text-xs text-danger">{t('phoneInvalid')}</p>
+          <p className="mb-3 flex items-center gap-1 text-xs text-danger">
+            <AlertIcon className="h-3.5 w-3.5 shrink-0" />
+            <span>{t('phoneInvalid')}</span>
+          </p>
         )}
         {(phoneNumber === '' || isPhoneValid) && <div className="mb-3" />}
         </div>
 
         <div className="card p-4">
         <label className="mb-1 block text-sm font-bold text-ink">{t('hours')}</label>
+        {/* Saturday-evening floor (2026-11-21, real feature) — set once per
+            restaurant, read by the backend's own self-healing trigger/CHECK
+            (20261121110000_kosher_saturday_evening_hours.sql); a Saturday
+            rule added below only survives a save if its own open time clears
+            this floor. Shown above the rule list so the owner sets their
+            floor before reaching for "+ הוספת טווח שעות" to add one. */}
+        {isCertified && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface-2 p-2">
+            <label className="text-xs font-semibold text-ink">{t('hoursKosherSaturdayEarliestOpenLabel')}</label>
+            <input
+              type="time"
+              value={kosherSaturdayEarliestOpen}
+              onChange={(e) => setKosherSaturdayEarliestOpen(e.target.value)}
+              className="rounded border border-border px-1.5 py-1 text-xs"
+            />
+          </div>
+        )}
         <div className="mb-2 space-y-2">
           {hourRules.map((rule) => (
             <div key={rule.key} className="flex flex-wrap items-center gap-1.5 rounded border border-border bg-surface-2 p-2">
@@ -651,7 +733,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
               >
                 <option value="" />
                 {DAY_KEYS.map((key, i) => (
-                  <option key={key} value={i} disabled={isCertified && i === 6}>
+                  <option key={key} value={i}>
                     {t(key)}
                   </option>
                 ))}
@@ -664,7 +746,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
               >
                 <option value="" />
                 {DAY_KEYS.map((key, i) => (
-                  <option key={key} value={i} disabled={isCertified && i === 6}>
+                  <option key={key} value={i}>
                     {t(key)}
                   </option>
                 ))}
@@ -703,7 +785,27 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           {t('hoursAddRange')}
         </button>
         {isCertified && (
-          <p className="mb-3 text-[10px] text-muted-foreground">{t('hoursKosherClosedSaturdayHint')}</p>
+          <p className="mb-3 text-[10px] text-muted-foreground">
+            {kosherSaturdayEarliestOpen === '' ? t('hoursKosherClosedSaturdayHint') : t('hoursKosherSaturdayEveningHint').replace('{time}', kosherSaturdayEarliestOpen)}
+          </p>
+        )}
+        {/* Same box as the bar-hours containment error below (2026-11-21,
+            explicit user request after a live test: the server's own
+            self-healing trigger correctly strips a non-compliant Saturday
+            rule, confirmed directly against the DB — but doing that
+            silently, with no visible error, left the reporter unsure
+            whether it was a real bug or just an unsaved edit). Sits right
+            next to the hours it refers to, same placement reasoning as the
+            bar-hours one. */}
+        {nonCompliantSaturdayRuleText && (
+          <div className="mb-3 flex items-start gap-2 rounded border-l-4 border-danger bg-danger-soft px-3 py-2 text-xs text-danger">
+            <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {kosherSaturdayEarliestOpen === ''
+                ? t('hoursKosherSaturdayNoFloorError').replace('{range}', nonCompliantSaturdayRuleText)
+                : t('hoursKosherSaturdayTooEarlyError').replace('{range}', nonCompliantSaturdayRuleText).replace('{time}', kosherSaturdayEarliestOpen)}
+            </span>
+          </div>
         )}
 
         {formattedHours.length > 0 && (
@@ -886,7 +988,12 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
           {saveState === 'incomplete' && <span className="text-muted-foreground">{t('fillRequiredFields')}</span>}
           {saveState === 'saving' && <span className="text-muted-foreground">{t('saving')}</span>}
           {saveState === 'saved' && <span className="text-success">{t('savedAsDraft')}</span>}
-          {saveState === 'error' && <span className="text-danger">{errorMessage}</span>}
+          {saveState === 'error' && (
+            <span className="inline-flex items-center gap-1 text-danger">
+              <AlertIcon className="h-3.5 w-3.5 shrink-0" />
+              <span>{errorMessage}</span>
+            </span>
+          )}
         </div>
 
         {/* Two compact, narrow buttons side by side once there's a plain
@@ -916,7 +1023,7 @@ export function RestaurantDetailsForm({ session, restaurant, onCreated, onSaved,
 
           <button
             onClick={() => void handleContinue()}
-            disabled={!restaurantId || !!uncontainedBarRule}
+            disabled={!restaurantId || !!uncontainedBarRule || !!nonCompliantSaturdayRule}
             className={`rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:bg-border disabled:text-muted-foreground ${onExit ? 'w-20' : 'w-full'}`}
           >
             {primaryLabel ?? t('continue')}

@@ -1413,6 +1413,7 @@ export type Database = {
           kosher_certificate_expires_at: string | null;
           kosher_certificate_uploaded_at: string | null;
           kosher_certificate_url: string | null;
+          kosher_saturday_earliest_open: string | null;
           kosher_status: string;
           logo_url: string | null;
           name: string;
@@ -1440,6 +1441,7 @@ export type Database = {
           kosher_certificate_expires_at?: string | null;
           kosher_certificate_uploaded_at?: string | null;
           kosher_certificate_url?: string | null;
+          kosher_saturday_earliest_open?: string | null;
           kosher_status?: string;
           logo_url?: string | null;
           name: string;
@@ -1466,6 +1468,7 @@ export type Database = {
           kosher_certificate_expires_at?: string | null;
           kosher_certificate_uploaded_at?: string | null;
           kosher_certificate_url?: string | null;
+          kosher_saturday_earliest_open?: string | null;
           kosher_status?: string;
           logo_url?: string | null;
           name?: string;
@@ -1620,6 +1623,7 @@ export type Database = {
           left_at: string | null;
           left_reason: string | null;
           left_reason_other: string | null;
+          pending_billing_request_from: string | null;
           review_verification_code: string;
           session_id: string;
           sub_account_number: string;
@@ -1635,6 +1639,7 @@ export type Database = {
           left_at?: string | null;
           left_reason?: string | null;
           left_reason_other?: string | null;
+          pending_billing_request_from?: string | null;
           review_verification_code: string;
           session_id: string;
           sub_account_number: string;
@@ -1649,6 +1654,7 @@ export type Database = {
           left_at?: string | null;
           left_reason?: string | null;
           left_reason_other?: string | null;
+          pending_billing_request_from?: string | null;
           review_verification_code?: string;
           session_id?: string;
           sub_account_number?: string;
@@ -1658,6 +1664,13 @@ export type Database = {
           {
             foreignKeyName: "session_participants_billed_to_participant_id_fkey";
             columns: ["billed_to_participant_id"];
+            isOneToOne: false;
+            referencedRelation: "session_participants";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "session_participants_pending_billing_request_from_fkey";
+            columns: ["pending_billing_request_from"];
             isOneToOne: false;
             referencedRelation: "session_participants";
             referencedColumns: ["id"];
@@ -1936,6 +1949,7 @@ export type Database = {
       bar_hours_active_now: { Args: { p_bar_hours: Json; p_now?: string }; Returns: boolean };
       bar_is_active: { Args: { p_restaurant_id: string }; Returns: boolean };
       calculate_bill_split: { Args: { p_payment_id: string }; Returns: undefined };
+      close_zero_balance_table_sessions: { Args: { p_restaurant_id: string }; Returns: undefined };
       current_manager_restaurant_ids: { Args: Record<PropertyKey, never>; Returns: string[] };
       current_participant_ids: { Args: Record<PropertyKey, never>; Returns: string[] };
       current_participant_session_ids: { Args: Record<PropertyKey, never>; Returns: string[] };
@@ -2057,7 +2071,12 @@ export type Database = {
       };
       replace_dish_ingredients: { Args: { p_dish_id: string; p_rows: Json }; Returns: undefined };
       restaurant_hours_excludes_saturday: { Args: { p_hours: Json }; Returns: boolean };
-      restaurant_hours_strip_saturday: { Args: { p_hours: Json }; Returns: Json };
+      // Overloads (2026-11-21) — the 2-arg versions are the ones actually
+      // used by the kosher-Saturday trigger/CHECK now; the 1-arg ones above
+      // are unused leftovers (never dropped — see that migration's own
+      // comment on why), never called via supabase.rpc() either way.
+      restaurant_hours_saturday_compliant: { Args: { p_hours: Json; p_earliest_open: string | null }; Returns: boolean };
+      restaurant_hours_strip_saturday: { Args: { p_hours: Json; p_earliest_open: string | null }; Returns: Json };
       restaurant_is_active: { Args: { p_restaurant_id: string }; Returns: boolean };
       restock_inventory_for_order_item: { Args: { p_order_item_id: string }; Returns: undefined };
       session_participant_profiles: {
@@ -2066,7 +2085,9 @@ export type Database = {
           billed_to_participant_id: string | null;
           display_name: string;
           is_host: boolean;
+          left_at: string | null;
           participant_id: string;
+          pending_billing_request_from: string | null;
           profile_photo_url: string;
         }[];
       };

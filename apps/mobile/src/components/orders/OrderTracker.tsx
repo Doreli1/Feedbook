@@ -304,7 +304,9 @@ function OrderItemCard({
         <View style={{ width: '100%', height: 160, borderRadius: 10, marginTop: 10, backgroundColor: '#EFEBE2' }} />
       )}
       {(item.sizeName || item.modifierSummary) && (
-        <Text className="mt-1.5 text-xs text-[#9CA3AF]">{[item.sizeName, item.modifierSummary].filter(Boolean).join(' · ')}</Text>
+        <Text className="mt-1.5 text-xs text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>
+          {[item.sizeName, item.modifierSummary].filter(Boolean).join(' · ')}
+        </Text>
       )}
 
       {item.status === 'cancelled' ? (

@@ -76,6 +76,7 @@ export default function BillSummaryScreen() {
   const isBarTable = useTableSessionStore((s) => s.tableType === 'bar');
   const barTicketNumber = useTableSessionStore((s) => s.barTicketNumber);
   const clearTableSession = useTableSessionStore((s) => s.clearTableSession);
+  const setSuppressGlobalPaidNotice = useTableSessionStore((s) => s.setSuppressGlobalPaidNotice);
   // Same fallback as AccountScreen.tsx's own personalAccountDisplay — a bar
   // diner's "personal account" is their pickup-ticket number, not
   // subAccountNumber (see tableSessionStore.ts's own comment).
@@ -93,14 +94,35 @@ export default function BillSummaryScreen() {
   // billSummarySplitEquallyButton's own visibility below — a real
   // precondition now instead of the (incorrect, per user correction)
   // "anyone else at the whole table" check this used to have.
-  const myAccountMembers = participants.filter((p) => p.billedToParticipantId === participantId);
+  // leftAt !== null excludes a diner who already paid and left (2026-11-17,
+  // real bug found live: someone who'd already settled their own bill kept
+  // showing up as an addable/already-added table-mate here, since nothing
+  // checked this before — session_participant_profiles() didn't even
+  // expose left_at until now). A departed diner has nothing left to
+  // combine; both lists below are scoped to who's still actually there.
+  const myAccountMembers = participants.filter((p) => p.billedToParticipantId === participantId && p.leftAt === null);
+  // Real consent flow (2026-11-17, explicit request): adding a friend no
+  // longer takes effect unilaterally — it sends a request (pendingBillingRequestFrom)
+  // that the friend must approve themselves (the global listener in
+  // app/_layout.tsx shows them that prompt) before they become a real
+  // member above. Tracked separately so the picker can show "ממתין לאישור"
+  // for someone already asked, distinct from someone not yet asked at all.
+  const myPendingRequests = participants.filter((p) => p.pendingBillingRequestFrom === participantId && p.leftAt === null);
   // The combined group this diner is actually paying for once at least one
   // friend has been added — just themself when myAccountMembers is empty
   // (the common/default case), so combinedSubtotal below collapses back to
-  // plain subtotal and nothing downstream changes for a solo diner.
+  // plain subtotal and nothing downstream changes for a solo diner. Only
+  // approved members count here — a still-pending request isn't part of the
+  // bill yet, matching confirm-card-payment's own billed_to_participant_id-
+  // only group fetch.
   const combinedGroupParticipantIds = [participantId, ...myAccountMembers.map((m) => m.participantId)];
   const eligibleFriends = participants.filter(
-    (p) => p.participantId !== participantId && (p.billedToParticipantId === null || p.billedToParticipantId === participantId),
+    (p) =>
+      p.participantId !== participantId &&
+      p.leftAt === null &&
+      ((p.billedToParticipantId === null && p.pendingBillingRequestFrom === null) ||
+        p.billedToParticipantId === participantId ||
+        p.pendingBillingRequestFrom === participantId),
   );
   const [friendPickerOpen, setFriendPickerOpen] = useState(false);
   const [selectedFriendIds, setSelectedFriendIds] = useState<Set<string>>(new Set());
@@ -111,7 +133,7 @@ export default function BillSummaryScreen() {
   const [addFriendInfoOpen, setAddFriendInfoOpen] = useState(false);
 
   function openFriendPicker() {
-    setSelectedFriendIds(new Set(myAccountMembers.map((p) => p.participantId)));
+    setSelectedFriendIds(new Set([...myAccountMembers, ...myPendingRequests].map((p) => p.participantId)));
     setFriendPickerOpen(true);
   }
 
@@ -124,16 +146,17 @@ export default function BillSummaryScreen() {
     });
   }
 
-  // Sends the FULL desired membership, not just additions (2026-11-15, real
-  // gap found live — reopening this picker after adding someone had no way
-  // to undo it, since every checkbox for an already-added member was
-  // disabled). The Edge Function now reconciles both directions itself:
-  // anyone newly checked gets linked, anyone unchecked that was previously a
-  // member gets unlinked back to paying for themself. A no-op (nothing
-  // actually changed) just closes the modal without a network call.
-  // Shared by the picker's own "אישור" and the carousel's direct X-badge
-  // removal below — both ultimately just post the FULL desired membership
-  // (see link-personal-account-members's own comment on why).
+  // Sends the FULL desired set (members + still-pending requests), not just
+  // additions (2026-11-15, real gap found live — reopening this picker after
+  // adding someone had no way to undo it, since every checkbox for an
+  // already-added member was disabled). The Edge Function reconciles both
+  // directions itself: anyone newly checked gets a real request sent to
+  // them (2026-11-17, real consent flow — no longer an instant link, see
+  // link-personal-account-members's own comment), anyone unchecked that was
+  // previously a member/pending request gets cleared back to paying for
+  // themself. A no-op (nothing actually changed) just closes the modal
+  // without a network call. Shared by the picker's own "אישור" and the
+  // carousel's direct X-badge removal below.
   async function submitAccountMembership(memberIds: string[]) {
     if (!sessionId) return;
     setLinkingFriends(true);
@@ -153,7 +176,7 @@ export default function BillSummaryScreen() {
       setFriendPickerOpen(false);
       return;
     }
-    const currentMemberIds = new Set(myAccountMembers.map((m) => m.participantId));
+    const currentMemberIds = new Set([...myAccountMembers, ...myPendingRequests].map((m) => m.participantId));
     const unchanged = selectedFriendIds.size === currentMemberIds.size && Array.from(selectedFriendIds).every((id) => currentMemberIds.has(id));
     if (unchanged) {
       setFriendPickerOpen(false);
@@ -289,6 +312,15 @@ export default function BillSummaryScreen() {
   async function handleCloseAccount() {
     if (!sessionId || closing) return;
     setClosing(true);
+    // Real feature (2026-11-17): this diner's own left_at is about to be
+    // set by this very call — the global "someone else paid for you"
+    // listener (app/_layout.tsx) watches that exact signal, and without
+    // this flag it would show its own modal on top of this screen's own
+    // local one for the diner who's actually the one paying right now.
+    // tableSessionStore resets this back to false on the next
+    // setTableSession/clearTableSession, so it can never leak into a later
+    // visit.
+    setSuppressGlobalPaidNotice(true);
     const { error } = await supabase.functions.invoke('confirm-card-payment', {
       body: { session_id: sessionId, tip_amount: tipAmount, split_mode: splitMode },
     });
@@ -306,9 +338,16 @@ export default function BillSummaryScreen() {
       // account either way.
       const code = await extractFunctionErrorCode(error);
       if (code === 'ALREADY_PAID') {
+        // left_at really is already set for this diner (that's exactly what
+        // ALREADY_PAID means) — suppressGlobalPaidNotice must stay true so
+        // the global listener doesn't ALSO fire for this same, already-
+        // locally-handled completion.
         setCloseDoneOpen(true);
         return;
       }
+      // A genuine failure — the payment never went through, so left_at was
+      // never set and there is nothing for the global listener to suppress.
+      setSuppressGlobalPaidNotice(false);
       setCloseFailedMessage(t('billSummaryCloseFailedMessage'));
       return;
     }
@@ -882,6 +921,17 @@ export default function BillSummaryScreen() {
                       <Text className="flex-1 text-sm" style={{ color: colors.ink, textAlign: physicalReadingStart(isRTL) }}>
                         {friend.displayName}
                       </Text>
+                      {/* Real consent flow (2026-11-17) — a friend already
+                          asked but who hasn't approved/declined yet reads
+                          differently from one not asked at all, so a
+                          re-opened picker doesn't look like nothing
+                          happened. Unchecking this still cancels the
+                          request, same as any other removal here. */}
+                      {friend.pendingBillingRequestFrom === participantId && (
+                        <Text className="text-xs" style={{ color: colors.textMuted }}>
+                          {t('addAccountMembersPendingLabel')}
+                        </Text>
+                      )}
                     </Pressable>
                   );
                 })}

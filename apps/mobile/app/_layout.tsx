@@ -6,6 +6,7 @@ import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, Baloo2_700Bold } from '@expo-google-fonts/baloo-2';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GlobalBillingLinkListener } from '../src/components/GlobalBillingLinkListener';
 import { getPersistedLang, I18nProvider } from '../src/lib/i18n';
 import { supabase } from '../src/lib/supabase';
 import { colors } from '../src/theme';
@@ -151,6 +152,10 @@ export default function RootLayout() {
       <I18nProvider>
         <StatusBar style="light" />
         <Stack screenOptions={{ headerShown: false, animation: 'slide_from_bottom', animationDuration: 50 }} />
+        {/* Screen-independent (2026-11-17, real feature) — see the
+            component's own comment for why this lives here and not on any
+            one screen. */}
+        <GlobalBillingLinkListener />
       </I18nProvider>
     </SafeAreaProvider>
   );

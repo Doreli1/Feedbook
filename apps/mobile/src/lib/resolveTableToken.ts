@@ -65,12 +65,11 @@ export async function resolveTableToken(
     const { code, details } = await extractFunctionError(error);
 
     if (code === 'RESTAURANT_NOT_ACTIVE') {
-      const isCertified = details?.kosher_status === 'certified';
       return {
         ok: false,
         messageKey: 'restaurantNotActive',
         tone: 'info',
-        hoursLines: getTodayHourLines(rulesFromHours(details?.hours), isCertified),
+        hoursLines: getTodayHourLines(rulesFromHours(details?.hours)),
       };
     }
     if (code === 'BAR_NOT_ACTIVE') {
@@ -80,7 +79,7 @@ export async function resolveTableToken(
       // schedule would be misleading.
       const barRules = rulesFromHours(details?.bar_hours);
       const rules = barRules.length > 0 ? barRules : rulesFromHours(details?.hours);
-      return { ok: false, messageKey: 'barClosedScanMessage', tone: 'info', hoursLines: getTodayHourLines(rules, false) };
+      return { ok: false, messageKey: 'barClosedScanMessage', tone: 'info', hoursLines: getTodayHourLines(rules) };
     }
 
     // 2026-11-03, user report: an archived table's rejection looked like a

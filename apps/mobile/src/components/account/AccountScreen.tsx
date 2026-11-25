@@ -439,6 +439,13 @@ export function AccountScreen() {
   // subscriptions to the same session's data.
   const { items } = useAccountItems(sessionId);
   const { participants } = useSessionParticipants(sessionId);
+  // Real bug found live (2026-11-17, user report): a diner who already paid
+  // and left (left_at set, by confirm-card-payment) kept showing up in this
+  // screen's own avatar carousel as if still an active table-mate. Scoped
+  // to just the carousel — AccountItemsTable below still gets the full,
+  // unfiltered `participants` so a departed diner's own past order rows
+  // keep resolving to their real name/avatar instead of "?".
+  const activeParticipants = participants.filter((p) => p.leftAt === null);
   // Forced personal-only for a bar regardless of subTab state (defensive —
   // subTab is never actually set to 'general' for a bar since that tab
   // isn't rendered below, but this keeps the filter itself the single
@@ -456,6 +463,32 @@ export function AccountScreen() {
     .filter((i) => i.participantId === participantId)
     .reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
   const hasNothingToPay = personalTotal === 0;
+
+  // Real consent flow (2026-11-17, explicit request): once this diner has
+  // approved someone else's request to add them, THEIR "סגרו חשבון" button
+  // here stops meaning "go pay" — tapping it now explains who's paying and
+  // offers a way back to paying independently, instead of pushing
+  // bill-summary for a bill that isn't this diner's own to settle anymore.
+  const me = participants.find((p) => p.participantId === participantId);
+  const billedToParticipantId = me?.billedToParticipantId ?? null;
+  const billedToPayer = billedToParticipantId ? (participants.find((p) => p.participantId === billedToParticipantId) ?? null) : null;
+  const [billedToInfoOpen, setBilledToInfoOpen] = useState(false);
+  const [cancellingBillingLink, setCancellingBillingLink] = useState(false);
+  const [cancelBillingLinkErrorMessage, setCancelBillingLinkErrorMessage] = useState<string | null>(null);
+
+  async function handleCancelBillingLink() {
+    if (!sessionId || cancellingBillingLink) return;
+    setCancellingBillingLink(true);
+    const { error } = await supabase.functions.invoke('respond-to-personal-account-link', {
+      body: { session_id: sessionId, action: 'decline' },
+    });
+    setCancellingBillingLink(false);
+    if (error) {
+      setCancelBillingLinkErrorMessage(t('billingLinkCancelFailedMessage'));
+      return;
+    }
+    setBilledToInfoOpen(false);
+  }
 
   // "End visit without an order" flow (2026-10-19, user request): confirm
   // → pick a reason → personalized success — see leave-session Edge
@@ -504,7 +537,7 @@ export function AccountScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
-      <ParticipantsRow participants={participants} />
+      <ParticipantsRow participants={activeParticipants} />
 
       {/* The general/personal toggle itself is meaningless for a bar — only
           personal ever applies (see isBarTable comments above) — so it's
@@ -613,11 +646,24 @@ export function AccountScreen() {
           // explicit user request): pushes the real bill-summary screen —
           // see that screen's own top comment — instead of a plain "coming
           // soon" modal, which used to render here unconditionally.
-          onPress={() => (hasNothingToPay ? setEndVisitConfirmOpen(true) : router.push('/bill-summary'))}
+          // Real consent flow (2026-11-17) — once billedToParticipantId is
+          // set, this diner approved someone else paying for them; tapping
+          // the (visually dimmed) button now explains that instead of
+          // pushing them into a bill-summary flow that isn't theirs to pay
+          // anymore.
+          onPress={() => {
+            if (billedToParticipantId) {
+              setBilledToInfoOpen(true);
+              return;
+            }
+            hasNothingToPay ? setEndVisitConfirmOpen(true) : router.push('/bill-summary');
+          }}
           className="items-center justify-center rounded-xl"
-          style={{ backgroundColor: colors.royalBlue, minHeight: 48 }}
+          style={{ backgroundColor: colors.royalBlue, minHeight: 48, opacity: billedToParticipantId ? 0.5 : 1 }}
         >
-          <Text className="text-lg font-semibold text-white">{t(hasNothingToPay ? 'endVisitButton' : 'requestBillButton')}</Text>
+          <Text className="text-lg font-semibold text-white">
+            {t(billedToParticipantId ? 'billedToSomeoneElseButton' : hasNothingToPay ? 'endVisitButton' : 'requestBillButton')}
+          </Text>
           {/* top:0/bottom:0 (2026-11-10, user report) stretched this to the
               button's full 48px height instead of a compact chip — a fixed
               height + top:'50%'/marginTop:-half is the deterministic RN way
@@ -688,6 +734,51 @@ export function AccountScreen() {
         message={endVisitErrorMessage ?? ''}
         dismissLabel={t('gotIt')}
         onDismiss={() => setEndVisitErrorMessage(null)}
+      />
+
+      {/* Real consent flow (2026-11-17, explicit request) — explains who's
+          paying for this diner's own account and offers a real way back to
+          paying independently, since the close-account button above no
+          longer does its normal job while this is active. */}
+      <Modal visible={billedToInfoOpen} transparent animationType="fade" onRequestClose={() => setBilledToInfoOpen(false)}>
+        <View className="flex-1 items-center justify-center bg-black/40 px-6">
+          <View className="w-full max-w-sm items-center rounded-2xl bg-white p-5">
+            {billedToPayer?.photoUrl ? (
+              <Image source={{ uri: billedToPayer.photoUrl }} style={{ height: 56, width: 56, borderRadius: 28, marginBottom: 12 }} />
+            ) : (
+              <View className="mb-3 items-center justify-center rounded-full" style={{ height: 56, width: 56, backgroundColor: colors.royalBlue }}>
+                <Text className="text-lg font-bold text-white">{(billedToPayer?.displayName ?? '?').charAt(0)}</Text>
+              </View>
+            )}
+            <Text className="mb-2 text-center text-lg font-bold text-[#1B2430]">
+              {t('billingLinkInfoTitle').replace('{name}', billedToPayer?.displayName ?? '')}
+            </Text>
+            <Text className="mb-5 text-center text-sm leading-5 text-[#6E6A61]">
+              {t('billingLinkInfoMessage').replace('{name}', billedToPayer?.displayName ?? '').replace('{account}', personalAccountDisplay)}
+            </Text>
+            <Pressable
+              onPress={() => void handleCancelBillingLink()}
+              disabled={cancellingBillingLink}
+              className="w-full items-center rounded-lg border py-3"
+              style={{ borderColor: colors.danger, opacity: cancellingBillingLink ? 0.6 : 1 }}
+            >
+              <Text className="font-semibold" style={{ color: colors.danger }}>
+                {t('billingLinkCancelButton')}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setBilledToInfoOpen(false)} className="mt-2 w-full items-center rounded-lg py-3" style={{ backgroundColor: colors.royalBlue }}>
+              <Text className="font-semibold text-white">{t('closeModal')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <ErrorModal
+        visible={cancelBillingLinkErrorMessage !== null}
+        title={t('billingLinkCancelFailedTitle')}
+        message={cancelBillingLinkErrorMessage ?? ''}
+        dismissLabel={t('gotIt')}
+        onDismiss={() => setCancelBillingLinkErrorMessage(null)}
       />
 
       <Modal visible={infoOpen} transparent animationType="fade" onRequestClose={() => setInfoOpen(false)}>

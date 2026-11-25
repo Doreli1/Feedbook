@@ -1,11 +1,21 @@
 #!/usr/bin/env node
-// Run with `pnpm refresh-lan` whenever the mobile app or web admin can't
-// reach the local Supabase stack (login/connection errors, NoRouteToHost on
-// the phone, etc.). This machine's LAN IP changes across reboots/network
-// switches, and it's hardcoded in three places that must stay in sync:
-// apps/mobile/.env.local, apps/web/.env.development.local and
-// supabase/functions/.env — see the comments in those files for why
-// (a phone/the Docker container can't resolve "localhost" of this PC).
+// Run with `pnpm refresh-lan` after ANY reboot/network switch, or whenever
+// the mobile app or web admin can't reach the local Supabase stack (login/
+// connection errors, NoRouteToHost on the phone, 503s on Edge Functions,
+// etc.) — not just when you suspect the IP actually changed (real gap found
+// live 2026-11-22: a plain reboot usually keeps the same DHCP lease, so the
+// IP genuinely doesn't change, but all THREE of the local dev processes
+// below still die with the machine and none of them come back on their
+// own — only Supabase's own Docker stack survives via `supabase start`'s
+// own container management. "The IP didn't change, so I don't need to run
+// this" was exactly the reasoning that left every one of the three
+// services below dead after a routine restart).
+//
+// This machine's LAN IP changes across reboots/network switches, and it's
+// hardcoded in three places that must stay in sync: apps/mobile/.env.local,
+// apps/web/.env.development.local and supabase/functions/.env — see the
+// comments in those files for why (a phone/the Docker container can't
+// resolve "localhost" of this PC).
 //
 // This script detects the current Wi-Fi IPv4 address, rewrites the
 // EXPO_PUBLIC_SUPABASE_URL / VITE_SUPABASE_URL / PUBLIC_SUPABASE_URL lines
@@ -15,8 +25,15 @@
 // in the local DB that baked in the previous IP (storage URLs are absolute
 // and get persisted as-is at upload time — see getPublicUrl() usage in
 // apps/web's MenuManager.tsx/RestaurantDetails — so every past upload is a
-// dead link once the IP moves), then kills and restarts both dev servers
-// (Metro on 8081, Vite on 5173) so the new value actually takes effect.
+// dead link once the IP moves), then ALWAYS kills and restarts all three
+// LAN-dependent dev processes — Supabase Edge Functions (CLI, not the
+// Docker stack itself), Metro on 8081, and Vite on 5173 — regardless of
+// whether the IP actually changed, so "nothing needed updating" never
+// again means "so nothing was restarted either". Does NOT start Docker
+// Desktop or the Supabase stack itself (`supabase start`) — that one
+// genuinely does survive a reboot once Docker itself is running again, and
+// starting Docker programmatically needs a real wait-for-ready loop that
+// belongs in its own step, not folded into this script silently.
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -137,6 +154,52 @@ function killPort(port) {
   }
 }
 
+// Edge Functions can't be found by port the way Metro/Vite can (2026-11-22,
+// real gap found live): it's proxied through the Supabase stack's own Kong
+// gateway on SUPABASE_PORT, which also serves REST/Auth/Storage — killing
+// "whatever owns port 55321" would take down the whole Docker stack, not
+// just this one CLI process. Matched by command line instead, the same way
+// this was done manually via Get-CimInstance Win32_Process while debugging
+// this exact issue live.
+function killProcessByCommandLineMatch(label, matchSubstring) {
+  try {
+    const out = execSync(
+      `powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${matchSubstring}*' } | Select-Object -ExpandProperty ProcessId"`,
+      { encoding: 'utf8' },
+    ).trim();
+    if (!out) return;
+    for (const pid of out.split(/\s+/).filter(Boolean)) {
+      try {
+        execSync(`powershell.exe -NoProfile -Command "Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue"`);
+        console.log(`[refresh-lan-ip] stopped ${label} process ${pid}`);
+      } catch {
+        // already gone
+      }
+    }
+  } catch {
+    // nothing matched, or powershell unavailable — fine
+  }
+}
+
+// Actually used now (2026-11-22, real gap found live) — this used to run
+// and discard its own result, always printing nothing either way regardless
+// of whether the stack was actually reachable. Docker Desktop itself (and
+// `supabase start`) is NOT started here on purpose (see this file's own
+// header comment) — starting Edge Functions against a stack that isn't up
+// yet would just hang/loop and confuse things further, so this is the gate
+// that decides whether to even try.
+function isSupabaseStackUp(lanIp) {
+  try {
+    const out = execSync(
+      `powershell.exe -NoProfile -Command "try { (Invoke-WebRequest -Uri 'http://${lanIp}:${SUPABASE_PORT}/auth/v1/health' -TimeoutSec 4 -UseBasicParsing).StatusCode } catch { Write-Output 'unreachable' }"`,
+      { encoding: 'utf8', stdio: 'pipe' },
+    ).trim();
+    return out === '200';
+  } catch {
+    return false;
+  }
+}
+
 function startDetached(label, commandLine, env, logName) {
   const logPath = path.join(os.tmpdir(), logName);
   const logFd = fs.openSync(logPath, 'a');
@@ -172,17 +235,15 @@ if (!changed) {
 }
 
 console.log(`[refresh-lan-ip] checking local Supabase is reachable at ${lanIp}:${SUPABASE_PORT}...`);
-try {
-  execSync(
-    `powershell.exe -NoProfile -Command "try { (Invoke-WebRequest -Uri 'http://${lanIp}:${SUPABASE_PORT}/auth/v1/health' -TimeoutSec 4 -UseBasicParsing).StatusCode } catch { Write-Output 'unreachable' }"`,
-    { encoding: 'utf8', stdio: 'pipe' },
-  );
-} catch {
-  // best-effort only
-}
+const supabaseUp = isSupabaseStackUp(lanIp);
 
+// Always restart all three, regardless of `changed` (2026-11-22, explicit
+// user request/real gap found live) — "the IP didn't change" used to read
+// as "nothing to do here", when a plain reboot kills all three of these
+// independently of the IP ever moving at all.
 killPort(PORT_METRO);
 killPort(PORT_VITE);
+killProcessByCommandLineMatch('Edge Functions', 'functions serve');
 
 startDetached(
   'Metro (mobile)',
@@ -192,4 +253,15 @@ startDetached(
 );
 startDetached('Vite (web admin)', 'pnpm --filter web dev', {}, 'feedbook-vite.log');
 
-console.log('[refresh-lan-ip] done. Give both servers ~10-20s to come up, then reload the app/browser.');
+if (supabaseUp) {
+  startDetached('Edge Functions', 'npx supabase functions serve --no-verify-jwt', {}, 'feedbook-edge-functions.log');
+} else {
+  console.warn(
+    '[refresh-lan-ip] Supabase is NOT reachable — Docker Desktop (or `supabase start`) isn\'t up yet. ' +
+      'Skipped starting Edge Functions: start Docker/the stack, then re-run `pnpm refresh-lan`.',
+  );
+}
+
+console.log(
+  `[refresh-lan-ip] done. Metro + Vite restarted${supabaseUp ? ' + Edge Functions restarted' : ' (Edge Functions skipped, see warning above)'}. Give them ~10-20s to come up, then reload the app/browser.`,
+);

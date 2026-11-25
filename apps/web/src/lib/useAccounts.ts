@@ -215,6 +215,18 @@ export function useAccounts(restaurantId: string | undefined) {
       setLoading(false);
       return;
     }
+    // EOD sweep for ordinary tables (2026-11-21, real feature — see
+    // close_zero_balance_table_sessions' own migration comment) — same
+    // "piggyback on whichever staff screen happens to be open" pattern as
+    // bar_close_if_inactive just below, not a real cron (none exists in
+    // this project). Awaited on its own, before the main fetch, so a
+    // session it just closed is immediately reflected as 'paid'/history-
+    // eligible in THIS refresh, not one cycle later. A no-op whenever
+    // restaurant_is_active() is still true, so this never fires mid-service.
+    if (restaurantId) {
+      await supabase.rpc('close_zero_balance_table_sessions', { p_restaurant_id: restaurantId });
+    }
+
     const [{ data }, { data: pendingRequests }, { data: paymentRows }, { data: zeroOrderBarSessions }, { data: allTableParticipants }] = await Promise.all([
       supabase
         .from('order_items')
@@ -297,9 +309,9 @@ export function useAccounts(restaurantId: string | undefined) {
       // not session_participants; see scan-qr's own comment on why).
       supabase
         .from('session_participants')
-        .select('id, session_id, sub_account_number, table_sessions!inner(restaurant_id)')
+        .select('id, session_id, sub_account_number, left_at, table_sessions!inner(restaurant_id)')
         .eq('table_sessions.restaurant_id', restaurantId)
-        .returns<{ id: string; session_id: string; sub_account_number: string }[]>(),
+        .returns<{ id: string; session_id: string; sub_account_number: string; left_at: string | null }[]>(),
     ]);
 
     const pendingByItemId = new Map((pendingRequests ?? []).map((r) => [r.order_item_id, r.id]));
@@ -314,6 +326,26 @@ export function useAccounts(restaurantId: string | undefined) {
         paymentMethodByParticipantId.set(share.participant_id, p.payment_method as 'credit_card' | 'cash' | null);
         paymentStatusByParticipantId.set(share.participant_id, share.status === 'paid' ? 'paid' : 'open');
       }
+    }
+    // Real bug found live (2026-11-21, general account #635287): a diner
+    // added to someone else's personal account in 'full' split mode, with
+    // ZERO order value of their own, genuinely IS settled the moment
+    // confirm-card-payment runs — it writes them a real
+    // payment_participant_shares row (status 'paid', amount_paid 0) AND
+    // sets their own left_at, same as every other member of that payment.
+    // But neither signal was ever consulted below for a participant who has
+    // no order_items at all (the allTableParticipants merge-in path, just
+    // below, used to hardcode 'open'/0/null unconditionally) — so this
+    // diner's own badge stayed "טרם שולם" forever, even though their phone
+    // had already shown "שולם ונסגר" and kicked them back to their profile.
+    // left_at is the more authoritative of the two (set by every real
+    // settlement path, including the new close_zero_balance_table_sessions
+    // EOD sweep, which writes no payment_participant_shares row at all) —
+    // checked as an OR alongside the real share status, never instead of it.
+    const leftAtByParticipantId = new Set((allTableParticipants ?? []).filter((sp) => sp.left_at !== null).map((sp) => sp.id));
+    function resolvedPaymentStatus(participantId: string | null | undefined): 'open' | 'paid' {
+      if (!participantId) return 'open';
+      return paymentStatusByParticipantId.get(participantId) === 'paid' || leftAtByParticipantId.has(participantId) ? 'paid' : 'open';
     }
 
     // Diner display names for bar pickup tickets aren't needed here (the
@@ -373,7 +405,7 @@ export function useAccounts(restaurantId: string | undefined) {
         const realParticipantId = order.session_participants?.id;
         const tipAmount = !realParticipantId ? 0 : (tipByParticipantId.get(realParticipantId) ?? 0);
         const paymentMethod = !realParticipantId ? null : (paymentMethodByParticipantId.get(realParticipantId) ?? null);
-        const paymentStatus: 'open' | 'paid' = !realParticipantId ? 'open' : (paymentStatusByParticipantId.get(realParticipantId) ?? 'open');
+        const paymentStatus = resolvedPaymentStatus(realParticipantId);
         participant = { participantId: participantKey, displayNumber, items: [], totalCost: 0, tipAmount, paymentMethod, paymentStatus };
         sessionRow.participants.push(participant);
       }
@@ -441,10 +473,17 @@ export function useAccounts(restaurantId: string | undefined) {
     // session on its own, unlike zeroOrderBarSessions above — a table
     // session with ZERO orders from anyone is still out of scope here, same
     // as it's always been) and only when that participant doesn't already
-    // have a real entry from an actual order. ₪0 / 'open' here, normalized
-    // to 'paid' by the zero-totalCost pass right below, same as any other
-    // zero-balance participant — "joined, never ordered" is honestly
-    // nothing left to collect, not an unpaid debt.
+    // have a real entry from an actual order. ₪0 here, but NOT a blind
+    // 'open' (real bug found live 2026-11-21, general account #635287 —
+    // see resolvedPaymentStatus's own comment above): this diner may well
+    // already be genuinely settled (a real payment_participant_shares row,
+    // or left_at) despite having zero order_items of their own — a zero-
+    // order diner added to someone else's account in 'full' split mode is
+    // exactly that case, and this is the ONLY path that ever builds their
+    // participant entry at all, so it must resolve the real status itself,
+    // not assume a later normalization pass will fix it up (that pass only
+    // ever runs once the whole SESSION is no longer 'open', which a diner
+    // who left early from an otherwise still-active table never waits for).
     for (const sp of allTableParticipants ?? []) {
       const sessionRow = bySession.get(sp.session_id);
       if (!sessionRow || sessionRow.isBar) continue;
@@ -454,9 +493,9 @@ export function useAccounts(restaurantId: string | undefined) {
         displayNumber: sp.sub_account_number,
         items: [],
         totalCost: 0,
-        tipAmount: 0,
-        paymentMethod: null,
-        paymentStatus: 'open',
+        tipAmount: tipByParticipantId.get(sp.id) ?? 0,
+        paymentMethod: paymentMethodByParticipantId.get(sp.id) ?? null,
+        paymentStatus: resolvedPaymentStatus(sp.id),
       });
     }
 
@@ -475,8 +514,23 @@ export function useAccounts(restaurantId: string | undefined) {
       // computation below reads it, so the table's own bottom-up aggregate
       // benefits the same way a bar account's vacuous zero-balance case
       // already did at the session level (see the isBar branch just below).
-      for (const participant of sessionRow.participants) {
-        if (participant.totalCost === 0) participant.paymentStatus = 'paid';
+      //
+      // Gated on the session no longer being 'open' (2026-11-21, real bug
+      // found live — user report: a diner still physically seated, who
+      // simply hadn't ordered anything yet, showed "שולם" on this screen).
+      // An unconditional version of this normalization fed straight into
+      // everyParticipantPaid below and made a still-active, nobody's-
+      // ordered-yet table read as fully "שולם" the moment it was opened —
+      // contradicting the 'open' branch's own stated intent a few lines
+      // down ("a freshly-opened empty table must stay 'open'/'פעיל'").
+      // Zero balance only means "nothing left to collect" once the account
+      // itself is actually done (closed by a real payment, or by the new
+      // close_zero_balance_table_sessions EOD sweep below) — not merely
+      // "nothing owed at this exact moment" while the visit is still live.
+      if (sessionRow.sessionStatus !== 'open') {
+        for (const participant of sessionRow.participants) {
+          if (participant.totalCost === 0) participant.paymentStatus = 'paid';
+        }
       }
 
       if (sessionRow.isBar) {

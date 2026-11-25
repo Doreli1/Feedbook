@@ -35,6 +35,13 @@ interface ContactRow {
 // reads the device's real contact list but can't yet narrow it to "friends
 // who have Feedbook" as the original spec describes; the empty state below
 // says so explicitly instead of presenting an unrelated contact as a match.
+// Re-confirmed as still-deferred 2026-11-24 (user request to actually show
+// only contacts with the app installed): diner accounts don't store a phone
+// number anywhere at all (email/password or Google/Facebook sign-in only,
+// no phone field) — real matching needs that collected first, plus the
+// privacy-preserving lookup itself, so it's a real feature, not a quick
+// filter. Explicitly scoped down to just this screen's button text/styling
+// for now; the gap above is unchanged.
 // Tapping a contact toggles a local "selected" checkmark (matches the real
 // mockup's UI) and drives the step-count badge, but — same honest-gap
 // reason — it doesn't send anyone an invite yet: "המשך" always joins the
@@ -140,9 +147,15 @@ export default function AddParticipantsScreen() {
     setStage('contacts');
   }
 
-  async function handleSkipContacts() {
+  // Relabeled from "המשך בלי אנשי קשר" to "מעבר לתפריט" (2026-11-24, user
+  // request) — the old label matched landing on the (now contactless) list
+  // stage, but "go to menu" doesn't: this now joins as host and navigates
+  // straight to /menu, same as the list stage's own "סיימתי" button
+  // (handleContinue), instead of detouring through a stage with nothing
+  // useful to show.
+  async function handleGoToMenu() {
     await recordConsent(false);
-    setStage('contacts');
+    await handleContinue();
   }
 
   function toggleSelected(id: string) {
@@ -232,8 +245,8 @@ export default function AddParticipantsScreen() {
           <Pressable onPress={() => void handleAllowContacts()} className="mb-3 items-center rounded-xl py-4" style={{ backgroundColor: colors.royalBlue }}>
             <Text className="text-lg font-semibold text-white">{t('allowContactsAccess')}</Text>
           </Pressable>
-          <Pressable onPress={() => void handleSkipContacts()} className="items-center rounded-xl border py-4" style={{ borderColor: colors.border }}>
-            <Text className="text-lg font-semibold text-[#1B2430]">{t('continueWithoutContacts')}</Text>
+          <Pressable onPress={() => void handleGoToMenu()} className="items-center rounded-xl py-4" style={{ backgroundColor: colors.royalBlue }}>
+            <Text className="text-lg font-semibold text-white">{t('continueWithoutContacts')}</Text>
           </Pressable>
         </View>
       </View>

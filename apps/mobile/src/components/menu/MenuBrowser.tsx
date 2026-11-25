@@ -1386,6 +1386,30 @@ function LikeButton({
     setLiked(initiallyLiked);
   }, [initiallyLiked]);
 
+  // Real bug found live (2026-11-22, two-device test): unlike
+  // initiallyLiked above, initialCount genuinely DOES change live after
+  // mount — useMenuData's own realtime subscription on dishes/
+  // menu_categories (event: '*') refetches on ANY change to either table,
+  // including sync_dish_likes_count's own trigger-driven likes_count
+  // update, and passes a fresh initialCount down on every such refresh.
+  // This component never had the matching resync for `count` the way it
+  // already did for `liked` just above, so a device that mounted this row
+  // BEFORE some other device's like landed stayed frozen at its own stale
+  // base + only its own later optimistic delta forever — exactly the
+  // reported case (device A liked first; device B, already open from
+  // earlier, liked second and still showed 1, not 2, because its own
+  // local `count` never incorporated device A's like, live or otherwise).
+  // Gated on !busy so this can't clobber a diner's own toggle() still
+  // in flight (a refresh from an unrelated change — e.g. staff editing the
+  // dish's price — landing mid-toggle would otherwise overwrite the fresh
+  // optimistic count with a row read before this device's own insert/
+  // delete had committed).
+  useEffect(() => {
+    if (busy) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCount(initialCount);
+  }, [initialCount, busy]);
+
   async function toggle() {
     if (!id || busy) return;
     setBusy(true);
@@ -2511,6 +2535,47 @@ export function DishDetailModal({
                   )}
                 </View>
               )}
+              {/* Soft, non-blocking shortage note (2026-09-24) — a non-critical
+                  ingredient (get_dish_missing_ingredients) being out never
+                  disables ordering, it just names what won't be included.
+                  Detail-modal-only, per the user's explicit choice, not the
+                  list row. Moved up to right under the title/rating header
+                  (2026-11-22, explicit user request — it used to sit after
+                  the description/reviews, easy to miss if a dish had several
+                  review cards to scroll past first). Restyled the same day,
+                  second correction: an invented amber tone didn't match the
+                  app's own design language — this app's real, established
+                  "expected, non-alarming notice" convention is "!" alert-circle
+                  in #38BDF8 on a light #EAF6FD/#BAE6FD card, exactly
+                  AvailabilityNoticeBanner.tsx's own recipe (same "info, not
+                  alarm" reasoning: this is an expected state, never a real
+                  error, same distinction ErrorModal's own tone prop draws) —
+                  used directly here rather than through that component since
+                  this message needs {ingredients} interpolated into it, which
+                  that component's plain messageKey lookup doesn't support.
+                  Gated on !soldOut (2026-11-22, explicit user request) — once
+                  a CRITICAL ingredient is out, the dish can't be ordered at
+                  all (see the "₪..."/order-button soldOut guards elsewhere in
+                  this component), so a non-critical ingredient's own note is
+                  irrelevant noise at that point: there's no decision left for
+                  the diner to make, just viewing. */}
+              {!soldOut && missingIngredientNames.length > 0 && (
+                <View
+                  className="mx-4 mt-3 items-center rounded-xl border px-3 py-2.5"
+                  style={{ flexDirection: rowDirection, gap: 8, backgroundColor: '#EAF6FD', borderColor: '#BAE6FD' }}
+                >
+                  <Ionicons name="alert-circle" size={18} color="#38BDF8" />
+                  {/* Bold "לתשומת לבכם:" prefix, plain weight for the rest
+                      (2026-11-22, explicit user request) — split into two
+                      translation keys instead of one, so the prefix can
+                      carry its own `font-bold` nested <Text> independent of
+                      the interpolated body. */}
+                  <Text className="flex-1 text-xs leading-4" style={{ color: '#1B2430', textAlign: physicalReadingStart(isRTL) }}>
+                    <Text className="font-bold">{t('dishMissingIngredientsNotePrefix')} </Text>
+                    {t('dishMissingIngredientsNoteBody').replace('{ingredients}', missingIngredientNames.join(', '))}
+                  </Text>
+                </View>
+              )}
               {dish.photo_urls[0] && (
                 <Pressable onPress={() => setGalleryVisible(true)} style={{ marginTop: 12 }}>
                   <Image source={{ uri: dish.photo_urls[0] }} style={{ width: '100%', height: 180 }} />
@@ -2570,19 +2635,6 @@ export function DishDetailModal({
                       </Text>
                     </View>
                   ))}
-                </View>
-              )}
-              {/* Soft, non-blocking shortage note (2026-09-24) — a non-critical
-                  ingredient (get_dish_missing_ingredients) being out never
-                  disables ordering, it just names what won't be included.
-                  Detail-modal-only, per the user's explicit choice, not the
-                  list row. */}
-              {missingIngredientNames.length > 0 && (
-                <View className="mx-4 mb-3 items-start rounded-lg p-2" style={{ flexDirection: rowDirection, gap: 6, backgroundColor: colors.background }}>
-                  <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} />
-                  <Text className="flex-1 text-xs" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
-                    {t('dishMissingIngredientsNote').replace('{ingredients}', missingIngredientNames.join(', '))}
-                  </Text>
                 </View>
               )}
             </View>
@@ -2920,9 +2972,14 @@ export function DishDetailModal({
             <Pressable
               onPress={canAdd ? handleAdd : undefined}
               disabled={!canAdd}
-              className="items-center justify-between rounded-xl px-4 py-4"
+              className={`items-center rounded-xl px-4 py-4 ${soldOut ? 'justify-center' : 'justify-between'}`}
               style={{ flexDirection: rowDirection, backgroundColor: canAdd ? colors.royalBlue : '#9CA3AF' }}
             >
+              {/* justify-between only makes sense with two children (label +
+                  price) to spread apart — soldOut renders just the label, so
+                  with justify-between still active that lone child sat
+                  pinned to the row's start edge (physical right under RTL),
+                  not centered (2026-11-22, explicit user report). */}
               <Text className="text-base font-semibold text-white">
                 {soldOut ? t('dishSoldOutButton') : editingItem ? t('updateOrderItemButton') : t('addToOrderButton')}
               </Text>

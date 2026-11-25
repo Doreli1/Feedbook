@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
 
   const { data: session, error: sessionError } = await admin
     .from("table_sessions")
-    .select("id, table_id, restaurant_id, status, tables(table_type)")
+    .select("id, table_id, restaurant_id, status, tables(table_type, table_number, capacity)")
     .eq("id", sessionId)
     .maybeSingle();
   if (sessionError || !session || session.status !== "open") {
@@ -244,6 +244,41 @@ Deno.serve(async (req) => {
   // why), so this is scoped to non-bar tables only, same as that logic.
   if (!isBar && (existingCount ?? 0) === 0) {
     await admin.from("tables").update({ status: "occupied" }).eq("id", session.table_id);
+  }
+
+  // Real gap found live (2026-11-21, user report): a "couple" table
+  // (capacity 2) ended up with 4 real participants joined to it — capacity
+  // is a real, required column on `tables`, but nothing anywhere ever read
+  // it. Explicit user decision: warn staff only, never block the join
+  // itself (seating decisions are the restaurant's own call, not this
+  // app's to enforce) — and only for regular tables; the bar is already
+  // deliberately uncapped by design (shared ticket system), not in scope.
+  // Counts only CURRENTLY ACTIVE participants (left_at is null) — someone
+  // who already paid and left shouldn't count toward "how many are
+  // physically there right now". Fires on every join that's still over
+  // capacity (not just the one that first broke it), so the count staff
+  // see always reflects the real current total.
+  const capacity = session.tables?.capacity;
+  if (!isBar && typeof capacity === "number") {
+    const { count: activeCount } = await admin
+      .from("session_participants")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", sessionId)
+      .is("left_at", null);
+    if ((activeCount ?? 0) > capacity) {
+      const tableNumber = session.tables?.table_number ?? "—";
+      await admin.from("notifications").insert(
+        (
+          await admin.from("staff").select("id").eq("restaurant_id", session.restaurant_id).eq("is_active", true)
+        ).data?.map((s) => ({
+          staff_id: s.id,
+          type: "table_capacity_exceeded",
+          title: `שולחן ${tableNumber} חורג מהקיבולת שלו`,
+          body: `${activeCount} סועדים מחוברים כעת, בעוד שהקיבולת המוגדרת היא ${capacity}.`,
+          session_id: sessionId,
+        })) ?? [],
+      );
+    }
   }
 
   return jsonResponse({ participant }, 201);

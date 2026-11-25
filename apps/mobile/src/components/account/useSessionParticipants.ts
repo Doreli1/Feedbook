@@ -12,6 +12,17 @@ export interface SessionParticipant {
   // themself, the default/common case. Points at the participantId whose
   // account their charges are actually billed to.
   billedToParticipantId: string | null;
+  // Set once this participant has paid and left (2026-11-17, real bug found
+  // live: a diner who'd already paid kept showing up as an addable
+  // table-mate in the "add friend to my personal account" picker, since
+  // nothing here ever exposed left_at at all). null = still an active
+  // diner at the table.
+  leftAt: string | null;
+  // Set to the requester's own participantId while a personal-account link
+  // request is awaiting THIS participant's own approval (2026-11-17, real
+  // consent flow — adding someone used to take effect unilaterally). null
+  // once approved (billedToParticipantId takes over) or declined.
+  pendingBillingRequestFrom: string | null;
 }
 
 // Table-mates row (ניהול חשבון, מוקאפים 10.1/10.2) — every participant who
@@ -45,6 +56,8 @@ export function useSessionParticipants(sessionId: string | null) {
         photoUrl: row.profile_photo_url,
         isHost: row.is_host,
         billedToParticipantId: row.billed_to_participant_id,
+        leftAt: row.left_at,
+        pendingBillingRequestFrom: row.pending_billing_request_from,
       })),
     );
     setLoading(false);

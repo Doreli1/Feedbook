@@ -7,7 +7,7 @@ import { AppHeader, HeaderBackButton, HeaderMenu } from '../src/components/AppHe
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
 import { goBackOrHome } from '../src/lib/goBackOrHome';
 import { supabase } from '../src/lib/supabase';
-import { useI18n, visualRowDirection } from '../src/lib/i18n';
+import { useI18n, visualRowDirection, physicalReadingStart } from '../src/lib/i18n';
 import type { TranslationKey } from '../src/lib/translations';
 import { colors } from '../src/theme';
 import { DAY_LABELS, parseHourRules, getTodayHourLines, getWeekHourLines } from '../src/lib/formatHours';
@@ -155,8 +155,8 @@ export default function RestaurantDetailsScreen() {
   const hasCertificate = isCertified && !!info.kosherCertificateUrl;
   const dayLabels = DAY_LABELS[lang];
   const hourRules = parseHourRules(info.hoursRaw ?? '');
-  const todayLines = getTodayHourLines(hourRules, isCertified);
-  const weekLines = getWeekHourLines(hourRules, dayLabels, isCertified, t('closedLabel'));
+  const todayLines = getTodayHourLines(hourRules);
+  const weekLines = getWeekHourLines(hourRules, dayLabels);
   const cuisineTags: string[] = (() => {
     try {
       return JSON.parse(info.cuisineTagsRaw || '[]') as string[];
@@ -229,7 +229,7 @@ export default function RestaurantDetailsScreen() {
           </View>
           <Text className="mt-3 text-center text-2xl font-bold text-[#1B2430]">{params.restaurantName}</Text>
           {!!params.tableNumber && (
-            <Text className="mt-0.5 text-base text-[#6E6A61]">
+            <Text className="mt-0.5 text-base text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>
               {t('tableLabel')} {params.tableNumber}
             </Text>
           )}
@@ -253,14 +253,14 @@ export default function RestaurantDetailsScreen() {
           <Text className="text-base font-semibold" style={{ color: isCertified ? '#FFFFFF' : colors.textMuted }}>
             {isCertified ? t('kosherCertified') : t('kosherNotCertified')}
           </Text>
-          {hasCertificate && <Ionicons name="chevron-back" size={14} color="#FFFFFF" />}
+          {hasCertificate && <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={14} color="#FFFFFF" />}
         </Pressable>
 
         {cuisineTags.length > 0 && (
           <View className="mb-3 flex-wrap justify-center gap-1.5 px-6" style={{ flexDirection: rowDirection }}>
             {cuisineTags.map((tag) => (
               <View key={tag} className="rounded-full px-4 py-2" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-                <Text className="text-base font-medium text-[#1B2430]">{t(CUISINE_LABEL_KEYS[tag] ?? 'cuisineDairy')}</Text>
+                <Text className="text-base font-medium text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>{t(CUISINE_LABEL_KEYS[tag] ?? 'cuisineDairy')}</Text>
               </View>
             ))}
           </View>
@@ -275,12 +275,12 @@ export default function RestaurantDetailsScreen() {
             <Pressable onPress={() => setWeekExpanded((v) => !v)} className="items-start gap-3 py-2" style={{ flexDirection: rowDirection }}>
               <Ionicons name="time-outline" size={18} color={colors.textMuted} />
               <View className="flex-1">
-                <Text className="text-sm text-[#9CA3AF]">{t('hoursToday')}</Text>
-                <Text className="text-base text-[#1B2430]">
+                <Text className="text-sm text-[#9CA3AF]" style={{ textAlign: physicalReadingStart(isRTL) }}>{t('hoursToday')}</Text>
+                <Text className="text-base text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
                   {todayLines.length > 0 ? todayLines.join(', ') : t('hoursClosedToday')}
                 </Text>
                 {weekExpanded && (
-                  <Text className="mt-1.5 text-sm leading-6 text-[#6E6A61]">{weekLines.join(', ')}</Text>
+                  <Text className="mt-1.5 text-sm leading-6 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>{weekLines.join(', ')}</Text>
                 )}
               </View>
               <Ionicons name={weekExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
@@ -288,40 +288,40 @@ export default function RestaurantDetailsScreen() {
           ) : (
             <View className="items-start gap-3 py-2" style={{ flexDirection: rowDirection }}>
               <Ionicons name="time-outline" size={18} color={colors.textMuted} />
-              <Text className="flex-1 text-base text-[#6E6A61]">{t('hoursNotPublished')}</Text>
+              <Text className="flex-1 text-base text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>{t('hoursNotPublished')}</Text>
             </View>
           )}
 
           {!!info.address && (
             <View className="items-start gap-3 border-t py-2" style={{ flexDirection: rowDirection, borderColor: colors.border }}>
               <Ionicons name="location-outline" size={18} color={colors.textMuted} />
-              <Text className="flex-1 text-base text-[#1B2430]">{info.address}</Text>
+              <Text className="flex-1 text-base text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>{info.address}</Text>
             </View>
           )}
 
           {!!info.phone && (
             <Pressable onPress={handleCall} className="items-start gap-3 border-t py-2" style={{ flexDirection: rowDirection, borderColor: colors.border }}>
               <Ionicons name="call-outline" size={18} color={colors.textMuted} />
-              <Text className="flex-1 text-base text-[#1B3FA8]">{info.phone}</Text>
+              <Text className="flex-1 text-base text-[#1B3FA8]" style={{ textAlign: physicalReadingStart(isRTL) }}>{info.phone}</Text>
             </Pressable>
           )}
         </View>
 
         <View className="mx-6 mb-3 rounded-xl bg-white p-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
-          <Text className="mb-2 text-base font-semibold text-[#1B2430]">{t('orderPaymentPolicyTitle')}</Text>
-          <Text className="text-sm leading-6 text-[#6E6A61]">{t('paymentPolicyText')}</Text>
+          <Text className="mb-2 text-base font-semibold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>{t('orderPaymentPolicyTitle')}</Text>
+          <Text className="text-sm leading-6 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>{t('paymentPolicyText')}</Text>
         </View>
 
         <View className="mx-6 rounded-xl bg-white p-4" style={{ borderColor: colors.border, borderWidth: 1 }}>
-          <Text className="mb-2 text-base font-semibold text-[#1B2430]">{t('cancellationPolicyTitle')}</Text>
-          <Text className="mb-2 text-sm leading-6 text-[#1B2430]">
+          <Text className="mb-2 text-base font-semibold text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>{t('cancellationPolicyTitle')}</Text>
+          <Text className="mb-2 text-sm leading-6 text-[#1B2430]" style={{ textAlign: physicalReadingStart(isRTL) }}>
             {info.cancellationWindowMinutes === ''
               ? t('cancellationWindowUnset')
               : info.cancellationWindowMinutes === '0'
                 ? t('cancellationNotAllowed')
                 : `${t('cancellationWindowPrefix')} ${info.cancellationWindowMinutes} ${t('cancellationWindowSuffix')}`}
           </Text>
-          <Text className="text-sm leading-6 text-[#6E6A61]">{t('cancellationWindowVariesNote')}</Text>
+          <Text className="text-sm leading-6 text-[#6E6A61]" style={{ textAlign: physicalReadingStart(isRTL) }}>{t('cancellationWindowVariesNote')}</Text>
         </View>
       </ScrollView>
       )}

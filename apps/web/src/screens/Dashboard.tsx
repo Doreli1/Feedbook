@@ -39,6 +39,9 @@ import type { TranslationKey } from '../lib/translations';
 const NOTIFICATION_TYPE_TAB: Record<string, DashboardTab> = {
   waiter_ack: 'service',
   inventory_alert: 'inventory',
+  // 2026-11-21, real feature — a table-capacity warning is a floor/seating
+  // concern, same tab TableStatusBoard itself lives under.
+  table_capacity_exceeded: 'tables',
 };
 
 const STATUS_KEYS: Record<string, TranslationKey> = {

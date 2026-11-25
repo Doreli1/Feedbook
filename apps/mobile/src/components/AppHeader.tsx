@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Dimensions, Modal, Pressable, ScrollView, Text, View, type ViewInstance } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -93,6 +93,20 @@ interface Props {
 // differently per screen (search icon here, QR pill there, a text action
 // button elsewhere) — composing each screen's own icons through these two
 // slots matches that better than forcing every combination into one enum.
+// Lets a child passed into AppHeader's `right`/`left` slots (e.g.
+// profile.tsx's QR-scan pill) shrink its OWN padding when AppHeader
+// measures that it doesn't fit — see AppHeader's own comment below for why
+// this is measured per-instance instead of a guessed device/width
+// breakpoint. Read via useHeaderCompact() from a component rendered inside
+// one of those slots; works even though that component is authored in the
+// screen file, not here, because React context resolves by position in the
+// final rendered tree (where AppHeader puts `{right}`/`{left}`), not by
+// where the JSX was written.
+const HeaderCompactContext = createContext(false);
+export function useHeaderCompact() {
+  return useContext(HeaderCompactContext);
+}
+
 export function AppHeader({ right, left }: Props) {
   // Real bug (2026-10-27): this used to be plain flex-row, relying entirely
   // on the native I18nManager.isRTL flag to mirror `right`/`left` into
@@ -106,10 +120,80 @@ export function AppHeader({ right, left }: Props) {
   // 'row-reverse' : 'row').
   const { isRTL } = useI18n();
   const rowDirection = visualRowDirection(isRTL);
+
+  // Real bug (2026-11-24, reported on a Galaxy S22+ — "Shi"'s device): on
+  // some screen-width/display-zoom combinations the `left` cluster (mail
+  // icon + QR-scan pill + "⋮" menu) is wider than the row has room for, so
+  // it overlaps/crowds the logo instead of sitting with even spacing. Two
+  // earlier fixes this same day guessed at a universal remedy (shrinking
+  // text, then unconditionally tightening every header's gap/padding) and
+  // both were reverted — the second one also broke a DIFFERENT device
+  // ("Dor"'s) that was already rendering correctly, by changing spacing
+  // for every screen regardless of whether that screen needed it. A static
+  // width breakpoint has the same flaw even with an exact device model in
+  // hand, since Samsung's own display-zoom/font-scale setting changes a
+  // device's *logical* width independently of its physical resolution.
+  // Measuring instead: compare the row's real available width against the
+  // natural (unshrunk — RN's default flexShrink is 0, so nothing has
+  // compressed yet) combined width of both slots, and only switch to
+  // tighter spacing when they provably don't fit. A header that already
+  // fits can never flip this on, so this cannot regress a device that
+  // renders correctly today.
+  // The minimum breathing room kept between the logo and the icon cluster
+  // itself (as opposed to the gap BETWEEN icons within a cluster, which
+  // compact mode does shrink) — reported gap (2026-11-24): even once the
+  // two clusters' own combined width no longer literally overflowed, there
+  // was nothing reserving space BETWEEN them, so justify-content:
+  // 'space-between' could still land them flush against each other when
+  // the remaining room was near zero. Reserved explicitly here, and
+  // counted as a cost in the overflow check below, instead of left to
+  // whatever's left over.
+  const MIN_CLUSTER_GAP = 8;
+  const [compact, setCompact] = useState(false);
+  const decided = useRef(false);
+  const measured = useRef({ container: 0, right: 0, left: 0 });
+
+  function evaluateOverflow() {
+    if (decided.current) return;
+    const { container, right: rightWidth, left: leftWidth } = measured.current;
+    if (container > 0 && rightWidth > 0 && leftWidth > 0) {
+      decided.current = true;
+      if (rightWidth + leftWidth + MIN_CLUSTER_GAP > container) setCompact(true);
+    }
+  }
+
   return (
-    <View style={{ flexDirection: rowDirection, alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.royalBlue }} className="px-4 pb-4 pt-16">
-      <View style={{ flexDirection: rowDirection, alignItems: 'center' }} className="gap-3">{right}</View>
-      <View style={{ flexDirection: rowDirection, alignItems: 'center' }} className="gap-3">{left}</View>
+    <View style={{ flexDirection: rowDirection, backgroundColor: colors.royalBlue }} className="px-4 pb-4 pt-16">
+      <View
+        style={{ flex: 1, flexDirection: rowDirection, alignItems: 'center', justifyContent: 'space-between', gap: MIN_CLUSTER_GAP }}
+        onLayout={(e) => {
+          measured.current.container = e.nativeEvent.layout.width;
+          evaluateOverflow();
+        }}
+      >
+        <HeaderCompactContext.Provider value={compact}>
+          <View
+            style={{ flexDirection: rowDirection, alignItems: 'center' }}
+            className={compact ? 'gap-1.5' : 'gap-3'}
+            onLayout={(e) => {
+              measured.current.right = e.nativeEvent.layout.width;
+              evaluateOverflow();
+            }}
+          >
+            {right}
+          </View>
+          <View
+            style={{ flexDirection: rowDirection, alignItems: 'center' }}
+            className={compact ? 'gap-1.5' : 'gap-3'}
+            onLayout={(e) => {
+              measured.current.left = e.nativeEvent.layout.width;
+              evaluateOverflow();
+            }}
+          >
+            {left}
+          </View>
+        </HeaderCompactContext.Provider>
+      </View>
     </View>
   );
 }

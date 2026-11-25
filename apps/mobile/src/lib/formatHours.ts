@@ -47,33 +47,22 @@ export function ruleCoversDay(rule: HourRule, day: number): boolean {
 // this project's hours JSON already uses, so no conversion is needed to
 // find "today"'s rule(s).
 //
-// isCertified forces "closed" on Saturday regardless of what's actually
-// stored in hours — a kosher-certified restaurant isn't open on Shabbat
-// (Content Guidelines/Backend Schema §1.3). Display-layer rule, not a DB
-// constraint check here.
-export function getTodayHourLines(rules: HourRule[], isCertified: boolean): string[] {
+// Used to force "closed" on Saturday for every certified restaurant
+// regardless of what was actually stored in `hours` (Content Guidelines/
+// Backend Schema §1.3) — dropped 2026-11-21 (real feature, explicit user
+// request): a certified restaurant can now configure real Saturday-evening
+// hours (מוצאי שבת), enforced server-side by the restaurant's own
+// kosher_saturday_earliest_open floor (see
+// 20261121110000_kosher_saturday_evening_hours.sql) — whatever ends up
+// stored in `rules` for Saturday is ALREADY compliant by the time it
+// reaches this display layer, the same as every other day, so there is
+// nothing left for `isCertified` to override here. Both functions below
+// no longer take it.
+export function getTodayHourLines(rules: HourRule[]): string[] {
   const today = new Date().getDay();
-  if (isCertified && today === SATURDAY) return [];
   return rules.filter((r) => ruleCoversDay(r, today)).map((r) => `${r.open}-${r.close}`);
 }
 
-// Same Shabbat override applied to the expanded full-week view: a rule that
-// only covers Saturday is dropped, and a rule whose range ends on Saturday
-// is shortened to stop at Friday — then an explicit "Saturday: closed" line
-// is appended so the rule is visible, not just silently missing.
-export function getWeekHourLines(rules: HourRule[], dayLabels: string[], isCertified: boolean, closedLabel: string): string[] {
-  if (!isCertified) return rules.map((r) => formatRuleLine(r, dayLabels));
-  const lines: string[] = [];
-  for (const r of rules) {
-    if (!ruleCoversDay(r, SATURDAY)) {
-      lines.push(formatRuleLine(r, dayLabels));
-    } else if (r.fromDay !== SATURDAY && r.fromDay <= r.toDay) {
-      lines.push(formatRuleLine({ ...r, toDay: SATURDAY - 1 }, dayLabels));
-    }
-    // A rule that is Saturday-only, or wraps around through Saturday in a
-    // shape not covered above, is dropped — the appended closed-line below
-    // is the correct statement either way.
-  }
-  lines.push(`${dayLabels[SATURDAY]}: ${closedLabel}`);
-  return lines;
+export function getWeekHourLines(rules: HourRule[], dayLabels: string[]): string[] {
+  return rules.map((r) => formatRuleLine(r, dayLabels));
 }

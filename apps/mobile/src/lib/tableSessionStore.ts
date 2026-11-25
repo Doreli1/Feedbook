@@ -85,6 +85,16 @@ interface TableSessionState {
   // action.
   clearTableSession: () => void;
   setHasHydrated: (hasHydrated: boolean) => void;
+  // Deliberately NOT persisted (left out of partialize below) — a transient,
+  // in-memory-only flag (2026-11-17, real feature) set for the brief window
+  // while THIS device's own bill-summary.tsx is mid-flight on its own
+  // confirm-card-payment call. The global "someone else just paid for you"
+  // listener (app/_layout.tsx) checks this first: the payer's own left_at
+  // changes through the exact same realtime row update a diner being paid
+  // FOR sees, so without this flag the payer would see their own local
+  // "תודה!" modal AND the global one at once, for their own payment.
+  suppressGlobalPaidNotice: boolean;
+  setSuppressGlobalPaidNotice: (value: boolean) => void;
 }
 
 export const useTableSessionStore = create<TableSessionState>()(
@@ -103,7 +113,13 @@ export const useTableSessionStore = create<TableSessionState>()(
       reviewVerificationCode: null,
       qrToken: null,
       hasHydrated: false,
-      setTableSession: (data) => set(data),
+      suppressGlobalPaidNotice: false,
+      setSuppressGlobalPaidNotice: (value) => set({ suppressGlobalPaidNotice: value }),
+      // Resets suppressGlobalPaidNotice on both a fresh join AND a clear
+      // (2026-11-17) — a flag left `true` from a diner's own just-finished
+      // payment must not silently suppress a real "someone paid for you"
+      // notice the NEXT time they join a table.
+      setTableSession: (data) => set({ ...data, suppressGlobalPaidNotice: false }),
       clearTableSession: () =>
         set({
           sessionId: null,
@@ -118,6 +134,7 @@ export const useTableSessionStore = create<TableSessionState>()(
           barTicketNumber: null,
           reviewVerificationCode: null,
           qrToken: null,
+          suppressGlobalPaidNotice: false,
         }),
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
     }),

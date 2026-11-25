@@ -46,6 +46,23 @@
 // A caller with no group (the common/default case — nobody added) hits
 // neither branch meaningfully: allMembers is just [caller], so every sum
 // below collapses back to exactly the original single-participant amounts.
+//
+// STAGE 6 DISCLAIMER (carried over from this function's own original header,
+// lost during the 2026-11-15 group-billing rewrite above — see
+// confirm-cash-payment/index.ts for the same note, still intact there):
+// there is NO real card charge anywhere in this function. receipt_number is
+// a random placeholder, not a real clearing reference, and everything below
+// — writing payments/payment_participant_shares, marking left_at, closing
+// the session — runs unconditionally the moment this function is invoked,
+// standing in for "a real charge just succeeded" without ever verifying one
+// actually did. When Tranzila (or any real processor) is wired in, that real
+// charge-and-confirm step MUST be inserted and MUST succeed before any of
+// this function's own DB writes run (or this logic moves into a webhook
+// handler Tranzila calls back on success) — everything else here (auth,
+// the server-computed subtotal, the combined-group split math, the
+// settlement side effects) is payment-rail-agnostic and can stay as-is.
+// Skipping that gate would mark an account "שולם" with zero money ever
+// actually collected.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.4";
 

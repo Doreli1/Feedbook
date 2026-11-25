@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { AppHeader, HeaderMailIcon, HeaderMenu } from '../src/components/AppHeader';
+import { AppHeader, HeaderMailIcon, HeaderMenu, useHeaderCompact } from '../src/components/AppHeader';
 import { ConfirmModal } from '../src/components/ConfirmModal';
 import { FeedbookWordmark } from '../src/components/FeedbookWordmark';
 import { useI18n, visualRowDirection, physicalReadingStart, visualColumnAlign } from '../src/lib/i18n';
@@ -27,6 +27,30 @@ const LOCKED_ROWS: LockedRow[] = [
   { key: 'reviews', labelKey: 'myReviews', icon: 'star-outline' }, // Milestone 7
   { key: 'favorites', labelKey: 'myFavorites', icon: 'heart-outline' }, // Milestone 5
 ];
+
+// Shrinks its own padding only — never the icon/text size, per explicit
+// instruction (2026-11-24) — when AppHeader measures that this row doesn't
+// fit the available width. See useHeaderCompact's comment in AppHeader.tsx
+// for why that's a runtime measurement rather than a guessed device/width
+// breakpoint.
+function QrScanButton() {
+  const router = useRouter();
+  const { t, isRTL } = useI18n();
+  const rowDirection = visualRowDirection(isRTL);
+  const compact = useHeaderCompact();
+  return (
+    <Pressable
+      onPress={() => router.push('/scan-qr')}
+      className={`items-center gap-2 rounded-full bg-white ${compact ? 'px-2.5 py-2' : 'px-3.5 py-2.5'}`}
+      style={{ flexDirection: rowDirection }}
+    >
+      <Ionicons name="qr-code-outline" size={19} color={colors.royalBlue} />
+      <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
+        {t('activateQrScanner')}
+      </Text>
+    </Pressable>
+  );
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -132,16 +156,7 @@ export default function ProfileScreen() {
         left={
           <>
             <HeaderMailIcon />
-            <Pressable
-              onPress={() => router.push('/scan-qr')}
-              className="items-center gap-2 rounded-full bg-white px-4 py-2.5"
-              style={{ flexDirection: rowDirection }}
-            >
-              <Ionicons name="qr-code-outline" size={19} color={colors.royalBlue} />
-              <Text className="text-sm font-semibold" style={{ color: colors.royalBlue }}>
-                {t('activateQrScanner')}
-              </Text>
-            </Pressable>
+            <QrScanButton />
             <HeaderMenu />
           </>
         }
