@@ -23,6 +23,11 @@ export interface SessionParticipant {
   // consent flow — adding someone used to take effect unilaterally). null
   // once approved (billedToParticipantId takes over) or declined.
   pendingBillingRequestFrom: string | null;
+  // When that request was actually sent (2026-11-25, real feature — drives
+  // the countdown badge on both sides of the request). null whenever
+  // pendingBillingRequestFrom is null; the two are always set/cleared
+  // together server-side.
+  pendingBillingRequestAt: string | null;
 }
 
 // Table-mates row (ניהול חשבון, מוקאפים 10.1/10.2) — every participant who
@@ -58,6 +63,7 @@ export function useSessionParticipants(sessionId: string | null) {
         billedToParticipantId: row.billed_to_participant_id,
         leftAt: row.left_at,
         pendingBillingRequestFrom: row.pending_billing_request_from,
+        pendingBillingRequestAt: row.pending_billing_request_at,
       })),
     );
     setLoading(false);

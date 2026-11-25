@@ -535,6 +535,22 @@ const translations = {
     // Shown above the pay button while no tip chip/amount has been chosen
     // yet (2026-11-10) — explains why it's disabled.
     billSummaryTipRequiredHint: 'בחרו אחוז טיפ כדי להמשיך — אפשר גם 0%.',
+    // Real bug found live (2026-11-25): a pending "add friend" request (sent,
+    // not yet approved/declined by the friend) didn't block payment at all —
+    // picking a tip and paying went through on just the caller's own share
+    // while the friend still had an unanswered prompt. Shown above the pay
+    // button, same spot/shape as billSummaryTipRequiredHint, whenever
+    // myPendingRequests is non-empty; the button itself is disabled for the
+    // same condition.
+    billSummaryPendingRequestBlocksPaymentMessage: 'לא ניתן לבצע תשלום כל עוד יש בקשת הוספת חבר הממתינה לאישור. בטלו את הבקשה כדי לשלם באופן עצמאי, או המתינו לתשובת החבר.',
+    cancelPendingRequestButton: 'ביטול הבקשה',
+    // Real bug found live (2026-11-25): tip percent used to always be
+    // calculated from this diner's own personal subtotal, even once a friend
+    // was added to the account — made an explicit choice instead of always
+    // picking one side. Shown only once a friend is actually on the account.
+    billSummaryTipBaseLabel: 'הטיפ יחושב מתוך:',
+    billSummaryTipBasePersonalButton: 'החשבון האישי שלי',
+    billSummaryTipBaseCombinedButton: 'הסכום הכולל (כולל חברים)',
     // Warm floor message for the free-amount field (2026-11-10, explicit
     // request: friendly tone, not a scolding error) — shown only once the
     // diner has typed something below 5% of their own subtotal.
@@ -994,6 +1010,11 @@ const translations = {
     billSummaryTipperCountLabel: '{count} diners tipped today',
     billSummaryTipperCountSingularLabel: 'One diner tipped today',
     billSummaryTipRequiredHint: 'Pick a tip percentage to continue — 0% works too.',
+    billSummaryPendingRequestBlocksPaymentMessage: 'You can’t pay while a friend request is still awaiting approval. Cancel it to pay on your own, or wait for your friend’s answer.',
+    cancelPendingRequestButton: 'Cancel request',
+    billSummaryTipBaseLabel: 'Calculate the tip from:',
+    billSummaryTipBasePersonalButton: 'My own account',
+    billSummaryTipBaseCombinedButton: 'The combined total (with friends)',
     billSummaryTipCustomAmountTooLowMessage: 'Thanks for choosing your own tip amount! Please make it at least 5% of the bill, so it really helps the team.',
     billSummaryVatNote: 'Price includes VAT',
     billSummaryPaymentPreferenceTitle: 'Payment preference',

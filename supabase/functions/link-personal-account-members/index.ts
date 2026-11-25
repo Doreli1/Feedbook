@@ -67,6 +67,14 @@ Deno.serve(async (req) => {
   }
   const callerId = userData.user.id;
 
+  // Real feature (2026-11-25, explicit user request): a sent request is only
+  // valid for about a minute — swept here (before this function's own reads
+  // below) so a long-expired request from someone else never wrongly blocks
+  // a fresh one (see the REQUEST_ALREADY_PENDING check further down), and so
+  // a stale request this caller sent themselves doesn't linger past its own
+  // window just because they happened to call this endpoint again first.
+  await admin.rpc("expire_stale_billing_requests");
+
   let rawBody: unknown;
   try {
     rawBody = await req.json();
@@ -165,9 +173,12 @@ Deno.serve(async (req) => {
   const idsToClear = Array.from(currentMemberIds).filter((id) => !newMemberIds.has(id));
 
   if (idsToRequest.length > 0) {
+    // pending_billing_request_at (2026-11-25) — the request's own 1-minute
+    // validity window starts now; see expire_stale_billing_requests's own
+    // comment in the migration that added it.
     const { error: requestError } = await admin
       .from("session_participants")
-      .update({ pending_billing_request_from: caller.id })
+      .update({ pending_billing_request_from: caller.id, pending_billing_request_at: new Date().toISOString() })
       .in("id", idsToRequest);
     if (requestError) {
       console.error("link-personal-account-members: request update failed", requestError);
@@ -177,7 +188,7 @@ Deno.serve(async (req) => {
   if (idsToClear.length > 0) {
     const { error: clearError } = await admin
       .from("session_participants")
-      .update({ billed_to_participant_id: null, pending_billing_request_from: null })
+      .update({ billed_to_participant_id: null, pending_billing_request_from: null, pending_billing_request_at: null })
       .in("id", idsToClear);
     if (clearError) {
       console.error("link-personal-account-members: clear update failed", clearError);

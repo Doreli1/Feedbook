@@ -17,6 +17,7 @@ import { useI18n, visualRowDirection, physicalReadingStart } from '../src/lib/i1
 import { formatPrice } from '../src/lib/formatPrice';
 import { supabase } from '../src/lib/supabase';
 import { useTableSessionStore } from '../src/lib/tableSessionStore';
+import { formatCountdown, useCountdownSeconds } from '../src/lib/useCountdownSeconds';
 import { colors } from '../src/theme';
 
 // Bill summary — real mockup supplied 2026-11-08, revised the same day after
@@ -108,6 +109,19 @@ export default function BillSummaryScreen() {
   // member above. Tracked separately so the picker can show "ממתין לאישור"
   // for someone already asked, distinct from someone not yet asked at all.
   const myPendingRequests = participants.filter((p) => p.pendingBillingRequestFrom === participantId && p.leftAt === null);
+  // Real bug found live (2026-11-25): nothing here ever blocked payment
+  // while a sent request was still unanswered — picking a tip and paying
+  // went straight through on just the caller's own share, leaving the
+  // friend with a dangling approve/decline prompt (GlobalBillingLinkListener)
+  // for a request that's now moot. See hasPendingRequest's own use below
+  // (disables the pay button) and handleCancelPendingRequests (the explicit
+  // way out, short of waiting for the friend to actually respond).
+  const hasPendingRequest = myPendingRequests.length > 0;
+  // Countdown badge, sender's side (2026-11-25, explicit user request,
+  // bottom-left of the notice box below) — same pendingBillingRequestAt the
+  // target's own row carries (set once, read from both sides), same
+  // 1-minute window expire_stale_billing_requests enforces server-side.
+  const pendingRequestCountdown = useCountdownSeconds(myPendingRequests[0]?.pendingBillingRequestAt ?? null, 60);
   // The combined group this diner is actually paying for once at least one
   // friend has been added — just themself when myAccountMembers is empty
   // (the common/default case), so combinedSubtotal below collapses back to
@@ -195,6 +209,36 @@ export default function BillSummaryScreen() {
     void submitAccountMembership(myAccountMembers.filter((m) => m.participantId !== removeParticipantId).map((m) => m.participantId));
   }
 
+  // The explicit "cancel" action next to the pending-request payment-block
+  // notice below (2026-11-25, user request) — posts only the already-
+  // APPROVED members as the desired set, so link-personal-account-members
+  // clears every still-pending request (not in that list) while leaving any
+  // already-approved member untouched. Clearing pending_billing_request_from
+  // server-side is also what makes the friend's own approve/decline modal
+  // (GlobalBillingLinkListener, driven by that same column via realtime)
+  // disappear on their device — no separate "withdraw the notification"
+  // step needed, it's the same signal both sides already watch.
+  function handleCancelPendingRequests() {
+    void submitAccountMembership(myAccountMembers.map((m) => m.participantId));
+  }
+
+  // Real request (2026-11-25): the background sweep (GlobalBillingLinkListener's
+  // own 5s poll + both Edge Functions' own opportunistic call) is the
+  // server-side source of truth for expiry, but proved unreliable to observe
+  // actually firing during testing — this is a deterministic client-side
+  // backup, tied directly to the same countdown the diner is watching: the
+  // instant it visibly reaches 0 on the SENDER's own screen, cancel for
+  // real, same action as tapping "ביטול הבקשה" by hand. Only fires once per
+  // expiry (pendingRequestCountdown going from >0 to exactly 0 is a single
+  // state transition — React doesn't re-render for a value that didn't
+  // change, so this doesn't re-fire every second while it sits at 0), and
+  // only while there's still something to cancel.
+  useEffect(() => {
+    if (pendingRequestCountdown === 0 && hasPendingRequest) {
+      handleCancelPendingRequests();
+    }
+  }, [pendingRequestCountdown, hasPendingRequest]);
+
   const me = participants.find((p) => p.participantId === participantId);
   const myFirstName = me?.displayName.trim().split(/\s+/)[0] || null;
   // Oldest-first (useSessionParticipants's own convention, see
@@ -237,15 +281,27 @@ export default function BillSummaryScreen() {
   const [tipPercent, setTipPercent] = useState<number | null>(null);
   const [tipCustomAmount, setTipCustomAmount] = useState('');
   const customTipAmount = Number(tipCustomAmount.replace(',', '.')) || 0;
+  // Real bug found live (2026-11-25): every tip calculation below used to
+  // read `subtotal` (this diner's OWN order only) unconditionally, even once
+  // a friend was added — a 5% tip on a 60₪/70₪ combined 130₪ account came
+  // out to 3₪ (5% of 60) instead of the diner's own intended 6.5₪ (5% of
+  // 130), and the restaurant's own tip records only ever reflected one
+  // diner's personal slice, never the pair's real combined total. Fixed by
+  // making the BASE itself an explicit choice (user request) rather than
+  // silently always picking one or the other — tipBase only matters once a
+  // friend is actually on this account; see tipBaseAmount below, which
+  // collapses back to plain `subtotal` either way for a solo diner.
+  const [tipBase, setTipBase] = useState<'personal' | 'combined'>('personal');
+  const tipBaseAmount = myAccountMembers.length > 0 && tipBase === 'combined' ? combinedSubtotal : subtotal;
   // Free-amount floor (2026-11-10, explicit request): a diner who wants to
   // name their own amount still has to mean it as a real tip, not a token
-  // few agorot — 5% of their own subtotal, the same floor the percent chips
+  // few agorot — 5% of the chosen tip base, the same floor the percent chips
   // themselves start from. Doesn't apply to the chips (0% is a real,
   // offered choice on its own).
-  const customTipMeetsMinimum = customTipAmount >= subtotal * 0.05;
+  const customTipMeetsMinimum = customTipAmount >= tipBaseAmount * 0.05;
   const hasChosenTip =
     tipMode === 'percent' ? tipPercent !== null : tipMode === 'custom' ? tipCustomAmount.trim() !== '' && customTipMeetsMinimum : false;
-  const tipAmount = tipMode === 'percent' && tipPercent !== null ? subtotal * (tipPercent / 100) : tipMode === 'custom' && customTipMeetsMinimum ? customTipAmount : 0;
+  const tipAmount = tipMode === 'percent' && tipPercent !== null ? tipBaseAmount * (tipPercent / 100) : tipMode === 'custom' && customTipMeetsMinimum ? customTipAmount : 0;
   const total = amountIOwe + tipAmount;
 
   // "X סועדים נתנו טיפ היום" (2026-11-10, explicit request) — real social-
@@ -651,6 +707,40 @@ export default function BillSummaryScreen() {
               {tippersToday === 1 ? t('billSummaryTipperCountSingularLabel') : t('billSummaryTipperCountLabel').replace('{count}', String(tippersToday))}
             </Text>
           )}
+          {/* Real bug found live (2026-11-25, same report as tipBaseAmount's
+              own comment above): once a friend is on this account, the tip
+              base is a real choice, not something to silently assume either
+              way — shown only once there's an actual combined total to
+              choose between (myAccountMembers.length > 0), same visual
+              language as the split-mode buttons above (selected = filled
+              royalBlue). */}
+          {myAccountMembers.length > 0 && (
+            <View className="mt-3">
+              <Text className="mb-1.5 text-xs font-semibold" style={{ color: colors.textMuted, textAlign: physicalReadingStart(isRTL) }}>
+                {t('billSummaryTipBaseLabel')}
+              </Text>
+              <View style={{ flexDirection: rowDirection, gap: 8 }}>
+                <Pressable
+                  onPress={() => setTipBase('personal')}
+                  className="flex-1 items-center rounded-lg border py-2.5"
+                  style={{ borderColor: tipBase === 'personal' ? colors.royalBlue : colors.border, backgroundColor: tipBase === 'personal' ? colors.royalBlue : '#FFFFFF' }}
+                >
+                  <Text className="text-center text-sm font-medium" style={{ color: tipBase === 'personal' ? '#FFFFFF' : colors.ink }}>
+                    {t('billSummaryTipBasePersonalButton')}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setTipBase('combined')}
+                  className="flex-1 items-center rounded-lg border py-2.5"
+                  style={{ borderColor: tipBase === 'combined' ? colors.royalBlue : colors.border, backgroundColor: tipBase === 'combined' ? colors.royalBlue : '#FFFFFF' }}
+                >
+                  <Text className="text-center text-sm font-medium" style={{ color: tipBase === 'combined' ? '#FFFFFF' : colors.ink }}>
+                    {t('billSummaryTipBaseCombinedButton')}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
           <View className="mt-3">
             {/* Two "tabs" (2026-11-10, explicit request): tipMode==='percent'
                 (the default) shows this one-row strip of all six chips —
@@ -810,16 +900,56 @@ export default function BillSummaryScreen() {
               valid free amount — no default is ever pre-selected for them,
               0% included, so this explains why rather than leaving a
               disabled button unexplained. */}
-          {!hasChosenTip && (
+          {/* Real bug found live (2026-11-25): see hasPendingRequest's own
+              comment above — this is the explanation + way out, same "!"
+              notice recipe as AvailabilityNoticeBanner.tsx/this screen's own
+              tip-floor note (#38BDF8/#EAF6FD/#BAE6FD, never an invented
+              color). Shown instead of the tip-required hint below when both
+              would otherwise apply — the pending request is the one that
+              actually needs acting on. */}
+          {hasPendingRequest && (
+            <View className="mb-3 items-center rounded-xl border px-3 py-2.5" style={{ backgroundColor: '#EAF6FD', borderColor: '#BAE6FD', position: 'relative' }}>
+              {/* Countdown badge (2026-11-25, explicit user request) — fixed
+                  physical bottom-left corner, not reading-direction-relative
+                  (same "physical, not logical" choice as the approver's own
+                  badge in GlobalBillingLinkListener). */}
+              {pendingRequestCountdown !== null && (
+                <View
+                  className="items-center rounded-full"
+                  style={{ position: 'absolute', bottom: 8, left: 8, flexDirection: 'row', gap: 3, backgroundColor: colors.royalBlue, paddingHorizontal: 8, paddingVertical: 3 }}
+                >
+                  <Ionicons name="timer-outline" size={12} color="#FFFFFF" />
+                  <Text className="text-[11px] font-bold text-white">{formatCountdown(pendingRequestCountdown)}</Text>
+                </View>
+              )}
+              <View className="w-full items-start" style={{ flexDirection: rowDirection, gap: 6 }}>
+                <Ionicons name="alert-circle" size={18} color="#38BDF8" style={{ marginTop: 1 }} />
+                <Text className="flex-1 text-xs leading-4" style={{ color: '#1B2430', textAlign: physicalReadingStart(isRTL) }}>
+                  {t('billSummaryPendingRequestBlocksPaymentMessage')}
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleCancelPendingRequests}
+                disabled={linkingFriends}
+                className="mt-2.5 items-center rounded-lg border px-4 py-2"
+                style={{ borderColor: colors.danger, opacity: linkingFriends ? 0.6 : 1 }}
+              >
+                <Text className="text-sm font-semibold" style={{ color: colors.danger }}>
+                  {t('cancelPendingRequestButton')}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+          {!hasPendingRequest && !hasChosenTip && (
             <Text className="mb-2 text-center text-xs" style={{ color: colors.textMuted }}>
               {t('billSummaryTipRequiredHint')}
             </Text>
           )}
           <Pressable
             onPress={handlePayButtonPress}
-            disabled={!hasChosenTip || closing || cashCalling}
+            disabled={!hasChosenTip || closing || cashCalling || hasPendingRequest}
             className="items-center justify-center rounded-xl"
-            style={{ backgroundColor: colors.royalBlue, minHeight: 48, opacity: !hasChosenTip || closing || cashCalling ? 0.7 : 1 }}
+            style={{ backgroundColor: colors.royalBlue, minHeight: 48, opacity: !hasChosenTip || closing || cashCalling || hasPendingRequest ? 0.7 : 1 }}
           >
             <Text className="text-lg font-semibold text-white">{t('billSummaryPayButton')}</Text>
           </Pressable>

@@ -63,6 +63,12 @@ Deno.serve(async (req) => {
   }
   const callerId = userData.user.id;
 
+  // Real feature (2026-11-25) — same sweep as link-personal-account-members's
+  // own, called here too so a friend can never approve/decline a request
+  // that's already past its 1-minute window by the time they act on it (it
+  // simply reads as NO_PENDING_REQUEST/NOTHING_TO_DECLINE below instead).
+  await admin.rpc("expire_stale_billing_requests");
+
   let rawBody: unknown;
   try {
     rawBody = await req.json();
@@ -96,7 +102,7 @@ Deno.serve(async (req) => {
     }
     const { error: approveError } = await admin
       .from("session_participants")
-      .update({ billed_to_participant_id: caller.pending_billing_request_from, pending_billing_request_from: null })
+      .update({ billed_to_participant_id: caller.pending_billing_request_from, pending_billing_request_from: null, pending_billing_request_at: null })
       .eq("id", caller.id);
     if (approveError) {
       console.error("respond-to-personal-account-link: approve failed", approveError);
@@ -109,7 +115,7 @@ Deno.serve(async (req) => {
   if (caller.pending_billing_request_from) {
     const { error: declineError } = await admin
       .from("session_participants")
-      .update({ pending_billing_request_from: null })
+      .update({ pending_billing_request_from: null, pending_billing_request_at: null })
       .eq("id", caller.id);
     if (declineError) {
       console.error("respond-to-personal-account-link: decline (pending) failed", declineError);

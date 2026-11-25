@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Modal, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { useSessionParticipants } from './account/useSessionParticipants';
 import { useI18n } from '../lib/i18n';
 import { supabase } from '../lib/supabase';
 import { useTableSessionStore } from '../lib/tableSessionStore';
+import { formatCountdown, useCountdownSeconds } from '../lib/useCountdownSeconds';
 import { colors } from '../theme';
 
 // Real consent-flow feature (2026-11-17, explicit request) — mounted once at
@@ -30,9 +31,37 @@ export function GlobalBillingLinkListener() {
   const [responding, setResponding] = useState(false);
   const [requestErrorMessage, setRequestErrorMessage] = useState<string | null>(null);
 
+  // Real feature (2026-11-25, explicit user request): a sent "add friend"
+  // request is only valid for about a minute — there's no cron in this
+  // project (same constraint noted in close_zero_balance_table_sessions's
+  // own comment), so expiry is swept opportunistically instead: both Edge
+  // Functions in this flow (link-personal-account-members, respond-to-
+  // personal-account-link) sweep on their own at the top, but neither side
+  // necessarily calls either of those within any given minute — a diner
+  // might just be sitting on the menu. This component is mounted exactly
+  // once, globally, for the whole app session (app/_layout.tsx), so polling
+  // here is the one place that reliably expires a stale request for BOTH the
+  // sender and the receiver even if neither of them takes any action —
+  // sweeping actually clears the DB row, so useSessionParticipants' own
+  // realtime subscription (not this component) is what then refreshes the
+  // UI on every device watching this session. "Up to roughly a minute," not
+  // an exact deadline, is the deliberate tradeoff for this poll interval —
+  // tight enough to feel immediate, loose enough not to hammer the DB.
+  useEffect(() => {
+    if (!sessionId) return;
+    const interval = setInterval(() => {
+      void supabase.rpc('expire_stale_billing_requests');
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
   const me = participants.find((p) => p.participantId === participantId) ?? null;
   const requester = me?.pendingBillingRequestFrom ? (participants.find((p) => p.participantId === me.pendingBillingRequestFrom) ?? null) : null;
   const requesterInitial = (requester?.displayName ?? '?').trim().charAt(0).toUpperCase() || '?';
+  // Countdown badge, approver's side (2026-11-25, explicit user request,
+  // top-left of this modal's own card) — same 1-minute window
+  // expire_stale_billing_requests enforces server-side, just displayed here.
+  const approverCountdown = useCountdownSeconds(me?.pendingBillingRequestAt ?? null, 60);
 
   // "1. המשתמש שצורף לחשבון - יקבל הודעה על גבי רקע מושחר עם פעולות אישור /
   // סירוב" — no neutral dismiss: onRequestClose (Android back) is a no-op,
@@ -70,7 +99,21 @@ export function GlobalBillingLinkListener() {
     <>
       <Modal visible={requester !== null} transparent animationType="fade" onRequestClose={() => {}}>
         <View className="flex-1 items-center justify-center bg-black/60 px-6">
-          <View className="w-full max-w-sm items-center rounded-2xl bg-white p-5">
+          <View className="w-full max-w-sm items-center rounded-2xl bg-white p-5" style={{ position: 'relative' }}>
+            {/* Countdown badge (2026-11-25, explicit user request) — fixed
+                physical top-left corner of the card, not reading-direction-
+                relative (same "physical, not logical" choice already made
+                for OrderTracker's own price text — a countdown's corner
+                isn't tied to language). */}
+            {approverCountdown !== null && (
+              <View
+                className="items-center rounded-full"
+                style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', gap: 4, backgroundColor: colors.royalBlue, paddingHorizontal: 10, paddingVertical: 4 }}
+              >
+                <Ionicons name="timer-outline" size={13} color="#FFFFFF" />
+                <Text className="text-xs font-bold text-white">{formatCountdown(approverCountdown)}</Text>
+              </View>
+            )}
             {requester?.photoUrl ? (
               <Image source={{ uri: requester.photoUrl }} style={{ height: 56, width: 56, borderRadius: 28, marginBottom: 12 }} />
             ) : (
